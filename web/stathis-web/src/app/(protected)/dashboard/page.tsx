@@ -89,7 +89,7 @@ export default function DashboardPage() {
   const { data: teacherProfile } = useQuery({
     queryKey: ['teacher-profile'],
     queryFn: async () => {
-      const response = await fetch('https://api-stathis.ryne.dev/api/users/profile/teacher', {
+      const response = await fetch('https://stathis-u8s6.onrender.com/api/users/profile/teacher', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
           'Content-Type': 'application/json'
