@@ -80,7 +80,7 @@ public CorsConfigurationSource corsConfigurationSource() {
     ));
     
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-    configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+    configuration.setAllowedHeaders(List.of("*"));
     configuration.setAllowCredentials(true); // Required for 'include' credentials
     
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
