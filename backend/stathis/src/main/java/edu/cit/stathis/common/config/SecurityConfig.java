@@ -2,6 +2,7 @@ package edu.cit.stathis.common.config;
 
 import edu.cit.stathis.auth.service.CustomUserDetailsService;
 import edu.cit.stathis.common.utils.JwtUtil;
+import java.util.Arrays;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
