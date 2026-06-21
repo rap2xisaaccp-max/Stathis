@@ -2,9 +2,7 @@ package edu.cit.stathis.common.config;
 
 import edu.cit.stathis.auth.service.CustomUserDetailsService;
 import edu.cit.stathis.common.utils.JwtUtil;
-import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -68,25 +66,21 @@ public class SecurityConfig {
   }
 
   @Bean
-public CorsConfigurationSource corsConfigurationSource() {
+  public CorsConfigurationSource corsConfigurationSource() {
+        logger.debug("Configuring CORS with allowed origins: {}", allowedOrigins);
+        
     CorsConfiguration configuration = new CorsConfiguration();
-    
-    // Explicitly add your frontend origin
-    configuration.setAllowedOrigins(List.of(
-        "http://localhost:3000", 
-        "https://stathis.ryne.dev", 
-        "https://api-stathis.ryne.dev", 
-        "https://stathis-u8s6.onrender.com"
-    ));
-    
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+    configuration.setAllowedOrigins(List.of(allowedOrigins));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
     configuration.setAllowedHeaders(List.of("*"));
-    configuration.setAllowCredentials(true); // Required for 'include' credentials
-    
+    configuration.setAllowCredentials(true);
+        
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
+        
+        logger.debug("CORS configuration completed");
     return source;
-}
+  }
 
   @Bean
   public PasswordEncoder passwordEncoder() {
