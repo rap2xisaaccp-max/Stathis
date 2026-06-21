@@ -68,24 +68,25 @@ public class SecurityConfig {
   }
 
   @Bean
-  public CorsConfigurationSource corsConfigurationSource() {
-        List<String> origins = Arrays.stream(allowedOrigins.split(","))
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .collect(Collectors.toList());
-        logger.debug("Configuring CORS with allowed origins: {}", origins);
-        
+public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
-    configuration.setAllowedOrigins(origins);
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-    configuration.setAllowCredentials(true);
-        
+    
+    // Explicitly add your frontend origin
+    configuration.setAllowedOrigins(List.of(
+        "http://localhost:3000", 
+        "https://stathis.ryne.dev", 
+        "https://api-stathis.ryne.dev", 
+        "https://stathis-u8s6.onrender.com"
+    ));
+    
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+    configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+    configuration.setAllowCredentials(true); // Required for 'include' credentials
+    
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
-        
-        logger.debug("CORS configuration completed");
     return source;
-  }
+}
 
   @Bean
   public PasswordEncoder passwordEncoder() {
