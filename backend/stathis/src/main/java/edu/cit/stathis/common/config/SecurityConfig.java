@@ -73,12 +73,11 @@ public class SecurityConfig {
             .map(String::trim)
             .filter(s -> !s.isEmpty())
             .collect(Collectors.toList());
-        logger.debug("Configuring CORS with allowed origins: {}", allowedOrigins);
+        logger.debug("Configuring CORS with allowed origins: {}", origins);
         
     CorsConfiguration configuration = new CorsConfiguration();
     configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-    configuration.setAllowedHeaders(List.of("*"));
     configuration.setAllowCredentials(true);
         
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
