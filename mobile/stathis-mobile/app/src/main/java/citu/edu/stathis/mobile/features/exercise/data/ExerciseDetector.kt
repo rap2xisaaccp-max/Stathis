@@ -16,6 +16,7 @@ class ExerciseDetector {
     private var squatState: ExerciseState = ExerciseState.WAITING
     private var squatRepCount: Int = 0
     private var squatInDownPosition: Boolean = false
+    private var squatStandingHipY: Float? = null
     private val squatHipKneeVerticalThresholdFactor = 0.1f
     private val squatMovementThreshold = 0.05f
 
@@ -68,11 +69,19 @@ class ExerciseDetector {
         val avgShoulderY = (leftShoulder.position.y + rightShoulder.position.y) / 2f
         val avgAnkleY = (leftAnkle.position.y + rightAnkle.position.y) / 2f
         val bodyHeightEstimate = abs(avgShoulderY - avgAnkleY)
+        val hipAngle = averageAngle(leftShoulder, leftHip, leftKnee, rightShoulder, rightHip, rightKnee)
+        val squatDownThreshold = bodyHeightEstimate * squatHipKneeVerticalThresholdFactor
+        val squatStandThreshold = bodyHeightEstimate * squatMovementThreshold
+
+        val isStandingReady = avgHipY < avgKneeY - squatStandThreshold && hipAngle >= 155f
+        if (isStandingReady && squatStandingHipY == null) {
+            squatStandingHipY = avgHipY
+        }
 
 
         when (squatState) {
             ExerciseState.WAITING, ExerciseState.UP -> {
-                if (avgHipY > avgKneeY + (bodyHeightEstimate * squatHipKneeVerticalThresholdFactor)) {
+                if (avgHipY > avgKneeY + squatDownThreshold && hipAngle <= 140f) {
                     squatState = ExerciseState.DOWN
                     squatInDownPosition = true
                 } else {
@@ -80,13 +89,18 @@ class ExerciseDetector {
                 }
             }
             ExerciseState.DOWN -> {
-                if (avgHipY < avgKneeY) {
+                val completedRep = squatStandingHipY?.let { standingHipY ->
+                    avgHipY <= standingHipY + squatStandThreshold && hipAngle >= 150f
+                } == true
+
+                if (completedRep) {
                     squatState = ExerciseState.UP
                     if (squatInDownPosition) {
                         squatRepCount++
                         repCompletedThisFrame = true
                     }
                     squatInDownPosition = false
+                    squatStandingHipY = avgHipY
                 }
             }
             ExerciseState.INVALID -> {
@@ -338,6 +352,7 @@ class ExerciseDetector {
     private fun resetSquatStateInternals() {
         squatState = ExerciseState.WAITING
         squatInDownPosition = false
+        squatStandingHipY = null
     }
 
     private fun resetPushupStateInternals() {
@@ -366,6 +381,7 @@ class ExerciseDetector {
         squatState = ExerciseState.WAITING
         squatRepCount = 0
         squatInDownPosition = false
+        squatStandingHipY = null
 
         pushupState = ExerciseState.WAITING
         pushupRepCount = 0
