@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -595,16 +596,23 @@ private fun MinimalProgressIndicator(
     label: String,
     current: Int,
     goal: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    animateProgress: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     val progress = if (goal > 0) (current.toFloat() / goal).coerceAtMost(1f) else 0f
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(300),
-        label = "progress"
-    )
+    val animatedProgress = if (animateProgress) {
+        animateFloatAsState(
+            targetValue = progress,
+            animationSpec = tween(300),
+            label = "progress"
+        ).value
+    } else {
+        progress
+    }
     
     Row(
+        modifier = modifier.width(76.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -619,13 +627,17 @@ private fun MinimalProgressIndicator(
             text = "$current/$goal",
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         
         LinearProgressIndicator(
             progress = animatedProgress,
             modifier = Modifier
-                .width(20.dp)
+                .weight(1f)
                 .height(3.dp)
                 .clip(RoundedCornerShape(1.5.dp)),
             color = MaterialTheme.colorScheme.primary,
@@ -849,11 +861,14 @@ private fun ExerciseControlsOverlay(
                     text = "${template.exerciseType.replace("_", " ")} - ${template.exerciseDifficulty}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 
                 // Progress indicators in a single row
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -875,7 +890,8 @@ private fun ExerciseControlsOverlay(
                         label = "A",
                         current = currentAccuracy.toInt(),
                         goal = template.goalAccuracy,
-                        icon = Icons.Default.GpsFixed
+                        icon = Icons.Default.GpsFixed,
+                        animateProgress = false
                     )
                 }
                 
@@ -904,7 +920,10 @@ private fun ExerciseControlsOverlay(
                         text = "${(exerciseConfidence * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.width(36.dp),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
                     )
                 }
             }
@@ -914,7 +933,7 @@ private fun ExerciseControlsOverlay(
         Card(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(8.dp),
+                .padding(top = 104.dp, end = 8.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
             ),
