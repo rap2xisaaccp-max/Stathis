@@ -140,15 +140,25 @@ fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostCont
     val learnPrefs = remember { LearnPreferences(context) }
     val level by learnPrefs.levelFlow.collectAsState(initial = ExperienceLevel.BEGINNER)
     val template = remember(level, exerciseId) { generateTemplatesForLevel(level).find { it.physicalId == exerciseId } }
-    val exerciseType = remember(template) {
-        template?.exerciseType?.let { runCatching { ExerciseType.valueOf(it.uppercase()) }.getOrNull() }
-    }
+    val exerciseType = remember(template) { resolveExerciseType(template?.exerciseType) }
 
     citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen(
         navController = navController,
         exerciseType = exerciseType,
         exerciseTitle = template?.title
     )
+}
+
+private fun resolveExerciseType(rawType: String?): ExerciseType? {
+    val normalized = rawType?.trim()?.lowercase()?.replace(' ', '_') ?: return null
+    return when (normalized) {
+        "squat", "squats" -> ExerciseType.SQUAT
+        "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
+        "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
+        "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE
+        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises" -> ExerciseType.LYING_LEG_RAISE
+        else -> null
+    }
 }
 
 
