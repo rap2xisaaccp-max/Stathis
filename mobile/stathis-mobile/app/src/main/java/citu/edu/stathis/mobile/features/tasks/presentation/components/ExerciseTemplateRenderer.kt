@@ -654,6 +654,9 @@ private fun ExerciseControlsOverlay(
         val result: ExerciseResult = when (template.exerciseType.lowercase()) {
             "squat" -> exerciseDetector.analyzeSquat(pose)
             "pushup", "push-up" -> exerciseDetector.analyzePushup(pose)
+            "glute_bridge", "glute bridge" -> exerciseDetector.analyzeGluteBridge(pose)
+            "static_lunge", "static lunges" -> exerciseDetector.analyzeStaticLunge(pose)
+            "lying_leg_raise", "lying leg raises" -> exerciseDetector.analyzeLyingLegRaise(pose)
             else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
         }
         

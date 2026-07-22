@@ -16,6 +16,9 @@ class OnDeviceExerciseAnalyzer @Inject constructor() {
         val exerciseResult: ExerciseResult = when (exerciseType) {
             ExerciseType.SQUAT -> exerciseDetector.analyzeSquat(pose)
             ExerciseType.PUSHUP -> exerciseDetector.analyzePushup(pose)
+            ExerciseType.GLUTE_BRIDGE -> exerciseDetector.analyzeGluteBridge(pose)
+            ExerciseType.STATIC_LUNGE -> exerciseDetector.analyzeStaticLunge(pose)
+            ExerciseType.LYING_LEG_RAISE -> exerciseDetector.analyzeLyingLegRaise(pose)
         }
 
         return OnDeviceFeedback(

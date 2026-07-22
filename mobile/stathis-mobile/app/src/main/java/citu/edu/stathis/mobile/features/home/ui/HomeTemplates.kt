@@ -21,11 +21,11 @@ import androidx.navigation.NavHostController
 import citu.edu.stathis.mobile.core.learn.LearnPreferences
 import citu.edu.stathis.mobile.features.exercise.data.templates.ExerciseTemplate
 import citu.edu.stathis.mobile.features.exercise.data.templates.generateTemplatesForLevel
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.onboarding.domain.model.ExperienceLevel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
-import androidx.navigation.compose.rememberNavController
 
 // Note: LearnScreen and PracticeScreen are now defined in their own files:
 // - LearnScreen.kt (with classroom enrollment features)
@@ -136,7 +136,19 @@ fun PracticeExercisePreviewScreen(exerciseId: String, navController: NavHostCont
 
 @Composable
 fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostController) {
-    citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen(navController = rememberNavController())
+    val context = LocalContext.current
+    val learnPrefs = remember { LearnPreferences(context) }
+    val level by learnPrefs.levelFlow.collectAsState(initial = ExperienceLevel.BEGINNER)
+    val template = remember(level, exerciseId) { generateTemplatesForLevel(level).find { it.physicalId == exerciseId } }
+    val exerciseType = remember(template) {
+        template?.exerciseType?.let { runCatching { ExerciseType.valueOf(it.uppercase()) }.getOrNull() }
+    }
+
+    citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen(
+        navController = navController,
+        exerciseType = exerciseType,
+        exerciseTitle = template?.title
+    )
 }
 
 
