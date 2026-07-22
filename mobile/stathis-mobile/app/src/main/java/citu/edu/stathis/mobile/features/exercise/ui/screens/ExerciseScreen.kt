@@ -78,7 +78,9 @@ fun ExerciseScreen(
     enableVitalsIndicator: Boolean = false,
     enablePostureAnalysis: Boolean = true,
     exerciseType: ExerciseType? = null,
-    exerciseTitle: String? = null
+    exerciseTitle: String? = null,
+    showExerciseFeedbackOverlay: Boolean = true,
+    onExerciseFeedback: ((OnDeviceFeedback) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
     val context = LocalContext.current
@@ -190,6 +192,7 @@ fun ExerciseScreen(
                                     rotation = rot
                                     if (exerciseType != null) {
                                         exerciseFeedback = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                        onExerciseFeedback?.invoke(exerciseFeedback!!)
                                     }
                                     if (enablePostureAnalysis) {
                                         // Send to pose classification
@@ -526,7 +529,7 @@ fun ExerciseScreen(
             }
         }
 
-        if (exerciseFeedback != null && exerciseType != null) {
+        if (showExerciseFeedbackOverlay && exerciseFeedback != null && exerciseType != null) {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),

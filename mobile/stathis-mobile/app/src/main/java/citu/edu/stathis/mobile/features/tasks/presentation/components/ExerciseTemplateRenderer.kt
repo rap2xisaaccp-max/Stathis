@@ -41,6 +41,8 @@ import citu.edu.stathis.mobile.core.data.AuthTokenManager
 import kotlinx.coroutines.flow.firstOrNull
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseDetector
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseResult
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
+import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import com.google.mlkit.vision.pose.Pose
@@ -56,6 +58,7 @@ fun ExerciseTemplateRenderer(
     var isExerciseStarted by remember { mutableStateOf(false) }
     var isExerciseCompleted by remember { mutableStateOf(false) }
     var exercisePerformance by remember { mutableStateOf<ExercisePerformance?>(null) }
+    var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
     
     Box(
         modifier = modifier.fillMaxSize()
@@ -89,13 +92,18 @@ fun ExerciseTemplateRenderer(
             ExerciseScreen(
                 navController = rememberNavController(),
                 enableVitalsIndicator = false, // We'll show our own vitals indicator
-                enablePostureAnalysis = true
+                enablePostureAnalysis = true,
+                exerciseType = resolveExerciseType(template.exerciseType),
+                exerciseTitle = template.title,
+                showExerciseFeedbackOverlay = false,
+                onExerciseFeedback = { feedback -> latestExerciseFeedback = feedback }
             )
             
             // Overlay with exercise controls
             ExerciseControlsOverlay(
                 template = template,
                 classroomId = classroomId,
+                liveExerciseFeedback = latestExerciseFeedback,
                 onComplete = { performance ->
                     exercisePerformance = performance
                     isExerciseCompleted = true
@@ -630,6 +638,7 @@ private fun MinimalProgressIndicator(
 private fun ExerciseControlsOverlay(
     template: ExerciseTemplate,
     classroomId: String?,
+    liveExerciseFeedback: OnDeviceFeedback?,
     onComplete: (ExercisePerformance) -> Unit,
     onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -647,16 +656,26 @@ private fun ExerciseControlsOverlay(
     var exerciseConfidence by remember { mutableFloatStateOf(0f) }
     var exerciseFeedback by remember { mutableStateOf<List<String>>(emptyList()) }
     var latestPose by remember { mutableStateOf<Pose?>(null) }
+
+    LaunchedEffect(liveExerciseFeedback) {
+        liveExerciseFeedback?.let { feedback ->
+            currentReps = feedback.repCount
+            exerciseState = feedback.exerciseState
+            exerciseConfidence = feedback.confidence
+            exerciseFeedback = feedback.formIssues
+            currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
+        }
+    }
     
     // Function to handle pose detection
     val handlePoseDetection = remember(template.exerciseType) { { pose: Pose ->
         latestPose = pose
-        val result: ExerciseResult = when (template.exerciseType.lowercase()) {
-            "squat" -> exerciseDetector.analyzeSquat(pose)
-            "pushup", "push-up" -> exerciseDetector.analyzePushup(pose)
-            "glute_bridge", "glute bridge" -> exerciseDetector.analyzeGluteBridge(pose)
-            "static_lunge", "static lunges" -> exerciseDetector.analyzeStaticLunge(pose)
-            "lying_leg_raise", "lying leg raises" -> exerciseDetector.analyzeLyingLegRaise(pose)
+        val result: ExerciseResult = when (resolveExerciseType(template.exerciseType)) {
+            ExerciseType.SQUAT -> exerciseDetector.analyzeSquat(pose)
+            ExerciseType.PUSHUP -> exerciseDetector.analyzePushup(pose)
+            ExerciseType.GLUTE_BRIDGE -> exerciseDetector.analyzeGluteBridge(pose)
+            ExerciseType.STATIC_LUNGE -> exerciseDetector.analyzeStaticLunge(pose)
+            ExerciseType.LYING_LEG_RAISE -> exerciseDetector.analyzeLyingLegRaise(pose)
             else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
         }
         
@@ -1101,6 +1120,18 @@ private fun ExerciseControlsOverlay(
                 }
             }
         }
+    }
+}
+
+private fun resolveExerciseType(rawType: String): ExerciseType? {
+    val normalized = rawType.trim().lowercase().replace(' ', '_')
+    return when (normalized) {
+        "squat", "squats" -> ExerciseType.SQUAT
+        "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
+        "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
+        "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE
+        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises" -> ExerciseType.LYING_LEG_RAISE
+        else -> null
     }
 }
 
