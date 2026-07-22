@@ -61,6 +61,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.runtime.collectAsState
 import androidx.hilt.navigation.compose.hiltViewModel
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
+import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
+import citu.edu.stathis.mobile.features.exercise.data.analysis.OnDeviceExerciseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.data.posedetection.PoseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.recording.ScreenRecordService
 import citu.edu.stathis.mobile.features.exercise.ui.components.PoseSkeletonOverlayView
@@ -73,13 +76,17 @@ import java.util.concurrent.Executors
 fun ExerciseScreen(
     navController: NavHostController,
     enableVitalsIndicator: Boolean = false,
-    enablePostureAnalysis: Boolean = true
+    enablePostureAnalysis: Boolean = true,
+    exerciseType: ExerciseType? = null,
+    exerciseTitle: String? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val onDeviceExerciseAnalyzer = remember { OnDeviceExerciseAnalyzer() }
     
     val exerciseState by exerciseViewModel.uiState.collectAsState()
+    var exerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
 
     var latestPose by remember { mutableStateOf<Pose?>(null) }
     var frameWidth by remember { mutableStateOf(0) }
@@ -92,6 +99,11 @@ fun ExerciseScreen(
     var isRecording by remember { mutableStateOf(false) }
     var exposureRange by remember { mutableStateOf(IntRange(0, 0)) }
     var exposureIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(exerciseType) {
+        onDeviceExerciseAnalyzer.resetExerciseState()
+        exerciseFeedback = null
+    }
 
     val mediaProjectionManager = remember { context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager }
     var mediaProjection by remember { mutableStateOf<MediaProjection?>(null) }
@@ -176,6 +188,9 @@ fun ExerciseScreen(
                                     frameWidth = w
                                     frameHeight = h
                                     rotation = rot
+                                    if (exerciseType != null) {
+                                        exerciseFeedback = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                    }
                                     if (enablePostureAnalysis) {
                                         // Send to pose classification
                                         val poseLandmarks = (0 until 33).mapNotNull { idx ->
@@ -504,6 +519,41 @@ fun ExerciseScreen(
                                 text = "  ${className}: ${(prob * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (exerciseFeedback != null && exerciseType != null) {
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 12.dp)
+                    .navigationBarsPadding()
+                    .widthIn(max = 260.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = exerciseTitle ?: exerciseType.name.lowercase().replace('_', ' '),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Reps: ${exerciseFeedback?.repCount ?: 0}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!exerciseFeedback?.formIssues.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        exerciseFeedback?.formIssues?.forEach { message ->
+                            Text(
+                                text = "• $message",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }

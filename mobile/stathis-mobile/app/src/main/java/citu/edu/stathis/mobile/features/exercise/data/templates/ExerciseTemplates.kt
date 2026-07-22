@@ -35,6 +35,36 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
                 goalReps = 8,
                 goalTime = 90,
                 goalAccuracy = 85
+            ),
+            ExerciseTemplate(
+                physicalId = "EXERCISE-BEG-003",
+                title = "Glute Bridge",
+                description = "Strengthen your glutes and core with controlled bridges.",
+                exerciseType = "GLUTE_BRIDGE",
+                exerciseDifficulty = ExperienceLevel.BEGINNER,
+                goalReps = 10,
+                goalTime = 90,
+                goalAccuracy = 85
+            ),
+            ExerciseTemplate(
+                physicalId = "EXERCISE-BEG-004",
+                title = "Static Lunges",
+                description = "Build balance and leg strength with split stance lunges.",
+                exerciseType = "STATIC_LUNGE",
+                exerciseDifficulty = ExperienceLevel.BEGINNER,
+                goalReps = 10,
+                goalTime = 90,
+                goalAccuracy = 85
+            ),
+            ExerciseTemplate(
+                physicalId = "EXERCISE-BEG-005",
+                title = "Lying Leg Raises",
+                description = "Train your lower abs with slow, controlled leg raises.",
+                exerciseType = "LYING_LEG_RAISE",
+                exerciseDifficulty = ExperienceLevel.BEGINNER,
+                goalReps = 10,
+                goalTime = 90,
+                goalAccuracy = 85
             )
         )
         ExperienceLevel.INTERMEDIATE -> listOf(

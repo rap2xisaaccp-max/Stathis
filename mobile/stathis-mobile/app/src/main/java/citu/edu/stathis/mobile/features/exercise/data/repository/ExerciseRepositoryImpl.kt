@@ -133,6 +133,48 @@ class ExerciseRepositoryImpl @Inject constructor(
                 type = ExerciseType.SQUAT,
                 targetMuscles = listOf("Quadriceps", "Hamstrings", "Glutes", "Core"),
                 difficulty = "BEGINNER"
+            ),
+            Exercise(
+                id = "EXERCISE-BEG-003",
+                name = "Glute Bridge",
+                description = "A floor exercise that strengthens your glutes, hamstrings, and core",
+                instructions = listOf(
+                    "Lie on your back with knees bent and feet flat on the floor",
+                    "Drive through your heels and lift your hips up",
+                    "Squeeze your glutes at the top",
+                    "Lower your hips back down with control"
+                ),
+                type = ExerciseType.GLUTE_BRIDGE,
+                targetMuscles = listOf("Glutes", "Hamstrings", "Core"),
+                difficulty = "BEGINNER"
+            ),
+            Exercise(
+                id = "EXERCISE-BEG-004",
+                name = "Static Lunges",
+                description = "A split-stance lower body exercise for strength and balance",
+                instructions = listOf(
+                    "Step one foot forward and keep both feet planted",
+                    "Lower your back knee toward the floor",
+                    "Keep your torso upright and controlled",
+                    "Return to standing and repeat on the same side"
+                ),
+                type = ExerciseType.STATIC_LUNGE,
+                targetMuscles = listOf("Quads", "Glutes", "Hamstrings", "Core"),
+                difficulty = "BEGINNER"
+            ),
+            Exercise(
+                id = "EXERCISE-BEG-005",
+                name = "Lying Leg Raises",
+                description = "A core exercise that targets the lower abdominal muscles",
+                instructions = listOf(
+                    "Lie flat on your back with legs straight",
+                    "Lift both legs slowly without bending the knees",
+                    "Keep your lower back pressed into the floor",
+                    "Lower your legs with control"
+                ),
+                type = ExerciseType.LYING_LEG_RAISE,
+                targetMuscles = listOf("Lower Abs", "Hip Flexors", "Core"),
+                difficulty = "BEGINNER"
             )
         )
         return ClientResponse(
