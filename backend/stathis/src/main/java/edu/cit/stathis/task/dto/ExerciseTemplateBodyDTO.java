@@ -20,8 +20,8 @@ public class ExerciseTemplateBodyDTO {
     private String description;
 
     @NotBlank(message = "Exercise type is required")
-    @Pattern(regexp = "^(PUSH_UP|SIT_UP|JUMPING_JACK|TYPE1|TYPE2)$", 
-             message = "Invalid exercise type. Must be one of: PUSH_UP, SIT_UP, JUMPING_JACK, TYPE1, TYPE2")
+    @Pattern(regexp = "^(PUSH_UP|SQUATS|GLUTE_BRIDGE|LYING_LEG_RAISES|STATIC_LUNGES)$",
+             message = "Invalid exercise type. Must be one of: PUSH_UP, SQUATS, GLUTE_BRIDGE, LYING_LEG_RAISES, STATIC_LUNGES")
     private String exerciseType;
 
     @NotBlank(message = "Exercise difficulty is required")

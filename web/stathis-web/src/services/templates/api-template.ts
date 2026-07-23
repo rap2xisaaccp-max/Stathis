@@ -39,7 +39,7 @@ export interface QuizTemplateResponseDTO {
 export interface ExerciseTemplateBodyDTO {
   title: string; // required, minLength: 3, maxLength: 100
   description: string; // required, minLength: 0, maxLength: 500
-  exerciseType: 'PUSH_UP' | 'SQUATS'; // required - updated to match backend enum
+  exerciseType: 'PUSH_UP' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES'; // required - updated to match backend enum
   exerciseDifficulty: 'BEGINNER' | 'EXPERT'; // required - updated to match backend enum
   goalReps: string; // required, pattern: ^[0-9]+$
   goalAccuracy: string; // required, pattern: ^[0-9]+$
@@ -50,7 +50,7 @@ export interface ExerciseTemplateResponseDTO {
   physicalId: string;
   title: string;
   description: string;
-  exerciseType: 'PUSH_UP' | 'SQUATS'; // Note: API lists PUSH_UP and SQUATS as enum values
+  exerciseType: 'PUSH_UP' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES'; // Note: API enum values
   exerciseDifficulty: 'BEGINNER' | 'EXPERT'; // Note: API lists BEGINNER and EXPERT as enum values
   goalReps: number; // integer
   goalAccuracy: number; // integer
