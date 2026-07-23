@@ -161,4 +161,3 @@ private fun resolveExerciseType(rawType: String?): ExerciseType? {
     }
 }
 
-

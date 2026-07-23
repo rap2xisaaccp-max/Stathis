@@ -31,10 +31,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +62,7 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.compose.material3.ExperimentalMaterial3Api
 import cit.edu.stathis.mobile.R
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
@@ -150,11 +157,14 @@ private fun ProfileAvatar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val uiState = viewModel.state.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // Refresh when screen resumes to ensure latest profile after login
     DisposableEffect(lifecycleOwner) {
@@ -190,16 +200,30 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
             }
         }
     ) { innerPadding ->
-        Column(
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                scope.launch {
+                    isRefreshing = true
+                    viewModel.refresh()
+                    delay(400)
+                    isRefreshing = false
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                .padding(innerPadding)
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 80.dp) // Add bottom padding to prevent nav bar overlap
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(innerPadding)
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 80.dp) // Add bottom padding to prevent nav bar overlap
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             Spacer(modifier = Modifier.height(24.dp))
 
             // EMPTY STATE (no profile logged in)
@@ -382,7 +406,8 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
                 ) { Text("Log out", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold)) }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(32.dp))
+            }
         }
     }
 }

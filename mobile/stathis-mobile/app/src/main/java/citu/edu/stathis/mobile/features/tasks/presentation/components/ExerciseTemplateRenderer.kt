@@ -60,7 +60,7 @@ fun ExerciseTemplateRenderer(
     var isExerciseCompleted by remember { mutableStateOf(false) }
     var exercisePerformance by remember { mutableStateOf<ExercisePerformance?>(null) }
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
-    
+
     Box(
         modifier = modifier.fillMaxSize()
     ) {
@@ -75,7 +75,7 @@ fun ExerciseTemplateRenderer(
                     isCompleted = isExerciseCompleted,
                     modifier = Modifier.fillMaxWidth()
                 )
-                
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -99,7 +99,7 @@ fun ExerciseTemplateRenderer(
                 showExerciseFeedbackOverlay = false,
                 onExerciseFeedback = { feedback -> latestExerciseFeedback = feedback }
             )
-            
+
             // Overlay with exercise controls
             ExerciseControlsOverlay(
                 template = template,
@@ -163,9 +163,9 @@ private fun ExerciseHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             // Description
             Text(
                 text = template.description,
@@ -173,9 +173,9 @@ private fun ExerciseHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             // Exercise Type and Difficulty
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -194,7 +194,7 @@ private fun ExerciseHeader(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
-                
+
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
@@ -246,9 +246,9 @@ private fun ExerciseInstructions(
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Instructions Title
             Text(
                 text = "Exercise Instructions",
@@ -257,9 +257,9 @@ private fun ExerciseInstructions(
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Goals
             Card(
                 colors = CardDefaults.cardColors(
@@ -276,21 +276,21 @@ private fun ExerciseInstructions(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     GoalItem(
                         icon = Icons.Default.Repeat,
                         label = "Repetitions",
                         value = "${template.goalReps} reps"
                     )
-                    
+
                     GoalItem(
                         icon = Icons.Default.Timer,
                         label = "Time",
                         value = "${template.goalTime} seconds"
                     )
-                    
+
                     GoalItem(
                         icon = Icons.Default.GpsFixed,
                         label = "Accuracy",
@@ -298,9 +298,9 @@ private fun ExerciseInstructions(
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // Start Button
             Button(
                 onClick = onStart,
@@ -345,16 +345,16 @@ private fun GoalItem(
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.primary
         )
-        
+
         Spacer(modifier = Modifier.width(12.dp))
-        
+
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
-        
+
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
@@ -374,7 +374,7 @@ private fun ExerciseInProgress(
     var currentTime by remember { mutableIntStateOf(0) }
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
     var isTimerRunning by remember { mutableStateOf(false) }
-    
+
     // Simulate exercise progress (in real app, this would come from pose detection)
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
@@ -386,7 +386,7 @@ private fun ExerciseInProgress(
                     currentAccuracy = (70f + (currentReps * 2f)).coerceAtMost(95f) // Simulate improving accuracy
                 }
             }
-            
+
             // Exercise completed
             val performance = ExercisePerformance(
                 taskId = "",
@@ -403,7 +403,7 @@ private fun ExerciseInProgress(
             onComplete(performance)
         }
     }
-    
+
     Card(
         modifier = modifier
             .fillMaxSize()
@@ -427,9 +427,9 @@ private fun ExerciseInProgress(
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // Progress Indicators
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -441,14 +441,14 @@ private fun ExerciseInProgress(
                     goal = template.goalReps,
                     icon = Icons.Default.Repeat
                 )
-                
+
                 ProgressIndicator(
                     label = "Time",
                     current = currentTime,
                     goal = template.goalTime,
                     icon = Icons.Default.Timer
                 )
-                
+
                 ProgressIndicator(
                     label = "Accuracy",
                     current = currentAccuracy.toInt(),
@@ -456,9 +456,9 @@ private fun ExerciseInProgress(
                     icon = Icons.Default.GpsFixed
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(32.dp))
-            
+
             // Start/Stop Button
             Button(
                 onClick = { isTimerRunning = !isTimerRunning },
@@ -502,7 +502,7 @@ private fun ProgressIndicator(
         animationSpec = tween(300),
         label = "progress"
     )
-    
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -512,26 +512,26 @@ private fun ProgressIndicator(
             modifier = Modifier.size(32.dp),
             tint = MaterialTheme.colorScheme.primary
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         Spacer(modifier = Modifier.height(4.dp))
-        
+
         Text(
             text = "$current/$goal",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         LinearProgressIndicator(
             progress = animatedProgress,
             modifier = Modifier
@@ -557,7 +557,7 @@ private fun CompactProgressIndicator(
         animationSpec = tween(300),
         label = "progress"
     )
-    
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -567,18 +567,18 @@ private fun CompactProgressIndicator(
             modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.primary
         )
-        
+
         Spacer(modifier = Modifier.height(2.dp))
-        
+
         Text(
             text = "$current/$goal",
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
-        
+
         Spacer(modifier = Modifier.height(2.dp))
-        
+
         LinearProgressIndicator(
             progress = animatedProgress,
             modifier = Modifier
@@ -622,7 +622,7 @@ private fun MinimalProgressIndicator(
             modifier = Modifier.size(12.dp),
             tint = MaterialTheme.colorScheme.primary
         )
-        
+
         Text(
             text = "$current/$goal",
             style = MaterialTheme.typography.bodySmall,
@@ -633,7 +633,7 @@ private fun MinimalProgressIndicator(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        
+
         LinearProgressIndicator(
             progress = animatedProgress,
             modifier = Modifier
@@ -661,7 +661,7 @@ private fun ExerciseControlsOverlay(
     var isTimerRunning by remember { mutableStateOf(false) }
     var shouldRequestPermissions by remember { mutableStateOf(false) }
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
-    
+
     // Pose detection state
     val exerciseDetector = remember { ExerciseDetector() }
     var exerciseState by remember { mutableStateOf(ExerciseState.WAITING) }
@@ -678,7 +678,7 @@ private fun ExerciseControlsOverlay(
             currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
         }
     }
-    
+
     // Function to handle pose detection
     val handlePoseDetection = remember(template.exerciseType) { { pose: Pose ->
         latestPose = pose
@@ -690,39 +690,39 @@ private fun ExerciseControlsOverlay(
             ExerciseType.LYING_LEG_RAISE -> exerciseDetector.analyzeLyingLegRaise(pose)
             else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
         }
-        
+
         currentReps = result.repCount
         exerciseState = result.state
         exerciseConfidence = result.confidence ?: 0f
         exerciseFeedback = result.feedback
-        
+
         // Update accuracy based on confidence
         currentAccuracy = (exerciseConfidence * 100f).coerceAtMost(100f)
     } }
-    
+
     val healthConnectViewModel: HealthConnectViewModel = hiltViewModel()
     val connectionState by healthConnectViewModel.connectionState.collectAsState()
     val vitalSigns by healthConnectViewModel.vitalSigns.collectAsState()
-    
+
     // Get the exercise vitals monitoring service from the HealthConnectViewModel
     // Since ExerciseVitalsMonitoringService is not a ViewModel, we'll access it through the HealthConnectViewModel
     val exerciseVitalsMonitoringService = healthConnectViewModel.exerciseVitalsMonitoringService
     val isVitalsMonitoring by exerciseVitalsMonitoringService.isMonitoring.collectAsState()
     val vitalsPostingState by exerciseVitalsMonitoringService.postingState.collectAsState()
-    
+
     // Initialize HealthConnect when the overlay is first created
     LaunchedEffect(Unit) {
         healthConnectViewModel.connect()
         healthConnectViewModel.startMonitoring()
     }
-    
+
     // Get current user context through TaskViewModel
     val taskViewModel: TaskViewModel = hiltViewModel()
     val currentPhysicalId by taskViewModel.authTokenManager.physicalIdFlow.collectAsState(initial = null)
-    
+
     // Remember the classroom ID for use in LaunchedEffect
     val rememberedClassroomId = remember(classroomId) { classroomId }
-    
+
     // Health Connect permission launcher
     val requiredPermissions = remember {
         setOf(
@@ -733,7 +733,7 @@ private fun ExerciseControlsOverlay(
             HealthPermission.getReadPermission(RespiratoryRateRecord::class)
         )
     }
-    
+
     val permissionLauncher = rememberLauncherForActivityResult<Set<String>, Set<String>>(
         contract = PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions ->
@@ -745,7 +745,7 @@ private fun ExerciseControlsOverlay(
             healthConnectViewModel.disconnect()
         }
     }
-    
+
     // Handle permission request when needed
     LaunchedEffect(shouldRequestPermissions) {
         if (shouldRequestPermissions) {
@@ -754,7 +754,7 @@ private fun ExerciseControlsOverlay(
             shouldRequestPermissions = false
         }
     }
-    
+
     // Handle stopping with post-activity vitals
     LaunchedEffect(shouldStopWithPostActivity) {
         if (shouldStopWithPostActivity) {
@@ -771,7 +771,7 @@ private fun ExerciseControlsOverlay(
             shouldStopWithPostActivity = false
         }
     }
-    
+
     LaunchedEffect(isTimerRunning, rememberedClassroomId) {
         if (isTimerRunning) {
             // Start vitals monitoring when exercise starts
@@ -783,7 +783,7 @@ private fun ExerciseControlsOverlay(
                 } else {
                     Pair(rememberedClassroomId, null)
                 }
-                
+
                 exerciseVitalsMonitoringService.startMonitoring(
                     classroomId = actualClassroomId ?: "unknown_classroom", // Use decoded classroom ID
                     taskId = taskPhysicalId ?: template.physicalId, // Use decoded task physical ID (TASK-UUID), fallback to template
@@ -793,18 +793,18 @@ private fun ExerciseControlsOverlay(
                     scope = this
                 )
             }
-            
+
             // Reset exercise detector when starting
             exerciseDetector.resetExercise()
             currentReps = 0
             currentTime = 0
-            
+
             // Timer for exercise duration
             while (currentTime < template.goalTime && currentReps < template.goalReps) {
                 kotlinx.coroutines.delay(1000)
                 currentTime++
             }
-            
+
             // Stop vitals monitoring with post-activity vitals when exercise completes
             val fallbackVitals = VitalSigns(
                 userId = currentPhysicalId ?: "unknown_user",
@@ -816,7 +816,7 @@ private fun ExerciseControlsOverlay(
                 oxygenSaturation = 98.0f
             )
             exerciseVitalsMonitoringService.stopMonitoringWithPostActivity(vitalSigns ?: fallbackVitals)
-            
+
             // Exercise completed
             val performance = ExercisePerformance(
                 taskId = "",
@@ -836,7 +836,7 @@ private fun ExerciseControlsOverlay(
             exerciseVitalsMonitoringService.stopMonitoring()
         }
     }
-    
+
     Box(
         modifier = modifier.fillMaxSize()
     ) {
@@ -844,8 +844,9 @@ private fun ExerciseControlsOverlay(
         Card(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .fillMaxWidth(),
+                .padding(start = 8.dp, end = 8.dp, top = 88.dp)
+                .fillMaxWidth()
+                .widthIn(max = 420.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
             ),
@@ -865,7 +866,7 @@ private fun ExerciseControlsOverlay(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 // Progress indicators in a single row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -878,14 +879,14 @@ private fun ExerciseControlsOverlay(
                         goal = template.goalReps,
                         icon = Icons.Default.Repeat
                     )
-                    
+
                     MinimalProgressIndicator(
                         label = "T",
                         current = currentTime,
                         goal = template.goalTime,
                         icon = Icons.Default.Timer
                     )
-                    
+
                     MinimalProgressIndicator(
                         label = "A",
                         current = currentAccuracy.toInt(),
@@ -894,7 +895,7 @@ private fun ExerciseControlsOverlay(
                         animateProgress = false
                     )
                 }
-                
+
                 // Pose status
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -928,7 +929,7 @@ private fun ExerciseControlsOverlay(
                 }
             }
         }
-        
+
         // Prominent health monitoring indicator in top-right corner
         Card(
             modifier = Modifier
@@ -973,14 +974,14 @@ private fun ExerciseControlsOverlay(
                         )
                     }
                 }
-                
+
                 // Divider
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
                         .size(width = 1.dp, height = 20.dp)
                         .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                 )
-                
+
                 // Oxygen Saturation
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1012,7 +1013,7 @@ private fun ExerciseControlsOverlay(
                 }
             }
         }
-        
+
         // Improved control buttons at the bottom with better spacing
         Card(
             modifier = Modifier
@@ -1058,10 +1059,10 @@ private fun ExerciseControlsOverlay(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
-                
+
                 // Start/Stop Button
                 Button(
-                    onClick = { 
+                    onClick = {
                         if (!isTimerRunning) {
                             // Try to connect to Health Connect when starting exercise
                             when (connectionState) {
@@ -1081,7 +1082,7 @@ private fun ExerciseControlsOverlay(
                                 }
                             }
                         }
-                        isTimerRunning = !isTimerRunning 
+                        isTimerRunning = !isTimerRunning
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isTimerRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -1101,7 +1102,7 @@ private fun ExerciseControlsOverlay(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
-                
+
                 // Complete Button
                 Button(
                     onClick = {
@@ -1187,9 +1188,9 @@ private fun ExerciseResults(
                     MaterialTheme.colorScheme.error
                 }
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Result Title
             Text(
                 text = if (performance.isCompleted) "Exercise Completed!" else "Exercise Finished",
@@ -1198,9 +1199,9 @@ private fun ExerciseResults(
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             // Score
             Text(
                 text = "Score: ${performance.score}/100",
@@ -1208,9 +1209,9 @@ private fun ExerciseResults(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // Performance Details
             Card(
                 colors = CardDefaults.cardColors(
@@ -1227,16 +1228,16 @@ private fun ExerciseResults(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     PerformanceItem(
                         label = "Repetitions",
                         actual = performance.actualReps,
                         goal = performance.goalReps,
                         isGood = performance.actualReps >= performance.goalReps
                     )
-                    
+
                     PerformanceItem(
                         label = "Accuracy",
                         actual = performance.actualAccuracy.toInt(),
@@ -1244,7 +1245,7 @@ private fun ExerciseResults(
                         isGood = performance.actualAccuracy >= performance.goalAccuracy,
                         suffix = "%"
                     )
-                    
+
                     PerformanceItem(
                         label = "Time",
                         actual = performance.actualTime,
@@ -1254,9 +1255,9 @@ private fun ExerciseResults(
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // Retry Button
             Button(
                 onClick = onRetry,
@@ -1298,7 +1299,7 @@ private fun PerformanceItem(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1312,15 +1313,15 @@ private fun PerformanceItem(
                     MaterialTheme.colorScheme.error
                 }
             )
-            
+
             Text(
                 text = " / $goal$suffix",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            
+
             Spacer(modifier = Modifier.width(8.dp))
-            
+
             Icon(
                 imageVector = if (isGood) Icons.Default.Check else Icons.Default.Close,
                 contentDescription = if (isGood) "Goal achieved" else "Goal not achieved",
@@ -1346,6 +1347,6 @@ private fun calculateScore(
     val timeScore = if (actualTime <= template.goalTime) 20f else {
         (template.goalTime.toFloat() / actualTime * 20f).coerceAtLeast(0f)
     }
-    
+
     return (repsScore + accuracyScore + timeScore).toInt()
 }

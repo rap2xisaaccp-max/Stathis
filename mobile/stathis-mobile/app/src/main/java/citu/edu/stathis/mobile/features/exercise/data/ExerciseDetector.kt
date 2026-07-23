@@ -120,8 +120,8 @@ class ExerciseDetector {
         val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
         val leftElbow = pose.getPoseLandmark(PoseLandmark.LEFT_ELBOW)
         val rightElbow = pose.getPoseLandmark(PoseLandmark.RIGHT_ELBOW)
-         val leftWrist = pose.getPoseLandmark(PoseLandmark.LEFT_WRIST)
-         val rightWrist = pose.getPoseLandmark(PoseLandmark.RIGHT_WRIST)
+        val leftWrist = pose.getPoseLandmark(PoseLandmark.LEFT_WRIST)
+        val rightWrist = pose.getPoseLandmark(PoseLandmark.RIGHT_WRIST)
 
 
         if (leftShoulder == null || rightShoulder == null || leftElbow == null || rightElbow == null) {
@@ -333,7 +333,7 @@ class ExerciseDetector {
 
     private fun angle(first: PoseLandmark, center: PoseLandmark, second: PoseLandmark): Float {
         val radians = atan2(second.position.y - center.position.y, second.position.x - center.position.x) -
-            atan2(first.position.y - center.position.y, first.position.x - center.position.x)
+                atan2(first.position.y - center.position.y, first.position.x - center.position.x)
         val degrees = abs(Math.toDegrees(radians.toDouble())).toFloat()
         return if (degrees > 180f) 360f - degrees else degrees
     }

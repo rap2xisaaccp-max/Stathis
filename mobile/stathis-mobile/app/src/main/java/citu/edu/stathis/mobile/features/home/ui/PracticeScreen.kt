@@ -11,7 +11,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,8 +36,10 @@ import citu.edu.stathis.mobile.features.progress.data.model.ProgressActivity
 import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.classroom.data.model.Classroom
 import citu.edu.stathis.mobile.features.profile.ui.ProfileViewModel
+import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PracticeScreen(
     navController: NavHostController,
@@ -50,18 +54,33 @@ fun PracticeScreen(
     // val tasksState by viewModel.tasksState.collectAsState()
     val vitalsState by viewModel.vitalsState.collectAsState()
     val profileState by profileViewModel.state.collectAsState()
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         viewModel.initializeDashboard()
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            scope.launch {
+                isRefreshing = true
+                viewModel.refreshDashboard()
+                profileViewModel.refresh()
+                delay(400)
+                isRefreshing = false
+            }
+        },
+        modifier = Modifier.fillMaxSize()
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // Header with greeting and mascot
         item {
             val streakManager = androidx.hilt.navigation.compose.hiltViewModel<citu.edu.stathis.mobile.features.home.viewmodel.LearnViewModel>().streakManager
@@ -107,8 +126,9 @@ fun PracticeScreen(
         // Remove classrooms overview from Practice; moved to Learn
 
         // Bottom padding for navigation bar
-        item {
-            Spacer(modifier = Modifier.height(80.dp))
+            item {
+                Spacer(modifier = Modifier.height(80.dp))
+            }
         }
     }
 }
