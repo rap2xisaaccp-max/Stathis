@@ -13,7 +13,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,7 +36,9 @@ import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.Classro
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.EnrollmentState
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomsState
 import citu.edu.stathis.mobile.features.tasks.navigation.navigateToTaskList
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LearnScreen(
     navController: NavHostController,
@@ -56,6 +60,8 @@ fun LearnScreen(
 
     var enrollDialog by remember { mutableStateOf(false) }
     var classroomCode by remember { mutableStateOf("") }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // Handle enrollment state changes
     LaunchedEffect(enrollmentState) {
@@ -81,12 +87,25 @@ fun LearnScreen(
             .fillMaxSize()
             .background(surfaceColor)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 100.dp) // Ensure content scrolls above nav bar
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                scope.launch {
+                    isRefreshing = true
+                    viewModel.loadStudentClassrooms()
+                    dashboardViewModel.refreshDashboard()
+                    delay(400)
+                    isRefreshing = false
+                }
+            },
+            modifier = Modifier.fillMaxSize()
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 100.dp) // Ensure content scrolls above nav bar
+            ) {
     // Streak Header and Join Class
     val streakManager = androidx.hilt.navigation.compose.hiltViewModel<citu.edu.stathis.mobile.features.home.viewmodel.LearnViewModel>().streakManager
     val streak by streakManager.streak.collectAsState()
@@ -227,6 +246,7 @@ fun LearnScreen(
                         onEnrollClick = { enrollDialog = true }
                     )
                 }
+            }
             }
         }
         
