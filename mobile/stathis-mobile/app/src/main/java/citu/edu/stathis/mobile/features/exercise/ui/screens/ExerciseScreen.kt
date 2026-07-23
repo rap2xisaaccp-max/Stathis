@@ -472,7 +472,7 @@ fun ExerciseScreen(
                 .zip(exerciseState.classNames)
                 .map { (probability, className) -> className to probability.coerceIn(0f, 1f) }
                 .sortedByDescending { it.second }
-                .take(6)
+                .take(3)
         }
 
         if (exerciseState.predictedClass.isNotEmpty() || probabilityRows.isNotEmpty()) {
@@ -482,12 +482,12 @@ fun ExerciseScreen(
                 tonalElevation = 4.dp,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 80.dp)
+                    .padding(start = 10.dp, bottom = 72.dp)
                     .navigationBarsPadding()
-                    .widthIn(max = 340.dp)
+                    .widthIn(max = 260.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
                     Text(
                         text = exerciseTitle ?: exerciseType?.name?.lowercase()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Exercise",
@@ -512,14 +512,14 @@ fun ExerciseScreen(
                     }
 
                     if (probabilityRows.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Top probabilities",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = "Top 3",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         probabilityRows.forEach { (className, probability) ->
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -538,10 +538,10 @@ fun ExerciseScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             LinearProgressIndicator(
                                 progress = { probability.coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                modifier = Modifier.fillMaxWidth().height(4.dp),
                                 color = MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )

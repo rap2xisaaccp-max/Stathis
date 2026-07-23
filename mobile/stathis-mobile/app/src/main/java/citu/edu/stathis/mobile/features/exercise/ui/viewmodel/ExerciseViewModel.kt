@@ -98,12 +98,12 @@ class ExerciseViewModel @Inject constructor(
 
         supportedLabels.forEach { label ->
             val backendValue = normalizedBackendEntries[label] ?: normalizedBackendEntries[canonicalExerciseLabel(label)] ?: 0f
-            val heuristicWeight = when (label) {
-                targetLabel -> 0.55f + localScore * 0.25f
-                "Rest" -> if (targetLabel == "Rest") 0.45f + localScore * 0.15f else 0.12f + (1f - localScore) * 0.22f
-                else -> 0.04f + backendValue * 0.18f
+            val labelScore = when (label) {
+                targetLabel -> 0.40f + localScore * 0.45f + backendValue * 0.20f
+                "Rest" -> if (targetLabel == "Rest") 0.35f + localScore * 0.30f else 0.14f + (1f - localScore) * 0.22f + backendValue * 0.10f
+                else -> 0.05f + backendValue * 0.25f + if (label == "Squat" && targetLabel == "Push-up") 0.04f else 0f
             }
-            mergedEntries[label] = heuristicWeight + backendValue * 0.3f
+            mergedEntries[label] = labelScore.coerceIn(0f, 1f)
         }
 
         val total = mergedEntries.values.sum().coerceAtLeast(1f)
