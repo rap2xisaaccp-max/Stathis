@@ -59,7 +59,9 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
@@ -206,7 +208,11 @@ fun ExerciseScreen(
                                             )
                                         }
                                         if (poseLandmarks.size == 33) {
-                                            exerciseViewModel.onFrame(poseLandmarks)
+                                            exerciseViewModel.onFrame(
+                                                landmarks = poseLandmarks,
+                                                targetExerciseType = exerciseType,
+                                                localConfidence = exerciseFeedback?.confidence
+                                            )
                                         }
                                     }
                                 },
@@ -455,37 +461,95 @@ fun ExerciseScreen(
         }
 
         // Pose classification results overlay
-        if (exerciseState.predictedClass.isNotEmpty()) {
+        val probabilityRows = remember(
+            exerciseState.probabilities,
+            exerciseState.classNames,
+            exerciseType,
+            exerciseState.predictedClass,
+            exerciseFeedback?.confidence
+        ) {
+            exerciseState.probabilities
+                .zip(exerciseState.classNames)
+                .map { (probability, className) -> className to probability.coerceIn(0f, 1f) }
+                .sortedByDescending { it.second }
+                .take(6)
+        }
+
+        if (exerciseState.predictedClass.isNotEmpty() || probabilityRows.isNotEmpty()) {
             Surface(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                tonalElevation = 4.dp,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = 12.dp, bottom = 80.dp)
                     .navigationBarsPadding()
-                    .widthIn(max = 320.dp)
+                    .widthIn(max = 340.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp)
                 ) {
-                    // Main classification result
                     Text(
-                        text = "Pose: ${exerciseState.predictedClass}",
+                        text = exerciseTitle ?: exerciseType?.name?.lowercase()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Exercise",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Detected: ${exerciseState.predictedClass.ifBlank { "Analyzing…" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (exerciseState.score > 0) {
                         Text(
                             text = "Confidence: ${(exerciseState.score * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
 
-                    // Show all messages
+                    if (probabilityRows.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Top probabilities",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        probabilityRows.forEach { (className, probability) ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = className,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "${(probability * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { probability.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        }
+                    }
+
                     if (exerciseState.messages.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         exerciseState.messages.forEach { message ->
                             Text(
                                 text = "• $message",
@@ -495,35 +559,13 @@ fun ExerciseScreen(
                         }
                     }
 
-                    // Show flags if any
                     if (exerciseState.flags.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Flags: ${exerciseState.flags.joinToString(", ")}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
-                    }
-
-                    // Show top probabilities if available
-                    if (exerciseState.probabilities.isNotEmpty() && exerciseState.classNames.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Top probabilities:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        val topResults = exerciseState.probabilities
-                            .zip(exerciseState.classNames)
-                            .sortedByDescending { it.first }
-                            .take(3)
-                        topResults.forEach { (prob, className) ->
-                            Text(
-                                text = "  ${className}: ${(prob * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
             }
