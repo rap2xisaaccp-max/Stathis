@@ -685,6 +685,7 @@ private fun ExerciseControlsOverlay(
         val result: ExerciseResult = when (resolveExerciseType(template.exerciseType)) {
             ExerciseType.SQUAT -> exerciseDetector.analyzeSquat(pose)
             ExerciseType.PUSHUP -> exerciseDetector.analyzePushup(pose)
+            ExerciseType.SIT_UP -> exerciseDetector.analyzeSitup(pose)
             ExerciseType.GLUTE_BRIDGE -> exerciseDetector.analyzeGluteBridge(pose)
             ExerciseType.STATIC_LUNGE -> exerciseDetector.analyzeStaticLunge(pose)
             ExerciseType.LYING_LEG_RAISE -> exerciseDetector.analyzeLyingLegRaise(pose)
@@ -1147,6 +1148,7 @@ private fun resolveExerciseType(rawType: String): ExerciseType? {
     val normalized = rawType.trim().lowercase().replace(' ', '_')
     return when (normalized) {
         "squat", "squats" -> ExerciseType.SQUAT
+        "sit_up", "sit_ups", "situp", "situps", "crunch", "crunches" -> ExerciseType.SIT_UP
         "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
         "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
         "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE

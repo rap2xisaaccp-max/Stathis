@@ -88,6 +88,7 @@ class ExerciseViewModel @Inject constructor(
             "Rest",
             "Push-up",
             "Squat",
+            "Sit-up",
             "Glute Bridge",
             "Static Lunge",
             "Lying Leg Raise"
@@ -123,6 +124,7 @@ class ExerciseViewModel @Inject constructor(
     private fun ExerciseType.toDisplayName(): String = when (this) {
         ExerciseType.PUSHUP -> "Push-up"
         ExerciseType.SQUAT -> "Squat"
+        ExerciseType.SIT_UP -> "Sit-up"
         ExerciseType.GLUTE_BRIDGE -> "Glute Bridge"
         ExerciseType.STATIC_LUNGE -> "Static Lunge"
         ExerciseType.LYING_LEG_RAISE -> "Lying Leg Raise"
@@ -134,6 +136,7 @@ class ExerciseViewModel @Inject constructor(
             "rest", "idle", "standing", "neutral" -> "Rest"
             "push_up", "pushup", "push_ups", "pushups", "wall_pushup", "wall_pushups" -> "Push-up"
             "squat", "squats" -> "Squat"
+            "sit_up", "sit_ups", "situp", "situps", "crunch", "crunches" -> "Sit-up"
             "glute_bridge", "glute_bridges", "bridge" -> "Glute Bridge"
             "static_lunge", "static_lunges", "lunge", "lunges" -> "Static Lunge"
             "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises" -> "Lying Leg Raise"
@@ -151,5 +154,4 @@ class ExerciseViewModel @Inject constructor(
         val messages: List<String> = emptyList()
     )
 }
-
 
