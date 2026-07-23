@@ -86,7 +86,7 @@ fun ExerciseScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val onDeviceExerciseAnalyzer = remember { OnDeviceExerciseAnalyzer() }
-    
+
     val exerciseState by exerciseViewModel.uiState.collectAsState()
     var exerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
 
@@ -359,7 +359,7 @@ fun ExerciseScreen(
                 .width(64.dp)
                 .align(Alignment.CenterEnd)
                 .padding(
-                    end = 8.dp, 
+                    end = 8.dp,
                     top = if (enableVitalsIndicator) 160.dp else 0.dp,
                     bottom = 16.dp
                 )
@@ -461,9 +461,9 @@ fun ExerciseScreen(
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 12.dp)
+                    .padding(start = 12.dp, bottom = 80.dp)
                     .navigationBarsPadding()
-                    .widthIn(max = 300.dp)
+                    .widthIn(max = 320.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp)
@@ -474,7 +474,7 @@ fun ExerciseScreen(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    
+
                     if (exerciseState.score > 0) {
                         Text(
                             text = "Confidence: ${(exerciseState.score * 100).toInt()}%",
@@ -482,7 +482,7 @@ fun ExerciseScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    
+
                     // Show all messages
                     if (exerciseState.messages.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -494,7 +494,7 @@ fun ExerciseScreen(
                             )
                         }
                     }
-                    
+
                     // Show flags if any
                     if (exerciseState.flags.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -504,7 +504,7 @@ fun ExerciseScreen(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
-                    
+
                     // Show top probabilities if available
                     if (exerciseState.probabilities.isNotEmpty() && exerciseState.classNames.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -535,9 +535,9 @@ fun ExerciseScreen(
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 12.dp, bottom = 12.dp)
+                    .padding(end = 12.dp, bottom = 120.dp)
                     .navigationBarsPadding()
-                    .widthIn(max = 260.dp)
+                    .widthIn(max = 300.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
@@ -565,5 +565,4 @@ fun ExerciseScreen(
         }
     }
 }
-
 
