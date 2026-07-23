@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, use } from 'react';
+import React, { useState, useEffect, useMemo, use } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
@@ -11,11 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getClassroomStudents, StudentDTO } from "@/services/api-classroom";
 import { getClassroomById, deleteClassroom, activateClassroom, deactivateClassroom, verifyClassroomStudent } from '@/services/api-classroom-client';
 import { getClassroomTasks, TaskResponseDTO } from '@/services/tasks/api-task-client';
+import { getTaskScores, ScoreResponseDTO } from '@/services/scores/api-score-client';
 import { getCurrentUserEmail, getCurrentUserRole } from '@/lib/utils/jwt';
 import { signOut } from '@/services/api-auth-client';
 import { TemplateCreationTab } from '@/components/templates/template-creation-tab';
@@ -45,6 +46,19 @@ interface StatCardProps {
   description: string | React.ReactNode;
   icon: React.ReactNode;
   className?: string;
+}
+
+interface StudentTaskWorkflowRow {
+  student: StudentDTO;
+  totalTasks: number;
+  notStartedTasks: number;
+  pendingTasks: number;
+  completedTasks: number;
+  gradedTasks: number;
+  submittedTasks: number;
+  finishedTasks: number;
+  completionRate: number;
+  averageScore: number | null;
 }
 
 const StatCard = ({ title, value, description, icon, className = '' }: StatCardProps) => (
@@ -314,6 +328,107 @@ export default function ClassroomDetailPage() {
     enabled: !!physicalId,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
+
+  // Fetch task scores per task so the Students tab can show task workflow/scoring.
+  const taskScoreQueries = useQueries({
+    queries: userRole === 'TEACHER' && tasks
+      ? tasks.map((task) => ({
+          queryKey: ['task-scores', task.physicalId],
+          queryFn: () => getTaskScores(task.physicalId),
+          enabled: !!task.physicalId,
+          staleTime: 1000 * 60 * 5,
+        }))
+      : [],
+  });
+
+  const isLoadingTaskScores = taskScoreQueries.some((query) => query.isLoading);
+
+  const taskScoresByTaskId = useMemo(() => {
+    const scoreMap = new Map<string, ScoreResponseDTO[]>();
+    if (!tasks) return scoreMap;
+    tasks.forEach((task, index) => {
+      scoreMap.set(task.physicalId, (taskScoreQueries[index]?.data as ScoreResponseDTO[] | undefined) || []);
+    });
+    return scoreMap;
+  }, [tasks, taskScoreQueries]);
+
+  const studentTaskRows: StudentTaskWorkflowRow[] = useMemo(() => {
+    if (!students?.students || !tasks) return [];
+
+    const normalize = (value: string | undefined) => (value || '').trim().toLowerCase();
+
+    return students.students.map((student: StudentDTO) => {
+      let pendingTasks = 0;
+      let completedTasks = 0;
+      let gradedTasks = 0;
+      let notStartedTasks = 0;
+      const scorePercentages: number[] = [];
+
+      tasks.forEach((task) => {
+        const taskScores = taskScoresByTaskId.get(task.physicalId) || [];
+        const studentScores = taskScores.filter((score) => {
+          const normalizedStudentId = normalize(score.studentId);
+          return normalizedStudentId === normalize(student.physicalId) || normalizedStudentId === normalize(student.email);
+        });
+
+        if (studentScores.length === 0) {
+          notStartedTasks++;
+          return;
+        }
+
+        const latestScore = studentScores.reduce<ScoreResponseDTO | null>((latest, current) => {
+          if (!latest) return current;
+          const currentDate = Date.parse(current.submissionDate || '');
+          const latestDate = Date.parse(latest.submissionDate || '');
+          if (Number.isNaN(currentDate) || Number.isNaN(latestDate)) {
+            return (current.attempts || 0) >= (latest.attempts || 0) ? current : latest;
+          }
+          return currentDate >= latestDate ? current : latest;
+        }, null);
+
+        if (!latestScore) return;
+
+        if (latestScore.maxScore > 0) {
+          scorePercentages.push((latestScore.score / latestScore.maxScore) * 100);
+        }
+
+        switch (latestScore.status) {
+          case 'PENDING':
+            pendingTasks++;
+            break;
+          case 'COMPLETED':
+            completedTasks++;
+            break;
+          case 'GRADED':
+            gradedTasks++;
+            break;
+          default:
+            pendingTasks++;
+        }
+      });
+
+      const totalTasks = tasks.length;
+      const submittedTasks = totalTasks - notStartedTasks;
+      const finishedTasks = completedTasks + gradedTasks;
+      const completionRate = totalTasks > 0 ? Math.round((finishedTasks / totalTasks) * 100) : 0;
+      const averageScore = scorePercentages.length > 0
+        ? scorePercentages.reduce((sum, score) => sum + score, 0) / scorePercentages.length
+        : null;
+
+      return {
+        student,
+        totalTasks,
+        notStartedTasks,
+        pendingTasks,
+        completedTasks,
+        gradedTasks,
+        submittedTasks,
+        finishedTasks,
+        completionRate,
+        averageScore,
+      };
+    });
+  }, [students, tasks, taskScoresByTaskId]);
 
   // Render basic layout for error and loading states
   const renderErrorOrLoadingState = (content: React.ReactNode) => (
@@ -828,6 +943,125 @@ export default function ClassroomDetailPage() {
                                 ))}
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+              >
+                <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl shadow-lg hover:shadow-xl transition-all duration-300">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-3">
+                      <div className="p-2 rounded-full bg-primary/10">
+                        <ClipboardCheck className="h-5 w-5 text-primary" />
+                      </div>
+                      Student Task Management
+                    </CardTitle>
+                    <CardDescription>
+                      Track each student's task workflow and score progress across classroom tasks
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isLoadingTasks || (userRole === 'TEACHER' && isLoadingTaskScores) ? (
+                      <div className="flex justify-center py-8">
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                          <span className="text-sm text-muted-foreground">Loading task management board...</span>
+                        </div>
+                      </div>
+                    ) : !tasks || tasks.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground font-medium">No classroom tasks yet.</p>
+                        <Button onClick={() => setActiveTab('tasks')} className="mt-4">
+                          <PlusCircle className="h-4 w-4 mr-2" />
+                          Create a Task
+                        </Button>
+                      </div>
+                    ) : userRole !== 'TEACHER' ? (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground font-medium">
+                          Task workflow and scoring management is available for teachers.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <Card className="border-border/40 bg-background/40">
+                            <CardContent className="pt-6">
+                              <p className="text-sm text-muted-foreground">Students Tracked</p>
+                              <p className="text-2xl font-bold mt-1">{studentTaskRows.length}</p>
+                            </CardContent>
+                          </Card>
+                          <Card className="border-border/40 bg-background/40">
+                            <CardContent className="pt-6">
+                              <p className="text-sm text-muted-foreground">Average Completion</p>
+                              <p className="text-2xl font-bold mt-1">
+                                {studentTaskRows.length > 0
+                                ? `${Math.round(studentTaskRows.reduce((sum: number, row: StudentTaskWorkflowRow) => sum + row.completionRate, 0) / studentTaskRows.length)}%`
+                                  : '0%'}
+                              </p>
+                            </CardContent>
+                          </Card>
+                          <Card className="border-border/40 bg-background/40">
+                            <CardContent className="pt-6">
+                              <p className="text-sm text-muted-foreground">Pending Reviews</p>
+                              <p className="text-2xl font-bold mt-1">
+                                {studentTaskRows.reduce((sum: number, row: StudentTaskWorkflowRow) => sum + row.pendingTasks, 0)}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        <div className="rounded-xl border border-border/50 bg-card/50 divide-y">
+                          {studentTaskRows.map((row: StudentTaskWorkflowRow) => (
+                            <div key={row.student.physicalId} className="p-4 hover:bg-primary/5 transition-colors duration-200">
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                                <div>
+                                  <p className="font-medium">{row.student.firstName} {row.student.lastName}</p>
+                                  <p className="text-sm text-muted-foreground">{row.student.email}</p>
+                                </div>
+
+                                <div className="w-full lg:w-72 space-y-2">
+                                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                    <span>Task Completion</span>
+                                    <span>{row.finishedTasks}/{row.totalTasks}</span>
+                                  </div>
+                                  <Progress value={row.completionRate} className="h-2" />
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                                    Submitted: {row.submittedTasks}
+                                  </Badge>
+                                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                                    Graded: {row.gradedTasks}
+                                  </Badge>
+                                  <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+                                    Pending: {row.pendingTasks}
+                                  </Badge>
+                                  <Badge variant="outline" className="bg-muted text-muted-foreground">
+                                    Not started: {row.notStartedTasks}
+                                  </Badge>
+                                  <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                    Avg Score: {row.averageScore !== null ? `${row.averageScore.toFixed(1)}%` : 'N/A'}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex justify-end">
+                          <Button variant="outline" onClick={() => setActiveTab('scores')}>
+                            <Award className="h-4 w-4 mr-2" />
+                            Open Detailed Scoring
+                          </Button>
                         </div>
                       </div>
                     )}
