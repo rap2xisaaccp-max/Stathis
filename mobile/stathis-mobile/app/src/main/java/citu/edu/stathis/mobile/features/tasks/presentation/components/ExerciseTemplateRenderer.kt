@@ -610,9 +610,9 @@ private fun MinimalProgressIndicator(
     } else {
         progress
     }
-
+    
     Row(
-        modifier = modifier.widthIn(min = 84.dp, max = 104.dp),
+        modifier = modifier.width(76.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -628,16 +628,16 @@ private fun MinimalProgressIndicator(
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(42.dp),
+            modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center,
             maxLines = 1,
-            overflow = TextOverflow.Clip
+            overflow = TextOverflow.Ellipsis
         )
 
         LinearProgressIndicator(
             progress = animatedProgress,
             modifier = Modifier
-                .width(24.dp)
+                .weight(1f)
                 .height(3.dp)
                 .clip(RoundedCornerShape(1.5.dp)),
             color = MaterialTheme.colorScheme.primary,
@@ -933,8 +933,8 @@ private fun ExerciseControlsOverlay(
         // Prominent health monitoring indicator in top-right corner
         Card(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 8.dp, top = 168.dp),
+                .align(Alignment.TopEnd)
+                .padding(top = 104.dp, end = 8.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
             ),
