@@ -24,8 +24,6 @@ class ExerciseDetector {
     private var pushupState: ExerciseState = ExerciseState.WAITING
     private var pushupRepCount: Int = 0
     private var pushupInDownPosition: Boolean = false
-    private val pushupVerticalMovementThresholdFactor = 0.15f
-    private var initialShoulderYPushup: Float? = null
 
     // --- Glute bridge ---
     private var gluteBridgeState: ExerciseState = ExerciseState.WAITING
@@ -41,6 +39,11 @@ class ExerciseDetector {
     private var lyingLegRaiseState: ExerciseState = ExerciseState.WAITING
     private var lyingLegRaiseRepCount: Int = 0
     private var lyingLegRaiseInUpPosition: Boolean = false
+
+    // --- Sit-up ---
+    private var situpState: ExerciseState = ExerciseState.WAITING
+    private var situpRepCount: Int = 0
+    private var situpInUpPosition: Boolean = false
 
 
     fun analyzeSquat(pose: Pose): ExerciseResult {
@@ -70,6 +73,7 @@ class ExerciseDetector {
         val avgAnkleY = (leftAnkle.position.y + rightAnkle.position.y) / 2f
         val bodyHeightEstimate = abs(avgShoulderY - avgAnkleY)
         val hipAngle = averageAngle(leftShoulder, leftHip, leftKnee, rightShoulder, rightHip, rightKnee)
+        val avgKneeAngle = (angle(leftHip, leftKnee, leftAnkle) + angle(rightHip, rightKnee, rightAnkle)) / 2f
         val squatDownThreshold = bodyHeightEstimate * squatHipKneeVerticalThresholdFactor
         val squatStandThreshold = bodyHeightEstimate * squatMovementThreshold
 
@@ -81,7 +85,7 @@ class ExerciseDetector {
 
         when (squatState) {
             ExerciseState.WAITING, ExerciseState.UP -> {
-                if (avgHipY > avgKneeY + squatDownThreshold && hipAngle <= 140f) {
+                if ((avgHipY > avgKneeY + squatDownThreshold && hipAngle <= 145f) || avgKneeAngle <= 115f) {
                     squatState = ExerciseState.DOWN
                     squatInDownPosition = true
                 } else {
@@ -90,8 +94,8 @@ class ExerciseDetector {
             }
             ExerciseState.DOWN -> {
                 val completedRep = squatStandingHipY?.let { standingHipY ->
-                    avgHipY <= standingHipY + squatStandThreshold && hipAngle >= 150f
-                } == true
+                    avgHipY <= standingHipY + squatStandThreshold && (hipAngle >= 150f || avgKneeAngle >= 160f)
+                } == true || avgKneeAngle >= 160f
 
                 if (completedRep) {
                     squatState = ExerciseState.UP
@@ -124,57 +128,86 @@ class ExerciseDetector {
         val rightWrist = pose.getPoseLandmark(PoseLandmark.RIGHT_WRIST)
 
 
-        if (leftShoulder == null || rightShoulder == null || leftElbow == null || rightElbow == null) {
-            feedback.add("Ensure shoulders and elbows are visible.")
+        if (leftShoulder == null || rightShoulder == null || leftElbow == null || rightElbow == null || leftWrist == null || rightWrist == null) {
+            feedback.add("Ensure shoulders, elbows, and wrists are visible.")
             resetPushupStateInternals()
-            initialShoulderYPushup = null
             return ExerciseResult(ExerciseState.INVALID, feedback, repCount = pushupRepCount)
         }
 
-        val avgShoulderY = (leftShoulder.position.y + rightShoulder.position.y) / 2f
-
-        if (initialShoulderYPushup == null && (pushupState == ExerciseState.WAITING || pushupState == ExerciseState.UP)) {
-            initialShoulderYPushup = avgShoulderY
-        }
-
+        val avgElbowAngle = (angle(leftShoulder, leftElbow, leftWrist) + angle(rightShoulder, rightElbow, rightWrist)) / 2f
 
         when (pushupState) {
             ExerciseState.WAITING, ExerciseState.UP -> {
-                initialShoulderYPushup?.let { initialY ->
-
-                    if (avgShoulderY > initialY + (abs(initialY) * pushupVerticalMovementThresholdFactor)) {
-                        pushupState = ExerciseState.DOWN
-                        pushupInDownPosition = true
-                    } else {
-                        pushupState = ExerciseState.UP
-                    }
+                if (avgElbowAngle <= 95f) {
+                    pushupState = ExerciseState.DOWN
+                    pushupInDownPosition = true
+                } else {
+                    pushupState = ExerciseState.UP
                 }
-                if (initialShoulderYPushup == null) pushupState = ExerciseState.WAITING
-
             }
             ExerciseState.DOWN -> {
-                initialShoulderYPushup?.let { initialY ->
-                    if (avgShoulderY <= initialY + (abs(initialY) * pushupVerticalMovementThresholdFactor * 0.5f)) {
-                        pushupState = ExerciseState.UP
-                        if (pushupInDownPosition) {
-                            pushupRepCount++
-                            repCompletedThisFrame = true
-                        }
-                        pushupInDownPosition = false
-//                         initialShoulderYPushup = null
-                        initialShoulderYPushup = avgShoulderY
+                if (avgElbowAngle >= 155f) {
+                    pushupState = ExerciseState.UP
+                    if (pushupInDownPosition) {
+                        pushupRepCount++
+                        repCompletedThisFrame = true
                     }
+                    pushupInDownPosition = false
                 }
             }
             ExerciseState.INVALID -> {
                 pushupState = ExerciseState.WAITING
-                initialShoulderYPushup = null
             }
         }
 
-        val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftElbow.inFrameLikelihood + rightElbow.inFrameLikelihood) / 4f
+        val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftElbow.inFrameLikelihood + rightElbow.inFrameLikelihood + leftWrist.inFrameLikelihood + rightWrist.inFrameLikelihood) / 6f
 
         return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount)
+    }
+
+    fun analyzeSitup(pose: Pose): ExerciseResult {
+        val feedback = mutableListOf<String>()
+        var repCompletedThisFrame = false
+
+        val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
+        val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
+        val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
+        val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
+        val leftKnee = pose.getPoseLandmark(PoseLandmark.LEFT_KNEE)
+        val rightKnee = pose.getPoseLandmark(PoseLandmark.RIGHT_KNEE)
+
+        if (leftShoulder == null || rightShoulder == null || leftHip == null || rightHip == null || leftKnee == null || rightKnee == null) {
+            feedback.add("Keep shoulders, hips, and knees visible.")
+            resetSitupStateInternals()
+            return ExerciseResult(ExerciseState.INVALID, feedback, repCount = situpRepCount)
+        }
+
+        val torsoAngle = averageAngle(leftShoulder, leftHip, leftKnee, rightShoulder, rightHip, rightKnee)
+
+        when (situpState) {
+            ExerciseState.WAITING, ExerciseState.UP -> {
+                if (torsoAngle <= 115f) {
+                    situpState = ExerciseState.DOWN
+                    situpInUpPosition = true
+                } else {
+                    situpState = ExerciseState.UP
+                }
+            }
+            ExerciseState.DOWN -> {
+                if (torsoAngle >= 145f) {
+                    situpState = ExerciseState.UP
+                    if (situpInUpPosition) {
+                        situpRepCount++
+                        repCompletedThisFrame = true
+                    }
+                    situpInUpPosition = false
+                }
+            }
+            ExerciseState.INVALID -> situpState = ExerciseState.WAITING
+        }
+
+        val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 6f
+        return ExerciseResult(situpState, feedback, repCompletedThisFrame, confidence, situpRepCount)
     }
 
     fun analyzeGluteBridge(pose: Pose): ExerciseResult {
@@ -358,7 +391,6 @@ class ExerciseDetector {
     private fun resetPushupStateInternals() {
         pushupState = ExerciseState.WAITING
         pushupInDownPosition = false
-        initialShoulderYPushup = null
     }
 
     private fun resetGluteBridgeStateInternals() {
@@ -376,6 +408,11 @@ class ExerciseDetector {
         lyingLegRaiseInUpPosition = false
     }
 
+    private fun resetSitupStateInternals() {
+        situpState = ExerciseState.WAITING
+        situpInUpPosition = false
+    }
+
 
     fun resetExercise() {
         squatState = ExerciseState.WAITING
@@ -386,7 +423,6 @@ class ExerciseDetector {
         pushupState = ExerciseState.WAITING
         pushupRepCount = 0
         pushupInDownPosition = false
-        initialShoulderYPushup = null
 
         gluteBridgeState = ExerciseState.WAITING
         gluteBridgeRepCount = 0
@@ -399,6 +435,10 @@ class ExerciseDetector {
         lyingLegRaiseState = ExerciseState.WAITING
         lyingLegRaiseRepCount = 0
         lyingLegRaiseInUpPosition = false
+
+        situpState = ExerciseState.WAITING
+        situpRepCount = 0
+        situpInUpPosition = false
     }
 
 }

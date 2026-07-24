@@ -51,7 +51,10 @@ interface CreateExerciseFormProps {
 // Options based on API requirements
 const exerciseTypes = [
   { value: "PUSH_UP", label: "Push Up" },
-  { value: "SQUATS", label: "Squats" }
+  { value: "SQUATS", label: "Squats" },
+  { value: "GLUTE_BRIDGE", label: "Glute Bridge" },
+  { value: "LYING_LEG_RAISES", label: "Lying Leg Raises" },
+  { value: "STATIC_LUNGES", label: "Static Lunges" }
 ];
 
 const exerciseDifficulties = [
@@ -97,7 +100,7 @@ export function CreateExerciseForm({ onSuccess, onCancel }: CreateExerciseFormPr
       const templateData: ExerciseTemplateBodyDTO = {
         title: data.title,
         description: data.description,
-        exerciseType: data.exerciseType as 'PUSH_UP' | 'SQUATS',
+        exerciseType: data.exerciseType as 'PUSH_UP' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES',
         exerciseDifficulty: data.exerciseDifficulty as 'BEGINNER' | 'EXPERT',
         goalReps: data.goalReps,
         goalAccuracy: data.goalAccuracy,

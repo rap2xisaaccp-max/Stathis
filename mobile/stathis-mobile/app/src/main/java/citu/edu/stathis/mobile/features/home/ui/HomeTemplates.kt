@@ -153,6 +153,7 @@ private fun resolveExerciseType(rawType: String?): ExerciseType? {
     val normalized = rawType?.trim()?.lowercase()?.replace(' ', '_') ?: return null
     return when (normalized) {
         "squat", "squats" -> ExerciseType.SQUAT
+        "sit_up", "sit_ups", "situp", "situps", "crunch", "crunches" -> ExerciseType.SIT_UP
         "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
         "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
         "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE
@@ -160,4 +161,3 @@ private fun resolveExerciseType(rawType: String?): ExerciseType? {
         else -> null
     }
 }
-
