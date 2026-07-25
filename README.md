@@ -15,11 +15,11 @@ This repository contains the source code, documentation, and necessary resources
 
 | Full Name                     | GitHub Profile                                        |
 | ----------------------------- | ----------------------------------------------------- |
-| **Leones**, Michael Harry P.  | [Saiiph](https://github.com/Saiiph)                   |
-| **Matunog**, Margaret Anne C. | [marginggg](https://github.com/margamatunog)          |
-| **Porter**, Nicolo Ryne A.    | [nicoryne](https://github.com/nicoryne)               |
-| **Quijote**, John Kenny C.    | [mnemosyneiscool](https://github.com/mnemosyneiscool) |
-| **San Diego**, Gabe Jeremy R. | [gabejeremy](https://github.com/gabejeremy)           |
+| **Cortes**, Michael Harry P.  | [Saiiph](https://github.com/Saiiph)                   |
+| **Taboada**, Margaret Anne C. | [marginggg](https://github.com/margamatunog)          |
+| **Secong**, Nicolo Ryne A.    | [nicoryne](https://github.com/nicoryne)               |
+| **Cuadero**, John Kenny C.    | [mnemosyneiscool](https://github.com/mnemosyneiscool) |
+| **Hontiveros**, Gave C.       | [gabejeremy](https://github.com/gabejeremy)           |
 
 ## 🚀 Features
 
@@ -58,7 +58,7 @@ Stathis follows a three-tier architecture pattern:
 │   (Students)    │    │   (Teachers)    │    │   (Spring Boot) │
 │                 │    │                 │    │                 │
 │ • Android/Kotlin│    │ • Next.js/React │    │ • Java/Spring   │
-│ • Jetpack Compose│    │ • TypeScript    │    │ • PostgreSQL    │
+│ • Jetpack Compose│   │ • TypeScript    │    │ • PostgreSQL    │
 │ • CameraX/ML Kit│    │ • Tailwind CSS  │    │ • JWT Auth      │
 │ • Health Connect│    │ • ShadCN/UI     │    │ • WebSocket     │
 │ • Biometric Auth│    │ • TanStack Query│    │ • ONNX Runtime  │
