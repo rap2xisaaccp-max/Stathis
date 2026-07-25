@@ -15,11 +15,11 @@ This repository contains the source code, documentation, and necessary resources
 
 | Full Name                     | GitHub Profile                                        |
 | ----------------------------- | ----------------------------------------------------- |
-| **Cortes**, Michael Harry P.  | [Saiiph](https://github.com/Saiiph)                   |
-| **Taboada**, Margaret Anne C. | [marginggg](https://github.com/margamatunog)          |
-| **Secong**, Nicolo Ryne A.    | [nicoryne](https://github.com/nicoryne)               |
-| **Cuadero**, John Kenny C.    | [mnemosyneiscool](https://github.com/mnemosyneiscool) |
-| **Hontiveros**, Gave C.       | [gabejeremy](https://github.com/gabejeremy)           |
+| **Cortes**, Isaac Raphael P.  | [rap2xisaaccp-max](https://github.com/rap2xisaaccp-max)|
+| **Taboada**, John Fil Roe G.  | [Taboada40](https://github.com/Taboada40)             |
+| **Secong**, Marc Benn B.      | [SecongKoyla](https://github.com/SecongKoyla)         |
+| **Cuadero**, Don Allan S.     | [mnemosyneiscool](https://github.com/mnemosyneiscool) |
+| **Hontiveros**, Gave C.       | [G-A-V-E](https://github.com/G-A-V-E)                 |
 
 ## 🚀 Features
 
