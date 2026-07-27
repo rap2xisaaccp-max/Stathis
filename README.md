@@ -13,13 +13,13 @@ This repository contains the source code, documentation, and necessary resources
 
 ## 👥 Members
 
-| Full Name                     | GitHub Profile                                        |
-| ----------------------------- | ----------------------------------------------------- |
+| Full Name                     | GitHub Profile                                         |
+| ----------------------------- | -----------------------------------------------------  |
 | **Cortes**, Isaac Raphael P.  | [rap2xisaaccp-max](https://github.com/rap2xisaaccp-max)|
-| **Taboada**, John Fil Roe G.  | [Taboada40](https://github.com/Taboada40)             |
-| **Secong**, Marc Benn B.      | [SecongKoyla](https://github.com/SecongKoyla)         |
-| **Cuadero**, Don Allan S.     | [mnemosyneiscool](https://github.com/mnemosyneiscool) |
-| **Hontiveros**, Gave C.       | [G-A-V-E](https://github.com/G-A-V-E)                 |
+| **Taboada**, John Fil Roe G.  | [Taboada40](https://github.com/Taboada40)              |
+| **Secong**, Marc Benn B.      | [SecongKoyla](https://github.com/SecongKoyla)          |
+| **Cuadero**, Don Allan S.     | [donallancuadz](https://github.com/donallancuadz)      |
+| **Hontiveros**, Gave C.       | [G-A-V-E](https://github.com/G-A-V-E)                  |
 
 ## 🚀 Features
 
@@ -53,16 +53,16 @@ This repository contains the source code, documentation, and necessary resources
 Stathis follows a three-tier architecture pattern:
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Mobile App    │    │   Web Dashboard │    │  Backend API    │
-│   (Students)    │    │   (Teachers)    │    │   (Spring Boot) │
-│                 │    │                 │    │                 │
-│ • Android/Kotlin│    │ • Next.js/React │    │ • Java/Spring   │
+┌──────────────────┐   ┌─────────────────┐    ┌─────────────────┐
+│   Mobile App     │   │   Web Dashboard │    │  Backend API    │
+│   (Students)     │   │   (Teachers)    │    │   (Spring Boot) │
+│                  │   │                 │    │                 │
+│ • Android/Kotlin │   │ • Next.js/React │    │ • Java/Spring   │
 │ • Jetpack Compose│   │ • TypeScript    │    │ • PostgreSQL    │
-│ • CameraX/ML Kit│    │ • Tailwind CSS  │    │ • JWT Auth      │
-│ • Health Connect│    │ • ShadCN/UI     │    │ • WebSocket     │
-│ • Biometric Auth│    │ • TanStack Query│    │ • ONNX Runtime  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+│ • CameraX/ML Kit │   │ • Tailwind CSS  │    │ • JWT Auth      │
+│ • Health Connect │   │ • ShadCN/UI     │    │ • WebSocket     │
+│ • Biometric Auth │   │ • TanStack Query│    │ • ONNX Runtime  │
+└──────────────────┘   └─────────────────┘    └─────────────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
                                  │
