@@ -50,6 +50,8 @@ public class SecurityConfig {
                         "/swagger-ui/**",
                         "/v3/api-docs/**")
                     .permitAll()
+                        .requestMatchers("/api/templates/**")
+                    .permitAll()
                         .requestMatchers(
                             "/api/classrooms/**",
                             "/api/classrooms/*/students/**",
