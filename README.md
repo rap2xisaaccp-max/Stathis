@@ -66,10 +66,10 @@ Stathis follows a three-tier architecture pattern:
          │                       │                       │
          └───────────────────────┼───────────────────────┘
                                  │
-                    ┌─────────────────┐
-                    │   PostgreSQL    │
-                    │    Database     │
-                    └─────────────────┘
+                        ┌─────────────────┐
+                        │   PostgreSQL    │
+                        │    Database     │
+                        └─────────────────┘
 ```
 
 ### Key Technologies
