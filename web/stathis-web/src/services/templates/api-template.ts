@@ -39,8 +39,8 @@ export interface QuizTemplateResponseDTO {
 export interface ExerciseTemplateBodyDTO {
   title: string; // required, minLength: 3, maxLength: 100
   description: string; // required, minLength: 0, maxLength: 500
-  exerciseType: 'PUSH_UP' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES'; // required - updated to match backend enum
-  exerciseDifficulty: 'BEGINNER' | 'EXPERT'; // required - updated to match backend enum
+  exerciseType: 'PUSH_UP' | 'PUSH_UPS' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES' | 'SQUAT' | 'GLUTE_BRIDGES' | 'LYING_LEG_RAISE' | 'STATIC_LUNGE' | 'LEG_RAISES' | 'LEG_RAISE' | 'LUNGES' | 'LUNGE' | 'PUSHUP' | 'PUSHUPS'; // required - updated to match backend enum and mobile aliases
+  exerciseDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'; // required - updated to match backend enum
   goalReps: string; // required, pattern: ^[0-9]+$
   goalAccuracy: string; // required, pattern: ^[0-9]+$
   goalTime: string; // required, pattern: ^[0-9]+$
@@ -50,8 +50,8 @@ export interface ExerciseTemplateResponseDTO {
   physicalId: string;
   title: string;
   description: string;
-  exerciseType: 'PUSH_UP' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES'; // Note: API enum values
-  exerciseDifficulty: 'BEGINNER' | 'EXPERT'; // Note: API lists BEGINNER and EXPERT as enum values
+  exerciseType: 'PUSH_UP' | 'PUSH_UPS' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES' | 'SQUAT' | 'GLUTE_BRIDGES' | 'LYING_LEG_RAISE' | 'STATIC_LUNGE' | 'LEG_RAISES' | 'LEG_RAISE' | 'LUNGES' | 'LUNGE' | 'PUSHUP' | 'PUSHUPS'; // Note: API enum values
+  exerciseDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'; // Note: API enum values
   goalReps: number; // integer
   goalAccuracy: number; // integer
   goalTime: number; // integer

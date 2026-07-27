@@ -20,13 +20,13 @@ public class ExerciseTemplateBodyDTO {
     private String description;
 
     @NotBlank(message = "Exercise type is required")
-    @Pattern(regexp = "^(PUSH_UP|SQUATS|GLUTE_BRIDGE|LYING_LEG_RAISES|STATIC_LUNGES)$",
-             message = "Invalid exercise type. Must be one of: PUSH_UP, SQUATS, GLUTE_BRIDGE, LYING_LEG_RAISES, STATIC_LUNGES")
+    @Pattern(regexp = "^(PUSH_UP|PUSH_UPS|PUSHUP|PUSHUPS|SQUAT|SQUATS|GLUTE_BRIDGE|GLUTE_BRIDGES|LYING_LEG_RAISE|LYING_LEG_RAISES|LEG_RAISE|LEG_RAISES|STATIC_LUNGE|STATIC_LUNGES|LUNGE|LUNGES)$",
+             message = "Invalid exercise type. Must be one of: PUSH_UP, PUSH_UPS, SQUATS, GLUTE_BRIDGE, LYING_LEG_RAISES, STATIC_LUNGES")
     private String exerciseType;
 
     @NotBlank(message = "Exercise difficulty is required")
-    @Pattern(regexp = "^(BEGINNER|INTERMEDIATE|ADVANCED)$", 
-             message = "Invalid exercise difficulty. Must be one of: BEGINNER, INTERMEDIATE, ADVANCED")
+    @Pattern(regexp = "^(BEGINNER|INTERMEDIATE|ADVANCED|EXPERT)$",
+             message = "Invalid exercise difficulty. Must be one of: BEGINNER, INTERMEDIATE, ADVANCED, EXPERT")
     private String exerciseDifficulty;
 
     @NotBlank(message = "Goal reps is required")

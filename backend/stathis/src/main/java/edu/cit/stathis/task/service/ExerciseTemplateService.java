@@ -29,12 +29,43 @@ public class ExerciseTemplateService {
         exerciseTemplate.setTeacherPhysicalId(physicalIdService.getCurrentUserPhysicalId());
         exerciseTemplate.setTitle(exerciseTemplateBodyDTO.getTitle());
         exerciseTemplate.setDescription(exerciseTemplateBodyDTO.getDescription());
-        exerciseTemplate.setExerciseType(ExerciseType.valueOf(exerciseTemplateBodyDTO.getExerciseType()));
-        exerciseTemplate.setExerciseDifficulty(ExerciseDifficulty.valueOf(exerciseTemplateBodyDTO.getExerciseDifficulty()));
+        exerciseTemplate.setExerciseType(resolveExerciseType(exerciseTemplateBodyDTO.getExerciseType()));
+        exerciseTemplate.setExerciseDifficulty(resolveExerciseDifficulty(exerciseTemplateBodyDTO.getExerciseDifficulty()));
         exerciseTemplate.setGoalReps(Integer.parseInt(exerciseTemplateBodyDTO.getGoalReps()));
         exerciseTemplate.setGoalAccuracy(Integer.parseInt(exerciseTemplateBodyDTO.getGoalAccuracy()));
         exerciseTemplate.setGoalTime(Integer.parseInt(exerciseTemplateBodyDTO.getGoalTime()));
         return exerciseTemplateRepository.save(exerciseTemplate);
+    }
+
+    private ExerciseType resolveExerciseType(String rawValue) {
+        if (rawValue == null) {
+            throw new IllegalArgumentException("Exercise type is required");
+        }
+
+        String normalized = rawValue.trim().toUpperCase().replace(' ', '_');
+        return switch (normalized) {
+            case "PUSH_UP", "PUSH_UPS", "PUSHUP", "PUSHUPS" -> ExerciseType.PUSH_UP;
+            case "SQUAT", "SQUATS" -> ExerciseType.SQUATS;
+            case "GLUTE_BRIDGE", "GLUTE_BRIDGES" -> ExerciseType.GLUTE_BRIDGE;
+            case "LYING_LEG_RAISE", "LYING_LEG_RAISES", "LEG_RAISE", "LEG_RAISES" -> ExerciseType.LYING_LEG_RAISES;
+            case "STATIC_LUNGE", "STATIC_LUNGES", "LUNGE", "LUNGES" -> ExerciseType.STATIC_LUNGES;
+            default -> ExerciseType.valueOf(normalized);
+        };
+    }
+
+    private ExerciseDifficulty resolveExerciseDifficulty(String rawValue) {
+        if (rawValue == null) {
+            throw new IllegalArgumentException("Exercise difficulty is required");
+        }
+
+        String normalized = rawValue.trim().toUpperCase().replace(' ', '_');
+        return switch (normalized) {
+            case "BEGINNER" -> ExerciseDifficulty.BEGINNER;
+            case "INTERMEDIATE" -> ExerciseDifficulty.INTERMEDIATE;
+            case "ADVANCED" -> ExerciseDifficulty.ADVANCED;
+            case "EXPERT" -> ExerciseDifficulty.EXPERT;
+            default -> ExerciseDifficulty.valueOf(normalized);
+        };
     }
 
     private String generatePhysicalId() {
@@ -73,8 +104,8 @@ public class ExerciseTemplateService {
         }
         exerciseTemplate.setTitle(exerciseTemplateBodyDTO.getTitle());
         exerciseTemplate.setDescription(exerciseTemplateBodyDTO.getDescription());
-        exerciseTemplate.setExerciseType(ExerciseType.valueOf(exerciseTemplateBodyDTO.getExerciseType()));
-        exerciseTemplate.setExerciseDifficulty(ExerciseDifficulty.valueOf(exerciseTemplateBodyDTO.getExerciseDifficulty()));
+        exerciseTemplate.setExerciseType(resolveExerciseType(exerciseTemplateBodyDTO.getExerciseType()));
+        exerciseTemplate.setExerciseDifficulty(resolveExerciseDifficulty(exerciseTemplateBodyDTO.getExerciseDifficulty()));
         exerciseTemplate.setGoalReps(Integer.parseInt(exerciseTemplateBodyDTO.getGoalReps()));
         exerciseTemplate.setGoalAccuracy(Integer.parseInt(exerciseTemplateBodyDTO.getGoalAccuracy()));
         exerciseTemplate.setGoalTime(Integer.parseInt(exerciseTemplateBodyDTO.getGoalTime()));
