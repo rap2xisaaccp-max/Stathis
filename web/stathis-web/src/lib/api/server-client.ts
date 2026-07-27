@@ -5,7 +5,7 @@ import { handleApiError } from './error-interceptor';
 /**
  * API client for backend requests
  */
-export const API_BASE_URL = 'https://stathis-u8s6.onrender.com/api';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.API_BASE_URL || 'https://stathis-u8s6.onrender.com/api';
 
 export interface ApiResponse<T = any> {
   data?: T;

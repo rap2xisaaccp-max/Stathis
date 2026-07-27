@@ -1097,6 +1097,11 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
   const formatExerciseType = (type: string) => {
     const typeMap: Record<string, string> = {
       'PUSH_UP': 'Push Up',
+      'PUSH_UPS': 'Push Up',
+      'SQUATS': 'Squats',
+      'GLUTE_BRIDGE': 'Glute Bridge',
+      'LYING_LEG_RAISES': 'Lying Leg Raises',
+      'STATIC_LUNGES': 'Static Lunges',
       'SIT_UP': 'Sit Up',
       'JUMPING_JACK': 'Jumping Jack',
       'TYPE1': 'Type 1',

@@ -59,6 +59,8 @@ const exerciseTypes = [
 
 const exerciseDifficulties = [
   { value: "BEGINNER", label: "Beginner" },
+  { value: "INTERMEDIATE", label: "Intermediate" },
+  { value: "ADVANCED", label: "Advanced" },
   { value: "EXPERT", label: "Expert" }
 ];
 
@@ -180,7 +182,7 @@ export function CreateExerciseForm({ onSuccess, onCancel }: CreateExerciseFormPr
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Exercise Type</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select exercise type" />
@@ -205,7 +207,7 @@ export function CreateExerciseForm({ onSuccess, onCancel }: CreateExerciseFormPr
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Difficulty Level</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select difficulty" />
