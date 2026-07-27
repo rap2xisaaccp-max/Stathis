@@ -3,7 +3,10 @@ package edu.cit.stathis.task.controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import edu.cit.stathis.task.service.LessonTemplateService;
 import edu.cit.stathis.task.service.ExerciseTemplateService;
 import edu.cit.stathis.task.service.QuizTemplateService;
@@ -76,9 +79,9 @@ public class TemplateController {
 
     // Exercise Template Endpoints
     @PostMapping("/exercises")
-    @PreAuthorize("hasRole('TEACHER')")
     @Operation(summary = "Create a new exercise template")
     public ResponseEntity<ExerciseTemplateResponseDTO> createExerciseTemplate(@RequestBody ExerciseTemplateBodyDTO exerciseTemplateBodyDTO) {
+        ensureTeacherAccess();
         return ResponseEntity.ok(exerciseTemplateService.getExerciseTemplateResponseDTO(
             exerciseTemplateService.createExerciseTemplate(exerciseTemplateBodyDTO).getPhysicalId()));
     }
@@ -114,11 +117,26 @@ public class TemplateController {
     }
 
     @DeleteMapping("/exercises/{physicalId}")
-    @PreAuthorize("hasRole('TEACHER')")
     @Operation(summary = "Delete an exercise template by its physical ID")
     public ResponseEntity<Void> deleteExerciseTemplate(@PathVariable String physicalId) {
+        ensureTeacherAccess();
         exerciseTemplateService.deleteExerciseTemplate(physicalId);
         return ResponseEntity.ok().build();
+    }
+
+    private void ensureTeacherAccess() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new AccessDeniedException("Authentication required");
+        }
+
+        boolean isTeacher = authentication.getAuthorities().stream()
+            .anyMatch(authority -> authority.getAuthority().equals("ROLE_TEACHER")
+                || authority.getAuthority().equals("TEACHER"));
+
+        if (!isTeacher) {
+            throw new AccessDeniedException("Teacher access required");
+        }
     }
 
     // Quiz Template Endpoints
