@@ -156,8 +156,8 @@ class TaskTemplateViewModel @Inject constructor(
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
                 
-                // Mark exercise as completed for the task
-                taskRepository.completeExercise(taskId, performance.templateId)
+                // Mark exercise as completed and persist its calculated score.
+                taskRepository.completeExercise(taskId, performance.templateId, performance)
                 
                 // Increment exercise attempts in cache (using LessonAttemptsCache for now)
                 LessonAttemptsCache.increment(taskId)

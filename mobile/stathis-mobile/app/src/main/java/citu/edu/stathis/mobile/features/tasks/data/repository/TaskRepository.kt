@@ -6,6 +6,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.ScoreResponse
 import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate
+import citu.edu.stathis.mobile.features.tasks.data.model.ExercisePerformance
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizAutoCheckRequest
 import kotlinx.coroutines.flow.Flow
@@ -20,7 +21,7 @@ interface TaskRepository {
     suspend fun submitQuizScore(taskId: String, quizTemplateId: String, score: Int): Flow<ScoreResponse>
     suspend fun autoCheckQuiz(taskId: String, quizTemplateId: String, request: QuizAutoCheckRequest): Flow<ScoreResponse>
     suspend fun completeLesson(taskId: String, lessonTemplateId: String)
-    suspend fun completeExercise(taskId: String, exerciseTemplateId: String)
+    suspend fun completeExercise(taskId: String, exerciseTemplateId: String, performance: ExercisePerformance? = null)
     suspend fun getQuizScore(studentId: String, taskId: String, quizTemplateId: String): Flow<ScoreResponse>
     suspend fun getScoresByStudentAndTask(studentId: String, taskId: String): Flow<List<ScoreResponse>>
 } 

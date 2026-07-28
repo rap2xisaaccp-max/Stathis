@@ -19,6 +19,7 @@ import edu.cit.stathis.task.repository.LessonTemplateRepository;
 import edu.cit.stathis.task.repository.QuizTemplateRepository;
 import edu.cit.stathis.task.repository.ExerciseTemplateRepository;
 import edu.cit.stathis.task.dto.QuizSubmissionDTO;
+import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Random;
@@ -272,8 +273,41 @@ public class StudentTaskService {
     }
 
     @Transactional
-    public void completeExercise(String studentId, String taskId, String exerciseTemplateId) {
+    public Score completeExercise(String studentId, String taskId, String exerciseTemplateId, ExerciseResultSubmissionDTO submission) {
+        Score existingScore = scoreRepository.findExerciseScore(studentId, taskId, exerciseTemplateId)
+            .orElse(null);
+
+        if (existingScore == null) {
+            existingScore = new Score();
+            existingScore.setPhysicalId(provideUniquePhysicalId());
+            existingScore.setStudentId(studentId);
+            existingScore.setTaskId(taskId);
+            existingScore.setExerciseTemplateId(exerciseTemplateId);
+            existingScore.setAttempts(0);
+        }
+
+        Task task = taskRepository.findByPhysicalId(taskId)
+            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        validateAttempts(task, existingScore);
+
+        int scoreValue = submission != null ? submission.getScore() : 0;
+        int maxScore = submission != null && submission.getMaxScore() > 0 ? submission.getMaxScore() : 100;
+        boolean completed = submission == null || submission.getCompleted() == null || submission.getCompleted();
+
+        existingScore.setScore(scoreValue);
+        existingScore.setMaxScore(maxScore);
+        existingScore.setAttempts(existingScore.getAttempts() + 1);
+        existingScore.setCompleted(completed);
+        existingScore.setCompletedAt(OffsetDateTime.now());
+
+        if (submission != null) {
+            existingScore.setTimeTaken(submission.getTimeTaken());
+            existingScore.setAccuracy(submission.getAccuracy());
+        }
+
+        Score savedScore = scoreRepository.save(existingScore);
         updateTaskCompletion(studentId, taskId, "exercise", true);
+        return savedScore;
     }
 
     @Transactional
