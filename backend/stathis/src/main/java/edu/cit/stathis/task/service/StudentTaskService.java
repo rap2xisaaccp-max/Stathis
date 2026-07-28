@@ -88,7 +88,6 @@ public class StudentTaskService {
                 .maxQuizScore(0)
                 .quizAttempts(0)
                 .totalTimeTaken(0L)
-                .repsPerformed(0)
                 .build();
         }
 
@@ -100,7 +99,6 @@ public class StudentTaskService {
             .maxQuizScore(score != null ? score.getMaxScore() : 0)
             .quizAttempts(score != null ? score.getAttempts() : 0)
             .totalTimeTaken(completion.getTotalTimeTaken())
-            .repsPerformed(completion.getRepsPerformed() != null ? completion.getRepsPerformed() : 0)
             .startedAt(completion.getStartedAt().toString())
             .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null)
             .build();
@@ -287,7 +285,6 @@ public class StudentTaskService {
                 .physicalId(provideUniquePhysicalId())
                 .studentId(studentId)
                 .taskId(taskId)
-                .repsPerformed(0)
                 .startedAt(OffsetDateTime.now())
                 .build();
         }
