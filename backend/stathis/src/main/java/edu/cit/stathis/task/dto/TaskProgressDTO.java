@@ -15,7 +15,6 @@ public class TaskProgressDTO {
     private int maxQuizScore;
     private int quizAttempts;
     private Long totalTimeTaken;
-    private Integer repsPerformed;
     private String startedAt;
     private String completedAt;
     private boolean submittedForReview;
