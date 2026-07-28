@@ -30,6 +30,7 @@ public class TaskCompletionService {
                 .isFullyCompleted(false)
                 .startedAt(OffsetDateTime.now())
                 .submittedForReview(false)
+                .repsPerformed(0)
                 .build();
         return taskCompletionRepository.save(taskCompletion);
     }

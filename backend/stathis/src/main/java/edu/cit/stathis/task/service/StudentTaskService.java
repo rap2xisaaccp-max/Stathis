@@ -302,6 +302,13 @@ public class StudentTaskService {
                 break;
         }
 
+        // If marking exercise completed via this API call and no reps recorded, store 0
+        if ("exercise".equalsIgnoreCase(componentType) && completed) {
+            if (completion.getRepsPerformed() == null) {
+                completion.setRepsPerformed(0);
+            }
+        }
+
         // Get the task to check which components are required
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
