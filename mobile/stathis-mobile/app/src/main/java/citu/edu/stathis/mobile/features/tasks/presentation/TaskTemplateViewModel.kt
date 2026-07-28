@@ -156,20 +156,31 @@ class TaskTemplateViewModel @Inject constructor(
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
 
-                // Mark exercise as completed for the task
-                taskRepository.completeExercise(taskId, performance.templateId)
-
-                // Send reps performed to backend so TaskCompletion.reps_performed is recorded
-                val progressRequest = citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressRequest(
-                    exerciseCompleted = true,
-                    repsPerformed = performance.actualReps,
-                    totalTimeTaken = performance.actualTime.toLong()
+                val exerciseResult = ExerciseResultSubmission(
+                    reps = performance.actualReps,
+                    accuracy = performance.actualAccuracy.toDouble(),
+                    timeTaken = performance.actualTime.toLong() * 1000L
                 )
 
-                try {
-                    taskRepository.updateTaskProgress(taskId, progressRequest)
-                } catch (e: Exception) {
-                    android.util.Log.w("TaskTemplateViewModel", "Failed to send reps to backend, continuing: ${e.message}")
+                val submittedScoredResult = runCatching {
+                    taskRepository.submitExerciseResult(taskId, performance.templateId, exerciseResult).first()
+                }.onFailure { e ->
+                    android.util.Log.w("TaskTemplateViewModel", "Failed to submit scored exercise result, falling back to completion only: ${e.message}")
+                    taskRepository.completeExercise(taskId, performance.templateId)
+                }.isSuccess
+
+                if (!submittedScoredResult) {
+                    val progressRequest = citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressRequest(
+                        exerciseCompleted = true,
+                        repsPerformed = performance.actualReps,
+                        totalTimeTaken = performance.actualTime.toLong()
+                    )
+
+                    try {
+                        taskRepository.updateTaskProgress(taskId, progressRequest)
+                    } catch (e: Exception) {
+                        android.util.Log.w("TaskTemplateViewModel", "Failed to send reps to backend, continuing: ${e.message}")
+                    }
                 }
 
                 // Increment exercise attempts in cache (using LessonAttemptsCache for now)

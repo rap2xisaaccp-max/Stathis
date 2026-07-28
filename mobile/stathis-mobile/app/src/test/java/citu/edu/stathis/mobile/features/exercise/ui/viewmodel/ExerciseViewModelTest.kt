@@ -14,7 +14,7 @@ class ExerciseViewModelTest {
             "Rest" to 0.1f
         )
 
-        val normalized = ExerciseViewModel().normalizeScores(rawScores)
+        val normalized = normalizeScores(rawScores)
 
         assertEquals(3, normalized.size)
         assertTrue(normalized[0].second >= normalized[1].second)

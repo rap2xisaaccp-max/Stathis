@@ -6,6 +6,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
 import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate
+import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizAutoCheckRequest
 import retrofit2.Response
@@ -73,6 +74,13 @@ interface TaskService {
         @Path("taskId") taskId: String,
         @Path("exerciseTemplateId") exerciseTemplateId: String
     ): Response<Unit>
+
+    @POST("api/student/tasks/{taskId}/exercise/{exerciseTemplateId}/result")
+    suspend fun submitExerciseResult(
+        @Path("taskId") taskId: String,
+        @Path("exerciseTemplateId") exerciseTemplateId: String,
+        @Body request: ExerciseResultSubmission
+    ): Response<ScoreResponse>
 
     @GET("api/v1/scores/quiz")
     suspend fun getQuizScore(

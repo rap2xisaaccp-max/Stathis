@@ -8,6 +8,7 @@ import edu.cit.stathis.auth.service.PhysicalIdService;
 import edu.cit.stathis.task.dto.StudentTaskResponseDTO;
 import edu.cit.stathis.task.dto.TaskProgressDTO;
 import edu.cit.stathis.task.dto.QuizSubmissionDTO;
+import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
 import edu.cit.stathis.task.entity.Score;
 import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
@@ -81,5 +82,15 @@ public class StudentTaskController {
         String studentId = physicalIdService.getCurrentUserPhysicalId();
         studentTaskService.completeExercise(studentId, taskId, exerciseTemplateId);
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{taskId}/exercise/{exerciseTemplateId}/result")
+    @Operation(summary = "Submit exercise result", description = "Calculate and store an exercise score from reps, accuracy, and time")
+    public ResponseEntity<Score> submitExerciseResult(
+            @PathVariable String taskId,
+            @PathVariable String exerciseTemplateId,
+            @RequestBody ExerciseResultSubmissionDTO submission) {
+        String studentId = physicalIdService.getCurrentUserPhysicalId();
+        return ResponseEntity.ok(studentTaskService.submitExerciseResult(studentId, taskId, exerciseTemplateId, submission));
     }
 } 

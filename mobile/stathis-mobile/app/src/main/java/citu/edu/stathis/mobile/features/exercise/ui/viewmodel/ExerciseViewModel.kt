@@ -70,7 +70,6 @@ class ExerciseViewModel @Inject constructor(
             .sortedByDescending { it.value }
             .map { (label, score) -> label to (score / total).coerceIn(0f, 1f) }
     }
-
     private fun buildMergedClassification(
         predictedClass: String,
         score: Float,
@@ -153,5 +152,13 @@ class ExerciseViewModel @Inject constructor(
         val flags: List<String> = emptyList(),
         val messages: List<String> = emptyList()
     )
+}
+
+// Top-level helper for unit tests that only need normalization logic without constructing the ViewModel
+fun normalizeScores(rawScores: Map<String, Float>): List<Pair<String, Float>> {
+    val total = rawScores.values.sum().coerceAtLeast(1f)
+    return rawScores.entries
+        .sortedByDescending { it.value }
+        .map { (label, score) -> label to (score / total).coerceIn(0f, 1f) }
 }
 

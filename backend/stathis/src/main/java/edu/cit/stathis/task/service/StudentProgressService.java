@@ -7,6 +7,7 @@ import edu.cit.stathis.task.entity.Task;
 import edu.cit.stathis.task.repository.ScoreRepository;
 import edu.cit.stathis.task.repository.TaskCompletionRepository;
 import edu.cit.stathis.task.repository.TaskRepository;
+import edu.cit.stathis.task.repository.ExerciseTemplateRepository;
 import jakarta.annotation.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,9 @@ public class StudentProgressService {
 
     @Autowired
     private TaskCompletionRepository taskCompletionRepository;
+
+    @Autowired
+    private ExerciseTemplateRepository exerciseTemplateRepository;
 
     @Autowired
     private ClassroomService classroomService;
@@ -84,7 +88,20 @@ public class StudentProgressService {
             }
         }
 
-        // If you track exercise scores, add similar block for EXERCISE here using findExerciseScore
+        if ("EXERCISE".equals(taskType) && task.getExerciseTemplateId() != null) {
+            var scoreOpt = scoreRepository.findExerciseScore(studentId, task.getPhysicalId(), task.getExerciseTemplateId());
+            if (scoreOpt.isPresent()) {
+                Score s = scoreOpt.get();
+                scoreVal = s.getScore();
+                maxScoreVal = s.getMaxScore() > 0 ? s.getMaxScore() : 100;
+                attemptsVal = s.getAttempts();
+                if (completedAt == null) completedAt = s.getCompletedAt();
+            } else if (completed) {
+                maxScoreVal = 100;
+                attemptsVal = 1;
+                scoreVal = calculateFallbackExerciseScore(task, completionOpt.map(tc -> tc.getRepsPerformed()).orElse(null));
+            }
+        }
 
         return StudentProgressDTO.builder()
                 .taskId(task.getPhysicalId())
@@ -106,6 +123,20 @@ public class StudentProgressService {
         if (task.getExerciseTemplateId() != null) return "EXERCISE";
         if (task.getLessonTemplateId() != null) return "LESSON";
         return "UNKNOWN";
+    }
+
+    private Integer calculateFallbackExerciseScore(Task task, Integer repsPerformed) {
+        if (task.getExerciseTemplateId() == null) return null;
+        var templateOpt = exerciseTemplateRepository.findByPhysicalId(task.getExerciseTemplateId());
+        if (templateOpt.isEmpty()) return null;
+
+        var template = templateOpt.get();
+        int goalReps = template.getGoalReps();
+        if (goalReps <= 0) return 100;
+
+        int reps = repsPerformed != null ? Math.max(0, repsPerformed) : 0;
+        int repsScore = (int) Math.round(Math.min(100.0, (reps / (double) goalReps) * 100.0));
+        return repsScore;
     }
 }
 

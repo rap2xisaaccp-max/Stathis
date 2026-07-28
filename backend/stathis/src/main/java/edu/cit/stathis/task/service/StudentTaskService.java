@@ -15,6 +15,7 @@ import edu.cit.stathis.task.dto.LessonTemplateResponseDTO;
 import edu.cit.stathis.task.dto.QuizTemplateResponseDTO;
 import edu.cit.stathis.task.dto.ExerciseTemplateResponseDTO;
 import edu.cit.stathis.task.dto.ScoreDTO;
+import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
 import edu.cit.stathis.task.repository.LessonTemplateRepository;
 import edu.cit.stathis.task.repository.QuizTemplateRepository;
 import edu.cit.stathis.task.repository.ExerciseTemplateRepository;
@@ -279,7 +280,74 @@ public class StudentTaskService {
     }
 
     @Transactional
-    private void updateTaskCompletion(String studentId, String taskId, String componentType, boolean completed) {
+    public Score submitExerciseResult(String studentId, String taskId, String exerciseTemplateId, ExerciseResultSubmissionDTO submission) {
+        var exerciseTemplate = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
+            .orElseThrow(() -> new EntityNotFoundException("Exercise template not found with ID: " + exerciseTemplateId));
+
+        Score existingScore = scoreRepository.findExerciseScore(studentId, taskId, exerciseTemplateId)
+            .orElse(null);
+
+        if (existingScore == null) {
+            existingScore = new Score();
+            existingScore.setPhysicalId(provideUniquePhysicalId());
+            existingScore.setStudentId(studentId);
+            existingScore.setTaskId(taskId);
+            existingScore.setExerciseTemplateId(exerciseTemplateId);
+            existingScore.setAttempts(0);
+            existingScore.setStartedAt(OffsetDateTime.now());
+        }
+
+        int computedScore = calculateExerciseScore(
+            submission.getReps(),
+            submission.getAccuracy(),
+            submission.getTimeTaken(),
+            exerciseTemplate.getGoalReps(),
+            exerciseTemplate.getGoalAccuracy(),
+            exerciseTemplate.getGoalTime()
+        );
+
+        existingScore.setScore(computedScore);
+        existingScore.setMaxScore(100);
+        existingScore.setAttempts(existingScore.getAttempts() + 1);
+        existingScore.setAccuracy(clamp(submission.getAccuracy(), 0.0, 100.0));
+        existingScore.setTimeTaken(submission.getTimeTaken());
+        existingScore.setCompleted(true);
+        existingScore.setCompletedAt(OffsetDateTime.now());
+
+        Score savedScore = scoreRepository.save(existingScore);
+        TaskCompletion completion = updateTaskCompletion(studentId, taskId, "exercise", true);
+        completion.setRepsPerformed(Math.max(0, submission.getReps()));
+        taskCompletionRepository.save(completion);
+
+        return savedScore;
+    }
+
+    private int calculateExerciseScore(int actualReps, double actualAccuracy, long timeTakenMillis, int goalReps, int goalAccuracy, int goalTimeSeconds) {
+        double repsScore = goalReps > 0
+            ? Math.min(40.0, (Math.max(0, actualReps) / (double) goalReps) * 40.0)
+            : 40.0;
+
+        double accuracyScore = goalAccuracy > 0
+            ? Math.min(40.0, (clamp(actualAccuracy, 0.0, 100.0) / (double) goalAccuracy) * 40.0)
+            : 40.0;
+
+        long actualTimeSeconds = Math.max(0L, timeTakenMillis) / 1000L;
+        double timeScore;
+        if (goalTimeSeconds <= 0 || actualTimeSeconds <= goalTimeSeconds) {
+            timeScore = 20.0;
+        } else {
+            timeScore = Math.max(0.0, (goalTimeSeconds / (double) actualTimeSeconds) * 20.0);
+        }
+
+        return (int) Math.round(Math.min(100.0, repsScore + accuracyScore + timeScore));
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    @Transactional
+    private TaskCompletion updateTaskCompletion(String studentId, String taskId, String componentType, boolean completed) {
         TaskCompletion completion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
             .orElse(null);
         if (completion == null) {
@@ -325,7 +393,7 @@ public class StudentTaskService {
             );
         }
 
-        taskCompletionRepository.save(completion);
+        return taskCompletionRepository.save(completion);
     }
 
     private String provideUniquePhysicalId() {
@@ -340,6 +408,9 @@ public class StudentTaskService {
         Score score = null;
         if (task.getQuizTemplateId() != null) {
             score = scoreRepository.findQuizScore(studentId, task.getPhysicalId(), task.getQuizTemplateId())
+                .orElse(null);
+        } else if (task.getExerciseTemplateId() != null) {
+            score = scoreRepository.findExerciseScore(studentId, task.getPhysicalId(), task.getExerciseTemplateId())
                 .orElse(null);
         }
 
