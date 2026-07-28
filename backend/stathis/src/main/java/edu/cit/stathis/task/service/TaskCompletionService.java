@@ -28,6 +28,7 @@ public class TaskCompletionService {
                 .quizCompleted(false)
                 .exerciseCompleted(false)
                 .isFullyCompleted(false)
+                .repsPerformed(0)
                 .startedAt(OffsetDateTime.now())
                 .submittedForReview(false)
                 .build();
@@ -42,6 +43,8 @@ public class TaskCompletionService {
         taskCompletion.setExerciseCompleted(progressDTO.isExerciseCompleted());
         taskCompletion.setQuizCompleted(progressDTO.isQuizCompleted());
         taskCompletion.setTotalTimeTaken(progressDTO.getTotalTimeTaken());
+        // store reps performed from mobile (may be null)
+        taskCompletion.setRepsPerformed(progressDTO.getRepsPerformed());
         if (progressDTO.getCompletedAt() != null) {
             taskCompletion.setCompletedAt(OffsetDateTime.parse(progressDTO.getCompletedAt()));
         }
