@@ -42,6 +42,10 @@ public class TaskCompletionService {
         taskCompletion.setExerciseCompleted(progressDTO.isExerciseCompleted());
         taskCompletion.setQuizCompleted(progressDTO.isQuizCompleted());
         taskCompletion.setTotalTimeTaken(progressDTO.getTotalTimeTaken());
+        // Update repsPerformed if provided
+        if (progressDTO.getRepsPerformed() != null) {
+            taskCompletion.setRepsPerformed(progressDTO.getRepsPerformed());
+        }
         if (progressDTO.getCompletedAt() != null) {
             taskCompletion.setCompletedAt(OffsetDateTime.parse(progressDTO.getCompletedAt()));
         }

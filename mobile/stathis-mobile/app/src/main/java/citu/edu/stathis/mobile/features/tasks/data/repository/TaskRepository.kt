@@ -23,4 +23,7 @@ interface TaskRepository {
     suspend fun completeExercise(taskId: String, exerciseTemplateId: String)
     suspend fun getQuizScore(studentId: String, taskId: String, quizTemplateId: String): Flow<ScoreResponse>
     suspend fun getScoresByStudentAndTask(studentId: String, taskId: String): Flow<List<ScoreResponse>>
-} 
+
+    // Update task progress (sends reps_performed and other progress fields to backend)
+    suspend fun updateTaskProgress(taskId: String, progress: citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressRequest)
+}

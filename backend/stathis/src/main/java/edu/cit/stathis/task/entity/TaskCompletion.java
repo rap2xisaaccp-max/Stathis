@@ -47,4 +47,8 @@ public class TaskCompletion {
 
     @Column(name = "submitted_at")
     private OffsetDateTime submittedAt;
-} 
+
+    // Number of reps performed by the student for exercises in this task
+    @Column(name = "reps_performed")
+    private Integer repsPerformed;
+}

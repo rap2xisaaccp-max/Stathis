@@ -19,4 +19,6 @@ public class TaskProgressDTO {
     private String completedAt;
     private boolean submittedForReview;
     private String submittedAt;
-} 
+    // Number of reps performed for exercise completion (nullable)
+    private Integer repsPerformed;
+}

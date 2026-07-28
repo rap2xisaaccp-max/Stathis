@@ -101,6 +101,7 @@ public class StudentTaskService {
             .totalTimeTaken(completion.getTotalTimeTaken())
             .startedAt(completion.getStartedAt().toString())
             .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null)
+            .repsPerformed(completion.getRepsPerformed())
             .build();
     }
 
