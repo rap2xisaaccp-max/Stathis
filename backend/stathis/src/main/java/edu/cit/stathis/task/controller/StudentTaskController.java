@@ -8,6 +8,7 @@ import edu.cit.stathis.auth.service.PhysicalIdService;
 import edu.cit.stathis.task.dto.StudentTaskResponseDTO;
 import edu.cit.stathis.task.dto.TaskProgressDTO;
 import edu.cit.stathis.task.dto.QuizSubmissionDTO;
+import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
 import edu.cit.stathis.task.entity.Score;
 import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
@@ -77,9 +78,10 @@ public class StudentTaskController {
     @Operation(summary = "Mark exercise as completed", description = "Mark an exercise as completed")
     public ResponseEntity<Void> completeExercise(
             @PathVariable String taskId,
-            @PathVariable String exerciseTemplateId) {
+            @PathVariable String exerciseTemplateId,
+            @RequestBody ExerciseResultSubmissionDTO submission) {
         String studentId = physicalIdService.getCurrentUserPhysicalId();
-        studentTaskService.completeExercise(studentId, taskId, exerciseTemplateId);
+        studentTaskService.completeExercise(studentId, taskId, exerciseTemplateId, submission);
         return ResponseEntity.ok().build();
     }
 } 

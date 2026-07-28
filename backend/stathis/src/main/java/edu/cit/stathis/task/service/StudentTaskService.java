@@ -275,7 +275,57 @@ public class StudentTaskService {
 
     @Transactional
     public void completeExercise(String studentId, String taskId, String exerciseTemplateId) {
-        updateTaskCompletion(studentId, taskId, "exercise", true);
+        completeExercise(studentId, taskId, exerciseTemplateId, null);
+    }
+
+    @Transactional
+    public void completeExercise(String studentId, String taskId, String exerciseTemplateId, edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO submission) {
+        TaskCompletion completion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
+            .orElse(TaskCompletion.builder()
+                .physicalId(provideUniquePhysicalId())
+                .studentId(studentId)
+                .taskId(taskId)
+                .repsPerformed(0)
+                .startedAt(OffsetDateTime.now())
+                .build());
+
+        completion.setExerciseCompleted(true);
+
+        if (submission != null) {
+            // store reps from mobile submission
+            completion.setRepsPerformed(submission.getReps());
+            // if mobile provided timeTaken (ms), use it to populate totalTimeTaken (seconds) when sensible
+            if (submission.getTimeTaken() > 0) {
+                long seconds = submission.getTimeTaken() / 1000L;
+                completion.setTotalTimeTaken(seconds);
+            }
+        }
+
+        // Get the task to check which components are required
+        Task task = taskRepository.findByPhysicalId(taskId)
+            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        boolean hasLesson = task.getLessonTemplateId() != null;
+        boolean hasQuiz = task.getQuizTemplateId() != null;
+        boolean hasExercise = task.getExerciseTemplateId() != null;
+
+        // Check if all required components are completed
+        boolean allRequiredCompleted = true;
+        if (hasLesson && !completion.isLessonCompleted()) allRequiredCompleted = false;
+        if (hasQuiz && !completion.isQuizCompleted()) allRequiredCompleted = false;
+        if (hasExercise && !completion.isExerciseCompleted()) allRequiredCompleted = false;
+
+        if (allRequiredCompleted) {
+            completion.setFullyCompleted(true);
+            completion.setCompletedAt(OffsetDateTime.now());
+            // Only compute totalTimeTaken from timestamps if not already provided by client
+            if (completion.getTotalTimeTaken() == null || completion.getTotalTimeTaken() == 0L) {
+                completion.setTotalTimeTaken(
+                    completion.getCompletedAt().toEpochSecond() - completion.getStartedAt().toEpochSecond()
+                );
+            }
+        }
+
+        taskCompletionRepository.save(completion);
     }
 
     @Transactional

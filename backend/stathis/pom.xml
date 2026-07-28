@@ -110,7 +110,7 @@
             <groupId>io.hypersistence</groupId>
             <artifactId>hypersistence-utils-hibernate-60</artifactId>
             <version>3.7.1</version>
-        </dependency>
+        </dependency> 
     </dependencies>
     <build>
         <resources>
@@ -146,7 +146,7 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>1.18.30</version>
+                            <version>1.18.36</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
