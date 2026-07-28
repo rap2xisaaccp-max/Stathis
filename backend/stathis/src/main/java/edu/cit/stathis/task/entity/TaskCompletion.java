@@ -36,9 +36,6 @@ public class TaskCompletion {
     @Column
     private Long totalTimeTaken;
 
-    @Column(name = "reps_performed")
-    private Integer repsPerformed;
-
     @Column(nullable = false)
     private OffsetDateTime startedAt;
 
