@@ -155,16 +155,29 @@ class TaskTemplateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
-                
+
                 // Mark exercise as completed for the task
                 taskRepository.completeExercise(taskId, performance.templateId)
-                
+
+                // Send reps performed to backend so TaskCompletion.reps_performed is recorded
+                val progressRequest = citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressRequest(
+                    exerciseCompleted = true,
+                    repsPerformed = performance.actualReps,
+                    totalTimeTaken = performance.actualTime.toLong()
+                )
+
+                try {
+                    taskRepository.updateTaskProgress(taskId, progressRequest)
+                } catch (e: Exception) {
+                    android.util.Log.w("TaskTemplateViewModel", "Failed to send reps to backend, continuing: ${e.message}")
+                }
+
                 // Increment exercise attempts in cache (using LessonAttemptsCache for now)
                 LessonAttemptsCache.increment(taskId)
-                
+
                 // Optimistic completion for UI
                 TaskCompletionCache.markCompleted(taskId)
-                
+
                 android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully")
                 // Refresh progress so list reflects completion immediately
                 runCatching { taskRepository.getTaskProgress(taskId).first() }

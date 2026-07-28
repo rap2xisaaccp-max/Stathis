@@ -203,4 +203,13 @@ class TaskRepositoryImpl @Inject constructor(
             throw IllegalStateException("Failed to load scores by student and task: ${response.code()} ${response.message()}")
         }
     }
-} 
+
+    override suspend fun updateTaskProgress(taskId: String, progress: citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressRequest) {
+        val studentId = authTokenManager.physicalIdFlow.firstOrNull()
+            ?: throw IllegalStateException("Missing current user ID; cannot update task progress")
+        val response = taskService.updateTaskProgress(taskId, studentId, progress)
+        if (!response.isSuccessful) {
+            throw IllegalStateException("Failed to update task progress: ${response.code()} ${response.message()}")
+        }
+    }
+}

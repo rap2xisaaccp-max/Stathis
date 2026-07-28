@@ -92,4 +92,11 @@ interface TaskService {
         @Path("taskId") taskId: String,
         @Query("studentId") studentId: String
     ): Response<Unit>
+
+    @PUT("api/v1/task-completions/{taskId}/progress")
+    suspend fun updateTaskProgress(
+        @Path("taskId") taskId: String,
+        @Query("studentId") studentId: String,
+        @Body progress: citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressRequest
+    ): Response<citu.edu.stathis.mobile.features.tasks.data.model.TaskCompletion>
 } 
