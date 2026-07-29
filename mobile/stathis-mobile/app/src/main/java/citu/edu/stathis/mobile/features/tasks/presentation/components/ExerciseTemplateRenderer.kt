@@ -46,11 +46,46 @@ import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
+import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
+import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import com.google.mlkit.vision.pose.Pose
 import kotlinx.coroutines.launch
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
+
+private fun parseClassroomAndTaskId(encoded: String?): Pair<String?, String?> {
+    if (encoded.isNullOrBlank()) return null to null
+    val parts = encoded.split('|', limit = 2)
+    return if (parts.size == 2) parts[0] to parts[1] else encoded to null
+}
+
+private fun buildExercisePerformance(
+    template: ExerciseTemplate,
+    classroomIdEncoded: String?,
+    actualReps: Int,
+    actualAccuracy: Float,
+    actualTime: Int,
+    weightKg: Double? = null
+): ExercisePerformance {
+    val (classroomId, taskId) = parseClassroomAndTaskId(classroomIdEncoded)
+    val calories = ExerciseCalorieCalculator.calculate(template.exerciseType, actualReps, weightKg)
+    return ExercisePerformance(
+        taskId = taskId.orEmpty(),
+        templateId = template.physicalId,
+        actualReps = actualReps,
+        actualAccuracy = actualAccuracy,
+        actualTime = actualTime,
+        goalReps = template.goalReps,
+        goalAccuracy = template.goalAccuracy,
+        goalTime = template.goalTime,
+        isCompleted = actualReps >= template.goalReps && actualAccuracy >= template.goalAccuracy,
+        score = calculateScore(actualReps, actualAccuracy, actualTime, template),
+        caloriesBurned = calories,
+        exerciseType = template.exerciseType,
+        classroomId = classroomId
+    )
+}
 
 @Composable
 fun ExerciseTemplateRenderer(
@@ -448,17 +483,12 @@ private fun ExerciseInProgress(
             }
 
             // Exercise completed
-            val performance = ExercisePerformance(
-                taskId = "",
-                templateId = template.physicalId,
+            val performance = buildExercisePerformance(
+                template = template,
+                classroomIdEncoded = null,
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
-                actualTime = currentTime,
-                goalReps = template.goalReps,
-                goalAccuracy = template.goalAccuracy,
-                goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                actualTime = currentTime
             )
             onComplete(performance)
         }
@@ -713,7 +743,8 @@ private fun ExerciseControlsOverlay(
     liveExerciseFeedback: OnDeviceFeedback?,
     onComplete: (ExercisePerformance) -> Unit,
     onCancel: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    exerciseSyncViewModel: ExerciseSyncViewModel = hiltViewModel()
 ) {
     var currentReps by remember { mutableIntStateOf(0) }
     var currentTime by remember { mutableIntStateOf(0) }
@@ -721,6 +752,8 @@ private fun ExerciseControlsOverlay(
     var isTimerRunning by remember { mutableStateOf(false) }
     var shouldRequestPermissions by remember { mutableStateOf(false) }
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
+    val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
+    val (parsedClassroomId, parsedTaskId) = remember(classroomId) { parseClassroomAndTaskId(classroomId) }
 
     // Pose detection state
     val exerciseDetector = remember { ExerciseDetector() }
@@ -737,6 +770,23 @@ private fun ExerciseControlsOverlay(
             exerciseFeedback = feedback.formIssues
             currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
         }
+    }
+
+    // Publish live progress to teacher dashboard every 2s while running
+    LaunchedEffect(isTimerRunning, currentReps, currentTime, currentAccuracy) {
+        if (!isTimerRunning) return@LaunchedEffect
+        kotlinx.coroutines.delay(2000)
+        exerciseSyncViewModel.publishProgress(
+            classroomId = parsedClassroomId,
+            taskId = parsedTaskId,
+            exerciseTemplateId = template.physicalId,
+            exerciseType = template.exerciseType,
+            reps = currentReps,
+            goalReps = template.goalReps,
+            accuracy = currentAccuracy.toDouble(),
+            timeTakenSeconds = currentTime,
+            completed = false
+        )
     }
 
     // Function to handle pose detection
@@ -879,17 +929,24 @@ private fun ExerciseControlsOverlay(
             exerciseVitalsMonitoringService.stopMonitoringWithPostActivity(vitalSigns ?: fallbackVitals)
 
             // Exercise completed
-            val performance = ExercisePerformance(
-                taskId = "",
-                templateId = template.physicalId,
+            val performance = buildExercisePerformance(
+                template = template,
+                classroomIdEncoded = classroomId,
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
                 actualTime = currentTime,
+                weightKg = weightKg
+            )
+            exerciseSyncViewModel.publishProgress(
+                classroomId = parsedClassroomId,
+                taskId = parsedTaskId,
+                exerciseTemplateId = template.physicalId,
+                exerciseType = template.exerciseType,
+                reps = currentReps,
                 goalReps = template.goalReps,
-                goalAccuracy = template.goalAccuracy,
-                goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                accuracy = currentAccuracy.toDouble(),
+                timeTakenSeconds = currentTime,
+                completed = true
             )
             onComplete(performance)
         } else {
@@ -1170,17 +1227,24 @@ private fun ExerciseControlsOverlay(
                         // Stop vitals monitoring with post-activity vitals
                         shouldStopWithPostActivity = true
                         // Complete exercise manually
-                        val performance = ExercisePerformance(
-                            taskId = "",
-                            templateId = template.physicalId,
+                        val performance = buildExercisePerformance(
+                            template = template,
+                            classroomIdEncoded = classroomId,
                             actualReps = currentReps,
                             actualAccuracy = currentAccuracy,
                             actualTime = currentTime,
+                            weightKg = weightKg
+                        )
+                        exerciseSyncViewModel.publishProgress(
+                            classroomId = parsedClassroomId,
+                            taskId = parsedTaskId,
+                            exerciseTemplateId = template.physicalId,
+                            exerciseType = template.exerciseType,
+                            reps = currentReps,
                             goalReps = template.goalReps,
-                            goalAccuracy = template.goalAccuracy,
-                            goalTime = template.goalTime,
-                            isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                            score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                            accuracy = currentAccuracy.toDouble(),
+                            timeTakenSeconds = currentTime,
+                            completed = true
                         )
                         onComplete(performance)
                     },
@@ -1272,6 +1336,15 @@ private fun ExerciseResults(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Calories burned: ${"%.1f".format(performance.caloriesBurned)} kcal",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // Performance Details
@@ -1314,6 +1387,14 @@ private fun ExerciseResults(
                         goal = performance.goalTime,
                         isGood = performance.actualTime <= performance.goalTime,
                         suffix = "s"
+                    )
+
+                    Text(
+                        text = "Calories: ${"%.1f".format(performance.caloriesBurned)} kcal",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }

@@ -19,7 +19,11 @@ import edu.cit.stathis.task.repository.LessonTemplateRepository;
 import edu.cit.stathis.task.repository.QuizTemplateRepository;
 import edu.cit.stathis.task.repository.ExerciseTemplateRepository;
 import edu.cit.stathis.task.dto.QuizSubmissionDTO;
+import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
+import edu.cit.stathis.task.dto.ExerciseProgressDTO;
+import edu.cit.stathis.task.entity.ExerciseTemplate;
 import java.time.OffsetDateTime;
+import java.util.UUID;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
@@ -47,6 +51,12 @@ public class StudentTaskService {
 
     @Autowired
     private ExerciseTemplateRepository exerciseTemplateRepository;
+
+    @Autowired
+    private ExerciseCalorieService exerciseCalorieService;
+
+    @Autowired
+    private ExerciseProgressService exerciseProgressService;
 
     @Autowired
     private ClassroomService classroomService;
@@ -272,8 +282,103 @@ public class StudentTaskService {
     }
 
     @Transactional
-    public void completeExercise(String studentId, String taskId, String exerciseTemplateId) {
+    public Score completeExercise(
+            String studentId,
+            String taskId,
+            String exerciseTemplateId,
+            ExerciseResultSubmissionDTO result) {
+        ExerciseTemplate template = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Exercise template not found with ID: " + exerciseTemplateId));
+
+        int reps = result != null ? Math.max(0, result.getReps()) : 0;
+        double accuracy = result != null ? result.getAccuracy() : 0.0;
+        long timeTaken = result != null ? Math.max(0L, result.getTimeTaken()) : 0L;
+        int goalReps = result != null && result.getGoalReps() != null
+                ? result.getGoalReps()
+                : template.getGoalReps();
+        String exerciseType = result != null && result.getExerciseType() != null
+                ? result.getExerciseType()
+                : (template.getExerciseType() != null ? template.getExerciseType().name() : null);
+
+        double sessionCalories = result != null && result.getCaloriesBurned() != null && result.getCaloriesBurned() > 0
+                ? result.getCaloriesBurned()
+                : exerciseCalorieService.calculateCalories(studentId, exerciseType, reps);
+
+        Score existingScore = scoreRepository
+                .findExerciseScore(studentId, taskId, exerciseTemplateId)
+                .orElse(null);
+
+        if (existingScore == null) {
+            existingScore = Score.builder()
+                    .physicalId("SCORE-" + UUID.randomUUID().toString().toUpperCase())
+                    .studentId(studentId)
+                    .taskId(taskId)
+                    .exerciseTemplateId(exerciseTemplateId)
+                    .score(0)
+                    .maxScore(100)
+                    .attempts(0)
+                    .isCompleted(false)
+                    .timeTaken(0L)
+                    .accuracy(0.0)
+                    .reps(0)
+                    .goalReps(goalReps)
+                    .caloriesBurned(0.0)
+                    .startedAt(OffsetDateTime.now())
+                    .build();
+        }
+
+        int previousReps = existingScore.getReps() != null ? existingScore.getReps() : 0;
+        double previousCalories =
+                existingScore.getCaloriesBurned() != null ? existingScore.getCaloriesBurned() : 0.0;
+
+        // Accumulate reps and calories across repeated attempts
+        existingScore.setReps(previousReps + reps);
+        existingScore.setCaloriesBurned(
+                Math.round((previousCalories + sessionCalories) * 10.0) / 10.0);
+        existingScore.setGoalReps(goalReps);
+        existingScore.setAccuracy(accuracy);
+        existingScore.setTimeTaken(timeTaken);
+        existingScore.setAttempts(existingScore.getAttempts() + 1);
+        existingScore.setCompleted(true);
+        existingScore.setCompletedAt(OffsetDateTime.now());
+        existingScore.setScore(computeExerciseScore(reps, accuracy, goalReps, template.getGoalAccuracy()));
+        existingScore.setMaxScore(100);
+
+        Score savedScore = scoreRepository.save(existingScore);
         updateTaskCompletion(studentId, taskId, "exercise", true);
+
+        String classroomId = result != null ? result.getClassroomId() : null;
+        if (classroomId == null || classroomId.isBlank()) {
+            Task task = taskRepository.findByPhysicalId(taskId).orElse(null);
+            if (task != null) {
+                classroomId = task.getClassroomPhysicalId();
+            }
+        }
+
+        exerciseProgressService.publishProgress(ExerciseProgressDTO.builder()
+                .studentId(studentId)
+                .classroomId(classroomId)
+                .taskId(taskId)
+                .exerciseTemplateId(exerciseTemplateId)
+                .exerciseType(exerciseType)
+                .reps(savedScore.getReps() != null ? savedScore.getReps() : reps)
+                .goalReps(goalReps)
+                .accuracy(accuracy)
+                .timeTakenMs(timeTaken)
+                .sessionCaloriesBurned(sessionCalories)
+                .totalCaloriesBurned(savedScore.getCaloriesBurned())
+                .completed(true)
+                .timestamp(OffsetDateTime.now().toString())
+                .build());
+
+        return savedScore;
+    }
+
+    private int computeExerciseScore(int reps, double accuracy, int goalReps, int goalAccuracy) {
+        double repRatio = goalReps > 0 ? Math.min(1.0, (double) reps / goalReps) : 0.0;
+        double accuracyRatio = goalAccuracy > 0 ? Math.min(1.0, accuracy / goalAccuracy) : Math.min(1.0, accuracy / 100.0);
+        return (int) Math.round(((repRatio * 0.6) + (accuracyRatio * 0.4)) * 100.0);
     }
 
     @Transactional
@@ -407,6 +512,12 @@ public class StudentTaskService {
             .maxScore(score.getMaxScore())
             .attempts(score.getAttempts())
             .isCompleted(score.isCompleted())
+            .teacherFeedback(score.getTeacherFeedback())
+            .manualScore(score.getManualScore())
+            .reps(score.getReps())
+            .goalReps(score.getGoalReps())
+            .accuracy(score.getAccuracy())
+            .caloriesBurned(score.getCaloriesBurned())
             .build();
     }
 } 

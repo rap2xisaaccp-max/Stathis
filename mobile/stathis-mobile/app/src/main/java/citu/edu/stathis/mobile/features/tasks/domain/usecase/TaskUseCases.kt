@@ -119,17 +119,23 @@ class CompleteLessonResultUseCase @Inject constructor(
 class CompleteExerciseUseCase @Inject constructor(
     private val repository: TaskRepository
 ) {
-    suspend operator fun invoke(taskId: String, exerciseTemplateId: String) =
-        repository.completeExercise(taskId, exerciseTemplateId)
+    suspend operator fun invoke(
+        taskId: String,
+        exerciseTemplateId: String,
+        result: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission? = null
+    ) = repository.completeExercise(taskId, exerciseTemplateId, result)
 }
 
 class CompleteExerciseResultUseCase @Inject constructor(
     private val repository: TaskRepository
 ) {
-    suspend operator fun invoke(taskId: String, exerciseTemplateId: String): Result<Unit> =
+    suspend operator fun invoke(
+        taskId: String,
+        exerciseTemplateId: String,
+        result: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission? = null
+    ): Result<citu.edu.stathis.mobile.features.tasks.data.model.ScoreResponse?> =
         try {
-            repository.completeExercise(taskId, exerciseTemplateId)
-            Result.Success(Unit)
+            Result.Success(repository.completeExercise(taskId, exerciseTemplateId, result))
         } catch (e: Throwable) {
             Result.Error(e.message ?: "Unknown error", e, null)
         }

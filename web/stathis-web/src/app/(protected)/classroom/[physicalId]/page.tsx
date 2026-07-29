@@ -1109,7 +1109,8 @@ export default function ClassroomDetailPage() {
                         {tasks.map((task: TaskResponseDTO) => (
                           <TabsContent key={task.physicalId} value={task.physicalId}>
                             <TaskScoresTab 
-                              taskId={task.physicalId} 
+                              taskId={task.physicalId}
+                              classroomId={physicalId}
                               taskType={
                                 task.exerciseTemplateId ? 'EXERCISE' : 
                                 task.quizTemplateId ? 'QUIZ' : 

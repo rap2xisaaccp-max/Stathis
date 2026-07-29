@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   getTaskScores, 
@@ -9,6 +9,7 @@ import {
   gradeManually,
   ScoreResponseDTO 
 } from '@/services/scores/api-score-client';
+import { useExerciseProgress } from '@/lib/websocket/use-exercise-progress';
 import {
   Table,
   TableBody,
@@ -55,15 +56,45 @@ interface TaskScoresTabProps {
   taskId: string;
   taskType?: 'QUIZ' | 'EXERCISE' | 'LESSON';
   templateId?: string;
+  classroomId?: string;
 }
 
-export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabProps) {
+export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: TaskScoresTabProps) {
   const [selectedScore, setSelectedScore] = useState<ScoreResponseDTO | null>(null);
   const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
   const [manualScore, setManualScore] = useState<number>(0);
   const [feedback, setFeedback] = useState<string>('');
   
   const queryClient = useQueryClient();
+  const { progressByStudent, lastUpdated } = useExerciseProgress(classroomId || '', taskId);
+
+  // Live exercise progress: merge into cached scores and refresh on completion
+  useEffect(() => {
+    const liveEntries = Object.values(progressByStudent);
+    if (liveEntries.length === 0) return;
+
+    queryClient.setQueryData<ScoreResponseDTO[]>(['task-scores', taskId], (prev) => {
+      if (!prev) return prev;
+      return prev.map((score) => {
+        const live = progressByStudent[score.studentId];
+        if (!live) return score;
+        return {
+          ...score,
+          reps: live.reps,
+          goalReps: live.goalReps ?? score.goalReps,
+          accuracy: live.accuracy ?? score.accuracy,
+          caloriesBurned:
+            live.totalCaloriesBurned ??
+            live.sessionCaloriesBurned ??
+            score.caloriesBurned,
+        };
+      });
+    });
+
+    if (liveEntries.some((p) => p.completed)) {
+      queryClient.invalidateQueries({ queryKey: ['task-scores', taskId] });
+    }
+  }, [progressByStudent, lastUpdated, queryClient, taskId]);
 
   // Fetch all scores for this task
   const { 
@@ -140,7 +171,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
     const isExerciseTask = taskType === 'EXERCISE' || scores.some(s => s.exerciseTemplateId);
     
     const headers = isExerciseTask 
-      ? ['Student ID', 'Reps', 'Goal Reps', 'Accuracy (%)', 'Goal Accuracy (%)', 'Score', 'Max Score', 'Attempts', 'Remaining Attempts', 'Submission Date', 'Status', 'Feedback']
+      ? ['Student ID', 'Reps', 'Goal Reps', 'Accuracy (%)', 'Goal Accuracy (%)', 'Calories Burned', 'Score', 'Max Score', 'Attempts', 'Remaining Attempts', 'Submission Date', 'Status', 'Feedback']
       : ['Student ID', 'Score', 'Max Score', 'Attempts', 'Remaining Attempts', 'Submission Date', 'Status', 'Feedback'];
     
     const rows = scores.map(score => isExerciseTask ? [
@@ -149,6 +180,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
       score.goalReps || 'N/A',
       score.accuracy !== undefined ? score.accuracy.toFixed(1) : 'N/A',
       score.goalAccuracy || 'N/A',
+      score.caloriesBurned !== undefined ? score.caloriesBurned.toFixed(1) : '0',
       score.score,
       score.maxScore,
       score.attempts,
@@ -332,10 +364,21 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Reps:</span>
                               <span className="font-medium">{score.reps || 0}/{score.goalReps || 'N/A'}</span>
+                              {progressByStudent[score.studentId] && !progressByStudent[score.studentId].completed && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700">Live</Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Accuracy:</span>
                               <span className="font-medium">{score.accuracy !== undefined ? `${score.accuracy.toFixed(1)}%` : 'N/A'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Calories:</span>
+                              <span className="font-medium">
+                                {score.caloriesBurned !== undefined
+                                  ? `${score.caloriesBurned.toFixed(1)} kcal`
+                                  : '0 kcal'}
+                              </span>
                             </div>
                           </div>
                         ) : (
@@ -398,7 +441,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
             
             {/* Show exercise-specific info if it's an exercise */}
             {(taskType === 'EXERCISE' || selectedScore?.exerciseTemplateId) && (
-              <div className="grid grid-cols-2 gap-4 p-3 bg-muted rounded-lg">
+              <div className="grid grid-cols-3 gap-4 p-3 bg-muted rounded-lg">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Repetitions</p>
                   <p className="text-sm font-medium">{selectedScore?.reps || 0} / {selectedScore?.goalReps || 'N/A'}</p>
@@ -407,6 +450,14 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
                   <p className="text-xs text-muted-foreground mb-1">Accuracy</p>
                   <p className="text-sm font-medium">
                     {selectedScore?.accuracy !== undefined ? `${selectedScore.accuracy.toFixed(1)}%` : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Calories</p>
+                  <p className="text-sm font-medium">
+                    {selectedScore?.caloriesBurned !== undefined
+                      ? `${selectedScore.caloriesBurned.toFixed(1)} kcal`
+                      : '0 kcal'}
                   </p>
                 </div>
               </div>

@@ -21,10 +21,11 @@ export interface ScoreResponseDTO {
   status: 'PENDING' | 'COMPLETED' | 'GRADED';
   feedback?: string;
   // Exercise-specific fields
-  reps?: number;              // Repetitions completed
+  reps?: number;              // Repetitions completed (accumulated across attempts)
   goalReps?: number;          // Target repetitions
   accuracy?: number;          // Accuracy percentage (0-100)
   goalAccuracy?: number;      // Target accuracy percentage
+  caloriesBurned?: number;    // Cumulative calories burned for this exercise score
 }
 
 export interface ScoreBodyDTO {
@@ -46,6 +47,7 @@ export interface ScoreBodyDTO {
   goalReps?: number;
   accuracy?: number;
   goalAccuracy?: number;
+  caloriesBurned?: number;
 }
 
 export interface ManualGradeDTO {

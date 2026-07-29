@@ -6,11 +6,17 @@ data class ScoreResponse(
     val taskId: String? = null,
     val templateId: String? = null,
     val quizTemplateId: String? = null,
+    val exerciseTemplateId: String? = null,
     val score: Int? = null,
     val maxScore: Int? = null,
     val attempts: Int? = null,
     val completed: Boolean? = null,
+    val isCompleted: Boolean? = null,
     val isQuiz: Boolean? = null,
+    val reps: Int? = null,
+    val goalReps: Int? = null,
+    val accuracy: Double? = null,
+    val caloriesBurned: Double? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null
 ) 
