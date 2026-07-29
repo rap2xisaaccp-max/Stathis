@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,19 +61,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.analysis.OnDeviceExerciseAnalyzer
+import citu.edu.stathis.mobile.features.exercise.data.facerecognition.FaceAnalyzer
+import citu.edu.stathis.mobile.features.exercise.data.facerecognition.SkeletonPresenceTracker
 import citu.edu.stathis.mobile.features.exercise.data.posedetection.PoseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.recording.ScreenRecordService
 import citu.edu.stathis.mobile.features.exercise.ui.components.PoseSkeletonOverlayView
+import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.vitals.ui.HealthCompactIndicator
 import com.google.mlkit.vision.pose.Pose
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 fun ExerciseScreen(
@@ -82,12 +86,25 @@ fun ExerciseScreen(
     exerciseType: ExerciseType? = null,
     exerciseTitle: String? = null,
     showExerciseFeedbackOverlay: Boolean = true,
-    onExerciseFeedback: ((OnDeviceFeedback) -> Unit)? = null
+    onExerciseFeedback: ((OnDeviceFeedback) -> Unit)? = null,
+    /** When true, exercise rep analysis runs. Disable until identity is verified. */
+    enableExerciseTracking: Boolean = true,
+    /** When true, run facial recognition against the enrolled embedding. */
+    verifyFace: Boolean = false,
+    enrolledFaceEmbedding: FloatArray? = null,
+    onFaceVerified: (() -> Unit)? = null,
+    /** Called when the full skeleton leaves the camera after identity was verified. */
+    monitorSkeletonPresence: Boolean = false,
+    onSkeletonLeftFrame: (() -> Unit)? = null,
+    onPoseUpdated: ((Pose?) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
+    val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val onDeviceExerciseAnalyzer = remember { OnDeviceExerciseAnalyzer() }
+    val skeletonSession = remember { SkeletonPresenceTracker.Session() }
+    val faceVerifiedLatch = remember { AtomicBoolean(false) }
 
     val exerciseState by exerciseViewModel.uiState.collectAsState()
     var exerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
@@ -108,6 +125,23 @@ fun ExerciseScreen(
         onDeviceExerciseAnalyzer.resetExerciseState()
         exerciseFeedback = null
     }
+
+    LaunchedEffect(verifyFace) {
+        if (verifyFace) {
+            faceVerifiedLatch.set(false)
+            skeletonSession.reset()
+            faceIdentityViewModel.resetVerification()
+        }
+    }
+
+    LaunchedEffect(monitorSkeletonPresence) {
+        if (monitorSkeletonPresence) {
+            skeletonSession.reset()
+        }
+    }
+
+    val faceService = remember { faceIdentityViewModel.faceService() }
+    val faceIdentityState by faceIdentityViewModel.state.collectAsState()
 
     val mediaProjectionManager = remember { context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager }
     var mediaProjection by remember { mutableStateOf<MediaProjection?>(null) }
@@ -156,6 +190,7 @@ fun ExerciseScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        key(verifyFace, useFrontCamera, monitorSkeletonPresence, enableExerciseTracking) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -183,42 +218,71 @@ fun ExerciseScreen(
                     .setTargetRotation(previewView.display?.rotation ?: android.view.Surface.ROTATION_0)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build().also { analysis ->
-                        analysis.setAnalyzer(
-                            analysisExecutor,
-                            PoseAnalyzer(
-                                executor = analysisExecutor,
-                                onPoseDetected = { pose, w, h, flipped, rot ->
-                                    latestPose = pose
-                                    frameWidth = w
-                                    frameHeight = h
-                                    rotation = rot
-                                    if (exerciseType != null) {
-                                        exerciseFeedback = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
-                                        onExerciseFeedback?.invoke(exerciseFeedback!!)
-                                    }
-                                    if (enablePostureAnalysis) {
-                                        // Send to pose classification
-                                        val poseLandmarks = (0 until 33).mapNotNull { idx ->
-                                            val lm = pose.getPoseLandmark(idx) ?: return@mapNotNull null
-                                            citu.edu.stathis.mobile.features.exercise.ui.util.Landmark(
-                                                x = lm.position.x / w.toFloat(),
-                                                y = lm.position.y / h.toFloat(),
-                                                z = lm.position3D.z,
-                                                v = lm.inFrameLikelihood
-                                            )
-                                        }
-                                        if (poseLandmarks.size == 33) {
-                                            exerciseViewModel.onFrame(
-                                                landmarks = poseLandmarks,
-                                                targetExerciseType = exerciseType,
-                                                localConfidence = exerciseFeedback?.confidence
-                                            )
+                        if (verifyFace) {
+                            analysis.setAnalyzer(
+                                analysisExecutor,
+                                FaceAnalyzer(
+                                    executor = analysisExecutor,
+                                    faceRecognitionService = faceService,
+                                    onResult = { result ->
+                                        if (!faceVerifiedLatch.get()) {
+                                            val verified = faceIdentityViewModel.onVerificationProbe(result.embedding)
+                                            if (verified && faceVerifiedLatch.compareAndSet(false, true)) {
+                                                onFaceVerified?.invoke()
+                                            }
                                         }
                                     }
-                                },
-                                isImageFlipped = useFrontCamera
+                                )
                             )
-                        )
+                        } else {
+                            analysis.setAnalyzer(
+                                analysisExecutor,
+                                PoseAnalyzer(
+                                    executor = analysisExecutor,
+                                    onPoseDetected = { pose, w, h, flipped, rot ->
+                                        latestPose = pose
+                                        frameWidth = w
+                                        frameHeight = h
+                                        rotation = rot
+                                        onPoseUpdated?.invoke(pose)
+
+                                        if (monitorSkeletonPresence) {
+                                            val status = skeletonSession.onPose(pose)
+                                            if (status == SkeletonPresenceTracker.SkeletonStatus.LEFT_FRAME) {
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                    onSkeletonLeftFrame?.invoke()
+                                                }
+                                                skeletonSession.reset()
+                                            }
+                                        }
+
+                                        if (enableExerciseTracking && exerciseType != null) {
+                                            exerciseFeedback = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                            onExerciseFeedback?.invoke(exerciseFeedback!!)
+                                        }
+                                        if (enablePostureAnalysis && enableExerciseTracking) {
+                                            val poseLandmarks = (0 until 33).mapNotNull { idx ->
+                                                val lm = pose.getPoseLandmark(idx) ?: return@mapNotNull null
+                                                citu.edu.stathis.mobile.features.exercise.ui.util.Landmark(
+                                                    x = lm.position.x / w.toFloat(),
+                                                    y = lm.position.y / h.toFloat(),
+                                                    z = lm.position3D.z,
+                                                    v = lm.inFrameLikelihood
+                                                )
+                                            }
+                                            if (poseLandmarks.size == 33) {
+                                                exerciseViewModel.onFrame(
+                                                    landmarks = poseLandmarks,
+                                                    targetExerciseType = exerciseType,
+                                                    localConfidence = exerciseFeedback?.confidence
+                                                )
+                                            }
+                                        }
+                                    },
+                                    isImageFlipped = useFrontCamera
+                                )
+                            )
+                        }
                     }
 
                 try {
@@ -242,6 +306,7 @@ fun ExerciseScreen(
                 }
             }
         )
+        }
 
         AndroidView(
             modifier = Modifier.fillMaxSize(),

@@ -51,6 +51,15 @@ import com.google.mlkit.vision.pose.Pose
 import kotlinx.coroutines.launch
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+
+private enum class IdentityPhase {
+    IDLE,
+    VERIFYING,
+    READY,
+    ACTIVE,
+    REVERIFY
+}
 
 @Composable
 fun ExerciseTemplateRenderer(
@@ -68,8 +77,29 @@ fun ExerciseTemplateRenderer(
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
     var isCheckingBodyMetrics by remember { mutableStateOf(false) }
     var bodyMetricsError by remember { mutableStateOf<String?>(null) }
+    var identityPhase by remember { mutableStateOf(IdentityPhase.IDLE) }
+    var identityMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
+    val faceIdentityViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel =
+        hiltViewModel()
+    val faceIdentityState by faceIdentityViewModel.state.collectAsState()
+
+    LaunchedEffect(identityPhase) {
+        if (identityPhase == IdentityPhase.READY) {
+            identityMessage = "You are now ready to start."
+            kotlinx.coroutines.delay(1500)
+            identityPhase = IdentityPhase.ACTIVE
+            identityMessage = null
+        }
+    }
+
+    LaunchedEffect(isExerciseStarted) {
+        if (!isExerciseStarted) {
+            identityPhase = IdentityPhase.IDLE
+            identityMessage = null
+        }
+    }
 
     Box(
         modifier = modifier.fillMaxSize()
@@ -112,7 +142,7 @@ fun ExerciseTemplateRenderer(
                                     if (navController != null) {
                                         navController.navigate(destination)
                                     } else {
-                                        bodyMetricsError = "Please complete your height, weight, and date of birth in Profile before starting."
+                                        bodyMetricsError = "Please complete your height, weight, age, and face registration in Profile before starting."
                                     }
                                 }
                             }
@@ -125,12 +155,23 @@ fun ExerciseTemplateRenderer(
             // Fullscreen exercise mode - no header, just camera and overlays
             ExerciseScreen(
                 navController = rememberNavController(),
-                enableVitalsIndicator = false, // We'll show our own vitals indicator
-                enablePostureAnalysis = true,
+                enableVitalsIndicator = false,
+                enablePostureAnalysis = identityPhase == IdentityPhase.ACTIVE,
                 exerciseType = resolveExerciseType(template.exerciseType),
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
-                onExerciseFeedback = { feedback -> latestExerciseFeedback = feedback }
+                onExerciseFeedback = { feedback -> latestExerciseFeedback = feedback },
+                enableExerciseTracking = identityPhase == IdentityPhase.ACTIVE,
+                verifyFace = identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFY,
+                enrolledFaceEmbedding = faceIdentityState.enrolledEmbedding,
+                onFaceVerified = {
+                    identityPhase = IdentityPhase.READY
+                },
+                monitorSkeletonPresence = identityPhase == IdentityPhase.ACTIVE,
+                onSkeletonLeftFrame = {
+                    identityPhase = IdentityPhase.REVERIFY
+                    identityMessage = "Body left the camera. Verify your face to continue."
+                }
             )
 
             // Overlay with exercise controls
@@ -138,17 +179,32 @@ fun ExerciseTemplateRenderer(
                 template = template,
                 classroomId = classroomId,
                 liveExerciseFeedback = latestExerciseFeedback,
+                identityPhase = identityPhase,
+                identityMessage = when (identityPhase) {
+                    IdentityPhase.VERIFYING, IdentityPhase.REVERIFY ->
+                        faceIdentityState.statusText.ifBlank { identityMessage }
+                    else -> identityMessage
+                },
+                onRequestStart = {
+                    if (faceIdentityState.faceRegistered && faceIdentityState.enrolledEmbedding != null) {
+                        identityPhase = IdentityPhase.VERIFYING
+                        identityMessage = "Verifying biometric identity against the assigned student..."
+                        faceIdentityViewModel.resetVerification()
+                    } else {
+                        identityMessage = "Register your face in Profile before starting. Biometric verification is required."
+                    }
+                },
+                onTrackingActive = identityPhase == IdentityPhase.ACTIVE,
                 onComplete = { performance ->
                     exercisePerformance = performance
                     isExerciseCompleted = true
                     onComplete(performance)
                 },
                 onCancel = {
-                    // Reset exercise state when cancelled
                     isExerciseStarted = false
                     isExerciseCompleted = false
                     exercisePerformance = null
-                    // Call the provided cancel callback
+                    identityPhase = IdentityPhase.IDLE
                     onCancel?.invoke()
                 },
                 modifier = Modifier.fillMaxSize()
@@ -711,6 +767,10 @@ private fun ExerciseControlsOverlay(
     template: ExerciseTemplate,
     classroomId: String?,
     liveExerciseFeedback: OnDeviceFeedback?,
+    identityPhase: IdentityPhase,
+    identityMessage: String?,
+    onRequestStart: () -> Unit,
+    onTrackingActive: Boolean,
     onComplete: (ExercisePerformance) -> Unit,
     onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -731,11 +791,27 @@ private fun ExerciseControlsOverlay(
 
     LaunchedEffect(liveExerciseFeedback) {
         liveExerciseFeedback?.let { feedback ->
-            currentReps = feedback.repCount
-            exerciseState = feedback.exerciseState
-            exerciseConfidence = feedback.confidence
-            exerciseFeedback = feedback.formIssues
-            currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
+            if (onTrackingActive && isTimerRunning) {
+                currentReps = feedback.repCount
+                exerciseState = feedback.exerciseState
+                exerciseConfidence = feedback.confidence
+                exerciseFeedback = feedback.formIssues
+                currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
+            }
+        }
+    }
+
+    LaunchedEffect(identityPhase) {
+        when (identityPhase) {
+            IdentityPhase.ACTIVE -> {
+                if (!isTimerRunning) {
+                    isTimerRunning = true
+                }
+            }
+            IdentityPhase.REVERIFY, IdentityPhase.VERIFYING, IdentityPhase.IDLE -> {
+                isTimerRunning = false
+            }
+            IdentityPhase.READY -> { /* keep paused until ACTIVE */ }
         }
     }
 
@@ -1075,7 +1151,56 @@ private fun ExerciseControlsOverlay(
             }
         }
 
-        // Improved control buttons at the bottom with better spacing
+        // Identity / verification status banner
+        if (!identityMessage.isNullOrBlank() || identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFY || identityPhase == IdentityPhase.READY) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 24.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = when (identityPhase) {
+                            IdentityPhase.READY -> "You are now ready to start."
+                            IdentityPhase.VERIFYING, IdentityPhase.REVERIFY -> "Biometric facial recognition"
+                            else -> "Identity check"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+                    if (!identityMessage.isNullOrBlank() && identityPhase != IdentityPhase.READY) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = identityMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    if (identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFY) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Only the registered student can pass this check.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+
+        // Control buttons: Cancel, Start, Complete
         Card(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -1093,13 +1218,9 @@ private fun ExerciseControlsOverlay(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Cancel Button
                 Button(
                     onClick = {
-                        // Stop vitals monitoring with post-activity vitals
-                        // We'll handle this in the LaunchedEffect below
                         shouldStopWithPostActivity = true
-                        // Call cancel callback if provided
                         onCancel?.invoke()
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -1115,36 +1236,35 @@ private fun ExerciseControlsOverlay(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Cancel",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text(text = "Cancel", style = MaterialTheme.typography.bodyMedium)
                 }
 
-                // Start/Stop Button
+                val startEnabled = identityPhase == IdentityPhase.IDLE ||
+                    identityPhase == IdentityPhase.REVERIFY ||
+                    identityPhase == IdentityPhase.ACTIVE
                 Button(
                     onClick = {
-                        if (!isTimerRunning) {
-                            // Try to connect to Health Connect when starting exercise
-                            when (connectionState) {
-                                citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.DISCONNECTED -> {
-                                    // Try to connect first
-                                    healthConnectViewModel.connect()
-                                    // If still disconnected after a brief delay, request permissions
-                                    shouldRequestPermissions = true
+                        when (identityPhase) {
+                            IdentityPhase.IDLE, IdentityPhase.REVERIFY -> {
+                                when (connectionState) {
+                                    citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.DISCONNECTED -> {
+                                        healthConnectViewModel.connect()
+                                        shouldRequestPermissions = true
+                                    }
+                                    citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED -> {
+                                        healthConnectViewModel.startMonitoring()
+                                    }
+                                    else -> healthConnectViewModel.connect()
                                 }
-                                citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED -> {
-                                    // Already connected, start monitoring
-                                    healthConnectViewModel.startMonitoring()
-                                }
-                                else -> {
-                                    // For other states, just try to connect
-                                    healthConnectViewModel.connect()
-                                }
+                                onRequestStart()
                             }
+                            IdentityPhase.ACTIVE -> {
+                                isTimerRunning = !isTimerRunning
+                            }
+                            else -> Unit
                         }
-                        isTimerRunning = !isTimerRunning
                     },
+                    enabled = startEnabled,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isTimerRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     ),
@@ -1159,17 +1279,18 @@ private fun ExerciseControlsOverlay(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isTimerRunning) "Stop" else "Start",
+                        text = when {
+                            identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFY -> "Verifying"
+                            isTimerRunning -> "Stop"
+                            else -> "Start"
+                        },
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
 
-                // Complete Button
                 Button(
                     onClick = {
-                        // Stop vitals monitoring with post-activity vitals
                         shouldStopWithPostActivity = true
-                        // Complete exercise manually
                         val performance = ExercisePerformance(
                             taskId = "",
                             templateId = template.physicalId,
@@ -1194,10 +1315,7 @@ private fun ExerciseControlsOverlay(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Complete",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text(text = "Complete", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }

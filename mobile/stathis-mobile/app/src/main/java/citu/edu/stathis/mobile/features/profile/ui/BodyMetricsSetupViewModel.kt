@@ -8,8 +8,6 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDate
-import java.time.format.DateTimeParseException
 
 @HiltViewModel
 class BodyMetricsSetupViewModel @Inject constructor(
@@ -21,12 +19,14 @@ class BodyMetricsSetupViewModel @Inject constructor(
         val isSaving: Boolean = false,
         val errorMessage: String? = null,
         val success: Boolean = false,
+        val needsFaceRegistration: Boolean = false,
         val firstName: String = "",
         val lastName: String = "",
         val profilePictureUrl: String? = null,
-        val birthdate: String = "",
+        val age: String = "",
         val heightCm: String = "",
-        val weightKg: String = ""
+        val weightKg: String = "",
+        val faceRegistered: Boolean = false
     )
 
     private val _state = MutableStateFlow(UiState(isLoading = true))
@@ -55,9 +55,10 @@ class BodyMetricsSetupViewModel @Inject constructor(
                     firstName = profile.firstName,
                     lastName = profile.lastName,
                     profilePictureUrl = profile.profilePictureUrl,
-                    birthdate = profile.birthdate.orEmpty(),
+                    age = profile.age?.toString().orEmpty(),
                     heightCm = heightCm,
-                    weightKg = weightKg
+                    weightKg = weightKg,
+                    faceRegistered = profile.faceRegistered
                 )
             } else {
                 _state.value = UiState(
@@ -68,8 +69,8 @@ class BodyMetricsSetupViewModel @Inject constructor(
         }
     }
 
-    fun onBirthdateChange(value: String) {
-        _state.value = _state.value.copy(birthdate = value, errorMessage = null)
+    fun onAgeChange(value: String) {
+        _state.value = _state.value.copy(age = value.filter { it.isDigit() }, errorMessage = null)
     }
 
     fun onHeightCmChange(value: String) {
@@ -88,6 +89,7 @@ class BodyMetricsSetupViewModel @Inject constructor(
             return
         }
 
+        val age = _state.value.age.toInt()
         val heightMeters = _state.value.heightCm.toDouble() / 100.0
         val weightKg = _state.value.weightKg.toDouble()
 
@@ -96,28 +98,33 @@ class BodyMetricsSetupViewModel @Inject constructor(
             val resp = profileRepository.updateUserProfile(
                 firstName = _state.value.firstName.ifBlank { "Student" },
                 lastName = _state.value.lastName.ifBlank { "User" },
-                birthdate = _state.value.birthdate.trim(),
+                age = age,
                 profilePictureUrl = _state.value.profilePictureUrl,
                 heightInMeters = heightMeters,
                 weightInKg = weightKg
             )
-            _state.value = if (resp.success) {
-                _state.value.copy(isSaving = false, success = true)
-            } else {
-                _state.value.copy(isSaving = false, errorMessage = resp.message ?: "Failed to save body metrics.")
+            if (!resp.success) {
+                _state.value = _state.value.copy(
+                    isSaving = false,
+                    errorMessage = resp.message ?: "Failed to save body metrics."
+                )
+                return@launch
             }
+
+            val faceRegistered = resp.data?.faceRegistered == true || _state.value.faceRegistered
+            _state.value = _state.value.copy(
+                isSaving = false,
+                success = true,
+                faceRegistered = faceRegistered,
+                needsFaceRegistration = !faceRegistered
+            )
         }
     }
 
     private fun validate(): String? {
-        val birthdate = _state.value.birthdate.trim()
-        if (birthdate.isBlank()) return "Please enter your date of birth."
-        try {
-            val parsed = LocalDate.parse(birthdate)
-            if (!parsed.isBefore(LocalDate.now())) return "Birthdate must be in the past."
-        } catch (_: DateTimeParseException) {
-            return "Use birthdate format YYYY-MM-DD."
-        }
+        val age = _state.value.age.toIntOrNull()
+            ?: return "Please enter your age."
+        if (age < 5 || age > 100) return "Age must be between 5 and 100."
 
         val heightCm = _state.value.heightCm.toDoubleOrNull()
             ?: return "Please enter a valid height in centimeters."

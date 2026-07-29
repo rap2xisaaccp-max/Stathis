@@ -21,13 +21,14 @@ class EditProfileViewModel @Inject constructor(
         val success: Boolean = false,
         val firstName: String = "",
         val lastName: String = "",
-        val birthdate: String = "",
+        val age: String = "",
         val profilePictureUrl: String? = null,
         val heightCm: String = "",
         val weightKg: String = "",
         val school: String = "",
         val course: String = "",
-        val yearLevel: String = ""
+        val yearLevel: String = "",
+        val faceRegistered: Boolean = false
     )
 
     private val _state = MutableStateFlow(UiState(isLoading = true))
@@ -54,13 +55,14 @@ class EditProfileViewModel @Inject constructor(
                     isLoading = false,
                     firstName = profile.firstName,
                     lastName = profile.lastName,
-                    birthdate = profile.birthdate.orEmpty(),
+                    age = profile.age?.toString().orEmpty(),
                     profilePictureUrl = profile.profilePictureUrl,
                     heightCm = heightCm,
                     weightKg = weightKg,
                     school = profile.school.orEmpty(),
                     course = profile.course.orEmpty(),
-                    yearLevel = profile.yearLevel?.toString().orEmpty()
+                    yearLevel = profile.yearLevel?.toString().orEmpty(),
+                    faceRegistered = profile.faceRegistered
                 )
             } else {
                 _state.value = UiState(
@@ -79,8 +81,8 @@ class EditProfileViewModel @Inject constructor(
         _state.value = _state.value.copy(lastName = value, errorMessage = null)
     }
 
-    fun onBirthdateChange(value: String) {
-        _state.value = _state.value.copy(birthdate = value, errorMessage = null)
+    fun onAgeChange(value: String) {
+        _state.value = _state.value.copy(age = value.filter { it.isDigit() }, errorMessage = null)
     }
 
     fun onHeightCmChange(value: String) {
@@ -111,6 +113,12 @@ class EditProfileViewModel @Inject constructor(
             return
         }
 
+        val age = current.age.toIntOrNull()
+        if (current.age.isNotBlank() && (age == null || age < 5 || age > 100)) {
+            _state.value = current.copy(errorMessage = "Enter a valid age between 5 and 100.")
+            return
+        }
+
         val heightMeters = current.heightCm.toDoubleOrNull()?.div(100.0)
         val weightKg = current.weightKg.toDoubleOrNull()
         if (current.heightCm.isNotBlank() && heightMeters == null) {
@@ -127,7 +135,7 @@ class EditProfileViewModel @Inject constructor(
             val userResp = profileRepository.updateUserProfile(
                 firstName = current.firstName.trim(),
                 lastName = current.lastName.trim(),
-                birthdate = current.birthdate.trim().ifBlank { null },
+                age = age,
                 profilePictureUrl = current.profilePictureUrl,
                 heightInMeters = heightMeters,
                 weightInKg = weightKg

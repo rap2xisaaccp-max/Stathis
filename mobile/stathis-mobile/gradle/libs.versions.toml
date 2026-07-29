@@ -31,6 +31,8 @@ materialIconsExtendedAndroid = "1.7.8"
 navigationCompose = "2.8.9"
 poseDetection = "18.0.0-beta5"
 poseDetectionAccurate = "18.0.0-beta5"
+faceDetection = "16.1.7"
+tensorflowLite = "2.14.0"
 supabaseKt = "3.1.4"
 uiTooling = "1.0.0-alpha07"
 uiToolingPreview = "1.7.8"
@@ -84,6 +86,9 @@ lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 pose-detection = { module = "com.google.mlkit:pose-detection", version.ref = "poseDetection" }
 pose-detection-accurate = { module = "com.google.mlkit:pose-detection-accurate", version.ref = "poseDetectionAccurate" }
+face-detection = { module = "com.google.mlkit:face-detection", version.ref = "faceDetection" }
+tensorflow-lite = { module = "org.tensorflow:tensorflow-lite", version.ref = "tensorflowLite" }
+tensorflow-lite-support = { module = "org.tensorflow:tensorflow-lite-support", version.ref = "tensorflowLite" }
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
