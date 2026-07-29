@@ -1,5 +1,7 @@
 package edu.cit.stathis.auth.controller;
 
+import edu.cit.stathis.auth.dto.FaceEmbeddingDTO;
+import edu.cit.stathis.auth.dto.FaceEmbeddingResponseDTO;
 import edu.cit.stathis.auth.dto.UpdateStudentProfileDTO;
 import edu.cit.stathis.auth.dto.UpdateTeacherProfileDTO;
 import edu.cit.stathis.auth.dto.UpdateUserProfileDTO;
@@ -45,6 +47,19 @@ public class UserController {
   @GetMapping("/profile/teacher")
   public ResponseEntity<UserResponseDTO> getTeacherProfile() {
     UserResponseDTO response = userService.getTeacherUserProfile();
+    return new ResponseEntity<>(response, HttpStatus.OK);
+  }
+
+  @PostMapping("/profile/face")
+  public ResponseEntity<FaceEmbeddingResponseDTO> registerFace(
+      @RequestBody FaceEmbeddingDTO faceEmbeddingDTO) {
+    FaceEmbeddingResponseDTO response = userService.saveFaceEmbedding(faceEmbeddingDTO);
+    return new ResponseEntity<>(response, HttpStatus.OK);
+  }
+
+  @GetMapping("/profile/face")
+  public ResponseEntity<FaceEmbeddingResponseDTO> getFaceEmbedding() {
+    FaceEmbeddingResponseDTO response = userService.getFaceEmbedding();
     return new ResponseEntity<>(response, HttpStatus.OK);
   }
 }

@@ -2,6 +2,8 @@ package edu.cit.stathis.auth.service;
 
 import edu.cit.stathis.auth.dto.AuthResponseDTO;
 import edu.cit.stathis.auth.dto.CreateUserDTO;
+import edu.cit.stathis.auth.dto.FaceEmbeddingDTO;
+import edu.cit.stathis.auth.dto.FaceEmbeddingResponseDTO;
 import edu.cit.stathis.auth.dto.LoginDTO;
 import edu.cit.stathis.auth.dto.UpdateStudentProfileDTO;
 import edu.cit.stathis.auth.dto.UpdateTeacherProfileDTO;
@@ -271,6 +273,9 @@ public class UserService {
     userProfile.setFirstName(profileDTO.getFirstName());
     userProfile.setLastName(profileDTO.getLastName());
     userProfile.setBirthdate(profileDTO.getBirthdate());
+    if (profileDTO.getAge() != null) {
+      userProfile.setAge(profileDTO.getAge());
+    }
     userProfile.setProfilePictureUrl(profileDTO.getProfilePictureUrl());
     if (profileDTO.getHeightInMeters() != null) {
       userProfile.setHeightInMeters(profileDTO.getHeightInMeters());
@@ -284,6 +289,34 @@ public class UserService {
     webhookService.notifyUserEvent(user, "updated profile");
 
     return toUserResponse(user, userProfile);
+  }
+
+  @Transactional
+  public FaceEmbeddingResponseDTO saveFaceEmbedding(FaceEmbeddingDTO faceEmbeddingDTO) {
+    UUID userId = physicalIdService.getCurrentUserUUID();
+    User user = findById(userId);
+    UserProfile userProfile = findUserProfileByUserId(userId);
+
+    userProfile.setFaceEmbedding(faceEmbeddingDTO.getEmbedding());
+    userProfile.setFaceRegistered(true);
+    upRepo.save(userProfile);
+
+    webhookService.notifyUserEvent(user, "registered face");
+
+    return FaceEmbeddingResponseDTO.builder()
+        .faceRegistered(true)
+        .embedding(userProfile.getFaceEmbedding())
+        .build();
+  }
+
+  public FaceEmbeddingResponseDTO getFaceEmbedding() {
+    UUID userId = physicalIdService.getCurrentUserUUID();
+    UserProfile userProfile = findUserProfileByUserId(userId);
+    boolean registered = userProfile.hasFaceRegistered();
+    return FaceEmbeddingResponseDTO.builder()
+        .faceRegistered(registered)
+        .embedding(registered ? userProfile.getFaceEmbedding() : null)
+        .build();
   }
 
   @Transactional
@@ -366,6 +399,7 @@ public class UserService {
         .firstName(userProfile.getFirstName())
         .lastName(userProfile.getLastName())
         .birthdate(userProfile.getBirthdate())
+        .age(userProfile.resolveAge())
         .profilePictureUrl(userProfile.getProfilePictureUrl())
         .role(user.getUserRole())
         .school(userProfile.getSchool())
@@ -375,6 +409,7 @@ public class UserService {
         .positionTitle(userProfile.getPositionTitle())
         .heightInMeters(userProfile.getHeightInMeters())
         .weightInKg(userProfile.getWeightInKg())
+        .faceRegistered(userProfile.hasFaceRegistered())
         .build();
   }
 

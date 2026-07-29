@@ -22,6 +22,8 @@ public class UpdateUserProfileDTO {
   @Past(message = "Birthdate must be in the past")
   private LocalDate birthdate;
 
+  private Integer age;
+
   private String profilePictureUrl;
 
   private Double heightInMeters;
