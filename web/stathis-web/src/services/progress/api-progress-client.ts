@@ -114,6 +114,10 @@ export interface StudentProgressItemDTO {
   maxScore: number | null;
   /** Number of attempts the student has made on this task */
   attempts: number | null;
+  /** Exercise repetitions completed (when applicable) */
+  reps?: number | null;
+  /** Exercise target repetitions (when applicable) */
+  goalReps?: number | null;
   /** When the student completed the task */
   completedAt: string | null;
   /** Due date for submission */

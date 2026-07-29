@@ -388,8 +388,8 @@ export default function ClassroomDetailPage() {
 
         if (!latestScore) return;
 
-        if (latestScore.maxScore > 0) {
-          scorePercentages.push((latestScore.score / latestScore.maxScore) * 100);
+        if (latestScore.maxScore > 0 && (latestScore.status === 'COMPLETED' || latestScore.status === 'GRADED' || (latestScore.attempts || 0) > 0)) {
+          scorePercentages.push(((latestScore.score || 0) / latestScore.maxScore) * 100);
         }
 
         switch (latestScore.status) {
@@ -403,7 +403,11 @@ export default function ClassroomDetailPage() {
             gradedTasks++;
             break;
           default:
-            pendingTasks++;
+            if ((latestScore.attempts || 0) > 0 || latestScore.isCompleted) {
+              completedTasks++;
+            } else {
+              pendingTasks++;
+            }
         }
       });
 

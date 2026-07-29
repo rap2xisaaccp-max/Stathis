@@ -17,6 +17,8 @@ public class StudentProgressDTO {
     private Integer score;
     private Integer maxScore;
     private Integer attempts;
+    private Integer reps;
+    private Integer goalReps;
     private OffsetDateTime completedAt;
     private LocalDate submissionDate;
     private LocalDate closingDate;

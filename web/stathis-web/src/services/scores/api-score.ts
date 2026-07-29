@@ -18,6 +18,7 @@ export interface ScoreResponseDTO {
   remainingAttempts: number;
   submissionDate: string;
   manuallyGraded: boolean;
+  isCompleted?: boolean;
   status: 'PENDING' | 'COMPLETED' | 'GRADED';
   feedback?: string;
   // Exercise-specific fields

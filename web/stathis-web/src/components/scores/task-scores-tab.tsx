@@ -307,16 +307,18 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
               <div className="text-2xl font-bold">
                 {isLoadingAverage ? (
                   <Loader2 className="h-6 w-6 animate-spin" />
-                ) : taskType === 'EXERCISE' ? (
-                  scores.length > 0
-                    ? `${(scores.reduce((sum, s) => sum + (s.score || 0), 0) / scores.length).toFixed(1)}%`
-                    : 'N/A'
+                ) : averageScore !== null && averageScore !== undefined ? (
+                  `${Number(averageScore).toFixed(1)}%`
+                ) : scores.length > 0 ? (
+                  (() => {
+                    const pcts = scores
+                      .filter((s) => (s.maxScore || 0) > 0 && (s.status === 'COMPLETED' || s.status === 'GRADED' || (s.attempts || 0) > 0))
+                      .map((s) => ((s.score || 0) / (s.maxScore || 100)) * 100);
+                    return pcts.length > 0
+                      ? `${(pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)}%`
+                      : 'N/A';
+                  })()
                 ) : (
-                  // For quizzes and lessons, show average score
-                  averageScore !== null && averageScore !== undefined ? 
-                  `${Number(averageScore).toFixed(1)}%` : 
-                  scores.length > 0 ? 
-                  `${(scores.reduce((sum, s) => sum + s.score, 0) / scores.length).toFixed(1)}%` : 
                   'N/A'
                 )}
               </div>
@@ -395,7 +397,11 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>{score.attempts} / {score.remainingAttempts + score.attempts}</TableCell>
+                      <TableCell>
+                        {typeof score.remainingAttempts === 'number'
+                          ? `${score.attempts || 0} / ${(score.remainingAttempts || 0) + (score.attempts || 0)}`
+                          : `${score.attempts || 0}`}
+                      </TableCell>
                       <TableCell>{formatDate(score.submissionDate)}</TableCell>
                       <TableCell>{getStatusBadge(score.status)}</TableCell>
                       <TableCell className="text-right">
