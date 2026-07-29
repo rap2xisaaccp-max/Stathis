@@ -86,8 +86,12 @@ public class StudentTaskService {
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
         TaskCompletion completion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task completion not found for student ID: " + studentId + " and task ID: " + taskId));
-        Score score = task.getQuizTemplateId() != null ? 
-            scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null) : null;
+        Score quizScore = task.getQuizTemplateId() != null
+            ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
+            : null;
+        Score exerciseScore = task.getExerciseTemplateId() != null
+            ? scoreRepository.findExerciseScore(studentId, taskId, task.getExerciseTemplateId()).orElse(null)
+            : null;
 
         if (completion == null) {
             return TaskProgressDTO.builder()
@@ -97,6 +101,7 @@ public class StudentTaskService {
                 .quizScore(0)
                 .maxQuizScore(0)
                 .quizAttempts(0)
+                .exerciseAttempts(0)
                 .totalTimeTaken(0L)
                 .build();
         }
@@ -105,9 +110,10 @@ public class StudentTaskService {
             .lessonCompleted(completion.isLessonCompleted())
             .exerciseCompleted(completion.isExerciseCompleted())
             .quizCompleted(completion.isQuizCompleted())
-            .quizScore(score != null ? score.getScore() : 0)
-            .maxQuizScore(score != null ? score.getMaxScore() : 0)
-            .quizAttempts(score != null ? score.getAttempts() : 0)
+            .quizScore(quizScore != null ? quizScore.getScore() : 0)
+            .maxQuizScore(quizScore != null ? quizScore.getMaxScore() : 0)
+            .quizAttempts(quizScore != null ? quizScore.getAttempts() : 0)
+            .exerciseAttempts(exerciseScore != null ? exerciseScore.getAttempts() : 0)
             .totalTimeTaken(completion.getTotalTimeTaken())
             .startedAt(completion.getStartedAt().toString())
             .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null)
@@ -272,7 +278,7 @@ public class StudentTaskService {
 
     private void validateAttempts(Task task, Score existingScore) {
         if (task.getMaxAttempts() > 0 && existingScore.getAttempts() >= task.getMaxAttempts()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Maximum quiz attempts reached for this task");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Maximum attempts reached for this task");
         }
     }
 
@@ -305,6 +311,9 @@ public class StudentTaskService {
                 ? result.getCaloriesBurned()
                 : exerciseCalorieService.calculateCalories(studentId, exerciseType, reps);
 
+        Task task = taskRepository.findByPhysicalId(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
                 .orElse(null);
@@ -328,6 +337,8 @@ public class StudentTaskService {
                     .build();
         }
 
+        validateAttempts(task, existingScore);
+
         int previousReps = existingScore.getReps() != null ? existingScore.getReps() : 0;
         double previousCalories =
                 existingScore.getCaloriesBurned() != null ? existingScore.getCaloriesBurned() : 0.0;
@@ -350,10 +361,7 @@ public class StudentTaskService {
 
         String classroomId = result != null ? result.getClassroomId() : null;
         if (classroomId == null || classroomId.isBlank()) {
-            Task task = taskRepository.findByPhysicalId(taskId).orElse(null);
-            if (task != null) {
-                classroomId = task.getClassroomPhysicalId();
-            }
+            classroomId = task.getClassroomPhysicalId();
         }
 
         exerciseProgressService.publishProgress(ExerciseProgressDTO.builder()

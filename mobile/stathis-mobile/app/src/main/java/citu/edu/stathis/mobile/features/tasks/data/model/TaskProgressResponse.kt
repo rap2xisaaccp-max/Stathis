@@ -16,6 +16,7 @@ data class TaskProgressResponse(
     val quizScore: Int? = null,
     val maxQuizScore: Int? = null,
     val quizAttempts: Int? = null,
+    val exerciseAttempts: Int? = null,
     val totalTimeTaken: Long? = null,
     val startedAt: String? = null,
     val completedAt: String? = null,

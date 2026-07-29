@@ -93,7 +93,10 @@ fun ExerciseTemplateRenderer(
     classroomId: String? = null,
     navController: NavHostController? = null,
     returnRouteAfterMetrics: String? = null,
-    onComplete: (ExercisePerformance) -> Unit,
+    maxAttempts: Int = 0,
+    attemptsUsed: Int = 0,
+    onSessionFinished: (ExercisePerformance) -> Unit,
+    onFinishSession: () -> Unit,
     onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -103,13 +106,57 @@ fun ExerciseTemplateRenderer(
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
     var isCheckingBodyMetrics by remember { mutableStateOf(false) }
     var bodyMetricsError by remember { mutableStateOf<String?>(null) }
+    var displayedAttempts by remember { mutableIntStateOf(attemptsUsed) }
     val scope = rememberCoroutineScope()
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
+
+    LaunchedEffect(attemptsUsed) {
+        if (attemptsUsed > displayedAttempts) {
+            displayedAttempts = attemptsUsed
+        }
+    }
 
     Box(
         modifier = modifier.fillMaxSize()
     ) {
         if (!isExerciseStarted) {
+            if (maxAttempts > 0 && attemptsUsed >= maxAttempts) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Maximum attempts reached",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You have used all $maxAttempts attempts for this exercise.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = onFinishSession,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Complete")
+                    }
+                }
+            } else {
             // Show header and instructions when exercise hasn't started
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -156,6 +203,7 @@ fun ExerciseTemplateRenderer(
                     )
                 }
             }
+            }
         } else if (!isExerciseCompleted) {
             // Fullscreen exercise mode - no header, just camera and overlays
             ExerciseScreen(
@@ -176,7 +224,8 @@ fun ExerciseTemplateRenderer(
                 onComplete = { performance ->
                     exercisePerformance = performance
                     isExerciseCompleted = true
-                    onComplete(performance)
+                    displayedAttempts = maxOf(displayedAttempts + 1, attemptsUsed + 1)
+                    onSessionFinished(performance)
                 },
                 onCancel = {
                     // Reset exercise state when cancelled
@@ -194,11 +243,14 @@ fun ExerciseTemplateRenderer(
                 ExerciseResults(
                     template = template,
                     performance = performance,
+                    attemptsUsed = displayedAttempts,
+                    maxAttempts = maxAttempts,
                     onRetry = {
                         isExerciseStarted = false
                         isExerciseCompleted = false
                         exercisePerformance = null
                     },
+                    onComplete = onFinishSession,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -1221,12 +1273,12 @@ private fun ExerciseControlsOverlay(
                     )
                 }
 
-                // Complete Button
+                // Finish attempt Button
                 Button(
                     onClick = {
                         // Stop vitals monitoring with post-activity vitals
                         shouldStopWithPostActivity = true
-                        // Complete exercise manually
+                        // End this attempt and show performance results
                         val performance = buildExercisePerformance(
                             template = template,
                             classroomIdEncoded = classroomId,
@@ -1254,12 +1306,12 @@ private fun ExerciseControlsOverlay(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "Complete",
+                        contentDescription = "Finish",
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Complete",
+                        text = "Finish",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -1285,9 +1337,19 @@ private fun resolveExerciseType(rawType: String): ExerciseType? {
 private fun ExerciseResults(
     template: ExerciseTemplate,
     performance: ExercisePerformance,
+    attemptsUsed: Int,
+    maxAttempts: Int,
     onRetry: () -> Unit,
+    onComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val canRetry = maxAttempts <= 0 || attemptsUsed < maxAttempts
+    val attemptsLabel = if (maxAttempts <= 0) {
+        "Attempt $attemptsUsed"
+    } else {
+        "Attempts: $attemptsUsed / $maxAttempts"
+    }
+
     Card(
         modifier = modifier
             .fillMaxSize()
@@ -1300,6 +1362,7 @@ private fun ExerciseResults(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -1323,6 +1386,15 @@ private fun ExerciseResults(
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = attemptsLabel,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
 
@@ -1401,9 +1473,20 @@ private fun ExerciseResults(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Retry Button
+            if (!canRetry) {
+                Text(
+                    text = "Maximum attempts reached. Tap Complete to finish.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
+            // Try Again
             Button(
                 onClick = onRetry,
+                enabled = canRetry,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -1417,6 +1500,22 @@ private fun ExerciseResults(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Try Again")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Complete — always available to exit regardless of remaining attempts
+            OutlinedButton(
+                onClick = onComplete,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Complete",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Complete")
             }
         }
     }

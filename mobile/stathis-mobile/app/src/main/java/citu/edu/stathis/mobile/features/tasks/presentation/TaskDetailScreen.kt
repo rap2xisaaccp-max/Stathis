@@ -296,10 +296,13 @@ fun TaskDetailScreen(
                     // Exercise Component (only show when progress is available)
                     val exerciseTemplatePhysicalId = currentTask.exerciseTemplateId ?: currentTask.exerciseTemplate?.physicalId
                     if (progress != null && !exerciseTemplatePhysicalId.isNullOrEmpty()) {
-                        val isExerciseCompleted = exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
-                        val exerciseAttempts = if (isExerciseCompleted) 1 else 0
-                        val effectiveMaxAttempts = if (currentTask.maxAttempts > 0) currentTask.maxAttempts else 10
-                        val canStartExercise = exerciseAttempts < effectiveMaxAttempts
+                        val exerciseAttempts = progress?.exerciseAttempts
+                            ?: if (exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())) 1 else 0
+                        val isExerciseCompleted = (progress?.exerciseCompleted == true)
+                            || exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
+                            || exerciseAttempts > 0
+                        val maxAttempts = currentTask.maxAttempts
+                        val canStartExercise = maxAttempts <= 0 || exerciseAttempts < maxAttempts
                         
                         item {
                             TaskComponentCard(
@@ -307,7 +310,7 @@ fun TaskDetailScreen(
                                 icon = Icons.Default.FitnessCenter,
                                 isCompleted = isExerciseCompleted,
                                 attempts = exerciseAttempts,
-                                maxAttempts = effectiveMaxAttempts,
+                                maxAttempts = maxAttempts,
                                 canStart = canStartExercise,
                                 onClick = {
                                     if (!isUnavailable) {
@@ -994,7 +997,7 @@ private fun TaskComponentCard(
             ) {
                 // Subtle attempt count (less emphasized)
                 Text(
-                    text = "${attempts}/${maxAttempts}",
+                    text = if (maxAttempts <= 0) "$attempts/∞" else "$attempts/$maxAttempts",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier
