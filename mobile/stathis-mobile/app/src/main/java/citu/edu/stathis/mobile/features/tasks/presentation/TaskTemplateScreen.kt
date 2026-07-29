@@ -27,9 +27,18 @@ fun TaskTemplateScreen(
     val templateState by viewModel.templateState.collectAsState()
     val error by viewModel.error.collectAsState()
     val taskDetail by viewModel.taskDetail.collectAsState()
+    val exerciseSubmissionState by viewModel.exerciseSubmissionState.collectAsState()
+    val isSubmittingExercise = exerciseSubmissionState is ExerciseSubmissionState.Submitting
 
     LaunchedEffect(taskId, templateType, templateId) {
         viewModel.loadTemplate(taskId, templateType, templateId)
+    }
+
+    LaunchedEffect(exerciseSubmissionState) {
+        if (exerciseSubmissionState is ExerciseSubmissionState.Success) {
+            viewModel.consumeExerciseSubmission()
+            onTaskCompleted()
+        }
     }
 
     Scaffold(
@@ -46,7 +55,7 @@ fun TaskTemplateScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = onNavigateBack, enabled = !isSubmittingExercise) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -174,7 +183,6 @@ fun TaskTemplateScreen(
                                         classroomId = "${currentTaskDetail.classroomPhysicalId}|${currentTaskDetail.physicalId}", // Encode both classroom and task IDs
                                         onComplete = { performance ->
                                             viewModel.submitExercise(taskId, performance)
-                                            onTaskCompleted()
                                         },
                                         modifier = Modifier.fillMaxSize()
                                     )
@@ -224,6 +232,21 @@ fun TaskTemplateScreen(
                         modifier = Modifier.padding(16.dp)
                     )
                 }
+            }
+
+            if (isSubmittingExercise) {
+                AlertDialog(
+                    onDismissRequest = {},
+                    title = { Text("Saving exercise") },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("Syncing repetitions and final score…")
+                        }
+                    },
+                    confirmButton = {}
+                )
             }
         }
     }

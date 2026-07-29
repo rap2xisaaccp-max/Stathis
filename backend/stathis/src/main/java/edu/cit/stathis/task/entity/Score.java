@@ -1,5 +1,6 @@
 package edu.cit.stathis.task.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.OffsetDateTime;
@@ -52,6 +53,13 @@ public class Score {
     @Column(name = "attempts")
     private int attempts;
 
+    @Column(name = "reps")
+    private int reps;
+
+    @Column(name = "goal_reps")
+    private int goalReps;
+
+    @JsonProperty("completed")
     @Column(name = "is_completed")
     private boolean isCompleted;
 

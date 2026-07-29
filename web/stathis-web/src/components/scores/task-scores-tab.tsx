@@ -145,25 +145,25 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
     
     const rows = scores.map(score => isExerciseTask ? [
       score.studentId,
-      score.reps || 0,
-      score.goalReps || 'N/A',
+      score.reps ?? 0,
+      score.goalReps ?? 'N/A',
       score.accuracy !== undefined ? score.accuracy.toFixed(1) : 'N/A',
-      score.goalAccuracy || 'N/A',
+      score.goalAccuracy ?? 'N/A',
       score.score,
       score.maxScore,
-      score.attempts,
-      score.remainingAttempts,
-      score.submissionDate,
-      score.status,
+      score.attempts ?? 0,
+      score.remainingAttempts ?? 'N/A',
+      score.submissionDate ?? score.completedAt ?? 'N/A',
+      getScoreStatus(score),
       score.feedback || ''
     ] : [
       score.studentId,
       score.score,
       score.maxScore,
-      score.attempts,
-      score.remainingAttempts,
-      score.submissionDate,
-      score.status,
+      score.attempts ?? 0,
+      score.remainingAttempts ?? 'N/A',
+      score.submissionDate ?? score.completedAt ?? 'N/A',
+      getScoreStatus(score),
       score.feedback || ''
     ]);
 
@@ -187,7 +187,8 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
   };
 
   // Format date for display
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A';
     try {
       return format(new Date(dateString), 'MMM dd, yyyy HH:mm');
     } catch (e) {
@@ -207,6 +208,11 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  const getScoreStatus = (score: ScoreResponseDTO): 'PENDING' | 'COMPLETED' | 'GRADED' => {
+    if (score.status) return score.status;
+    return score.completed ? 'COMPLETED' : 'PENDING';
   };
 
   // Error state
@@ -261,7 +267,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                {taskType === 'EXERCISE' ? 'Average Accuracy' : 'Average Score'}
+                {taskType === 'EXERCISE' ? 'Average Final Score' : 'Average Score'}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -269,9 +275,10 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
                 {isLoadingAverage ? (
                   <Loader2 className="h-6 w-6 animate-spin" />
                 ) : taskType === 'EXERCISE' ? (
-                  // For exercises, show average accuracy
-                  scores.length > 0 && scores.some(s => s.accuracy !== undefined) ? 
-                  `${(scores.reduce((sum, s) => sum + (s.accuracy || 0), 0) / scores.length).toFixed(1)}%` : 
+                  averageScore !== null && averageScore !== undefined ? 
+                  `${Number(averageScore).toFixed(1)}%` : 
+                  scores.length > 0 ? 
+                  `${(scores.reduce((sum, s) => sum + s.score, 0) / scores.length).toFixed(1)}%` : 
                   'N/A'
                 ) : (
                   // For quizzes and lessons, show average score
@@ -291,7 +298,10 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {scores.filter(s => s.status === 'GRADED' || s.status === 'COMPLETED').length} / {scores.length}
+                {scores.filter(s => {
+                  const status = getScoreStatus(s);
+                  return status === 'GRADED' || status === 'COMPLETED';
+                }).length} / {scores.length}
               </div>
             </CardContent>
           </Card>
@@ -322,6 +332,10 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
                 {scores.map((score) => {
                   // For exercises, display reps and accuracy instead of generic score
                   const isExercise = taskType === 'EXERCISE' || score.exerciseTemplateId;
+                  const attempts = score.attempts ?? 0;
+                  const attemptsText = score.remainingAttempts === undefined
+                    ? `${attempts}`
+                    : `${attempts} / ${attempts + score.remainingAttempts}`;
                   
                   return (
                     <TableRow key={score.physicalId}>
@@ -331,7 +345,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Reps:</span>
-                              <span className="font-medium">{score.reps || 0}/{score.goalReps || 'N/A'}</span>
+                              <span className="font-medium">{score.reps ?? 0}/{score.goalReps ?? 'N/A'}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Accuracy:</span>
@@ -344,9 +358,9 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>{score.attempts} / {score.remainingAttempts + score.attempts}</TableCell>
-                      <TableCell>{formatDate(score.submissionDate)}</TableCell>
-                      <TableCell>{getStatusBadge(score.status)}</TableCell>
+                      <TableCell>{attemptsText}</TableCell>
+                      <TableCell>{formatDate(score.submissionDate ?? score.completedAt)}</TableCell>
+                      <TableCell>{getStatusBadge(getScoreStatus(score))}</TableCell>
                       <TableCell className="text-right">
                         <Button 
                           variant="ghost" 
@@ -392,7 +406,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
               </div>
               <div>
                 <p className="text-sm font-medium mb-1">Submission Date</p>
-                <p className="text-sm">{selectedScore?.submissionDate ? formatDate(selectedScore.submissionDate) : 'N/A'}</p>
+                <p className="text-sm">{formatDate(selectedScore?.submissionDate ?? selectedScore?.completedAt)}</p>
               </div>
             </div>
             
@@ -401,7 +415,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
               <div className="grid grid-cols-2 gap-4 p-3 bg-muted rounded-lg">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Repetitions</p>
-                  <p className="text-sm font-medium">{selectedScore?.reps || 0} / {selectedScore?.goalReps || 'N/A'}</p>
+                  <p className="text-sm font-medium">{selectedScore?.reps ?? 0} / {selectedScore?.goalReps ?? 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Accuracy</p>
@@ -414,7 +428,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
             
             <div className="grid gap-2">
               <label htmlFor="score" className="text-sm font-medium">
-                {taskType === 'EXERCISE' ? 'Final Score (based on accuracy)' : 'Score'}
+                {taskType === 'EXERCISE' ? 'Final Score (based on repetitions)' : 'Score'}
               </label>
               <Input
                 id="score"
@@ -426,7 +440,7 @@ export function TaskScoresTab({ taskId, taskType, templateId }: TaskScoresTabPro
               />
               <p className="text-xs text-muted-foreground">
                 {taskType === 'EXERCISE' 
-                  ? `Score is calculated from accuracy. Maximum: ${selectedScore?.maxScore || 100}` 
+                  ? `Score is calculated from repetitions against the assigned goal. Maximum: ${selectedScore?.maxScore || 100}` 
                   : `Maximum score: ${selectedScore?.maxScore || 'N/A'}`
                 }
               </p>

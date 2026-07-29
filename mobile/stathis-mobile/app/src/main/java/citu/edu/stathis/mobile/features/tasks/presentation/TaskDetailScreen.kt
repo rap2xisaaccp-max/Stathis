@@ -296,10 +296,18 @@ fun TaskDetailScreen(
                     // Exercise Component (only show when progress is available)
                     val exerciseTemplatePhysicalId = currentTask.exerciseTemplateId ?: currentTask.exerciseTemplate?.physicalId
                     if (progress != null && !exerciseTemplatePhysicalId.isNullOrEmpty()) {
-                        val isExerciseCompleted = exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
+                        val isExerciseCompleted = progress.exerciseCompleted == true ||
+                            exerciseTemplatePhysicalId in (progress.completedExercises ?: emptyList())
                         val exerciseAttempts = if (isExerciseCompleted) 1 else 0
                         val effectiveMaxAttempts = if (currentTask.maxAttempts > 0) currentTask.maxAttempts else 10
                         val canStartExercise = exerciseAttempts < effectiveMaxAttempts
+                        val exerciseGoalReps = progress.goalExerciseReps?.takeIf { it > 0 }
+                            ?: currentTask.exerciseTemplate?.goalReps
+                        val exerciseScore = if (exerciseGoalReps != null && exerciseGoalReps > 0) {
+                            "Reps: ${progress.exerciseReps ?: 0}/$exerciseGoalReps • Score: ${progress.exerciseScore ?: 0}/${progress.maxExerciseScore ?: 100}"
+                        } else {
+                            null
+                        }
                         
                         item {
                             TaskComponentCard(
@@ -309,6 +317,7 @@ fun TaskDetailScreen(
                                 attempts = exerciseAttempts,
                                 maxAttempts = effectiveMaxAttempts,
                                 canStart = canStartExercise,
+                                score = exerciseScore,
                                 onClick = {
                                     if (!isUnavailable) {
                                         onStartExercise(exerciseTemplatePhysicalId!!)

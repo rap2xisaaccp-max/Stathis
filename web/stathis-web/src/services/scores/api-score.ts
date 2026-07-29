@@ -15,10 +15,13 @@ export interface ScoreResponseDTO {
   exerciseTemplateId?: string;
   lessonTemplateId?: string;
   attempts: number;
-  remainingAttempts: number;
-  submissionDate: string;
+  remainingAttempts?: number;
+  submissionDate?: string;
+  completed?: boolean;
+  completedAt?: string;
+  timeTaken?: number;
   manuallyGraded: boolean;
-  status: 'PENDING' | 'COMPLETED' | 'GRADED';
+  status?: 'PENDING' | 'COMPLETED' | 'GRADED';
   feedback?: string;
   // Exercise-specific fields
   reps?: number;              // Repetitions completed

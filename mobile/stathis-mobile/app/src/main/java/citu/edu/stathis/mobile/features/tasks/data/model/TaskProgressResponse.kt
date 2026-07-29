@@ -1,5 +1,7 @@
 package citu.edu.stathis.mobile.features.tasks.data.model
 
+import com.google.gson.annotations.SerializedName
+
 data class TaskProgressResponse(
     val taskId: String? = null,
     val studentId: String? = null,
@@ -7,8 +9,9 @@ data class TaskProgressResponse(
     val completedLessons: List<String>? = null,
     val completedExercises: List<String>? = null,
     val quizScores: Map<String, Int>? = null,
-    val isCompleted: Boolean,
-    val submittedForReview: Boolean,
+    @SerializedName("isCompleted")
+    val isCompleted: Boolean = false,
+    val submittedForReview: Boolean = false,
     // Additional fields from backend TaskProgressDTO
     val lessonCompleted: Boolean? = null,
     val exerciseCompleted: Boolean? = null,
@@ -16,6 +19,11 @@ data class TaskProgressResponse(
     val quizScore: Int? = null,
     val maxQuizScore: Int? = null,
     val quizAttempts: Int? = null,
+    val exerciseReps: Int? = null,
+    val goalExerciseReps: Int? = null,
+    val exerciseScore: Int? = null,
+    val maxExerciseScore: Int? = null,
+    val exerciseAttempts: Int? = null,
     val totalTimeTaken: Long? = null,
     val startedAt: String? = null,
     val completedAt: String? = null,

@@ -47,6 +47,7 @@ import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import com.google.mlkit.vision.pose.Pose
+import kotlin.math.roundToInt
 
 @Composable
 fun ExerciseTemplateRenderer(
@@ -397,8 +398,8 @@ private fun ExerciseInProgress(
                 goalReps = template.goalReps,
                 goalAccuracy = template.goalAccuracy,
                 goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                isCompleted = true,
+                score = calculateScore(currentReps, template)
             )
             onComplete(performance)
         }
@@ -828,8 +829,8 @@ private fun ExerciseControlsOverlay(
                 goalReps = template.goalReps,
                 goalAccuracy = template.goalAccuracy,
                 goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                isCompleted = true,
+                score = calculateScore(currentReps, template)
             )
             onComplete(performance)
         } else {
@@ -1119,8 +1120,8 @@ private fun ExerciseControlsOverlay(
                             goalReps = template.goalReps,
                             goalAccuracy = template.goalAccuracy,
                             goalTime = template.goalTime,
-                            isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                            score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                            isCompleted = true,
+                            score = calculateScore(currentReps, template)
                         )
                         onComplete(performance)
                     },
@@ -1338,17 +1339,12 @@ private fun PerformanceItem(
     }
 }
 
-private fun calculateScore(
-    actualReps: Int,
-    actualAccuracy: Float,
-    actualTime: Int,
-    template: ExerciseTemplate
-): Int {
-    val repsScore = (actualReps.toFloat() / template.goalReps * 40f).coerceAtMost(40f)
-    val accuracyScore = (actualAccuracy / template.goalAccuracy * 40f).coerceAtMost(40f)
-    val timeScore = if (actualTime <= template.goalTime) 20f else {
-        (template.goalTime.toFloat() / actualTime * 20f).coerceAtLeast(0f)
+private fun calculateScore(actualReps: Int, template: ExerciseTemplate): Int {
+    if (template.goalReps <= 0) {
+        return 0
     }
 
-    return (repsScore + accuracyScore + timeScore).toInt()
+    return ((actualReps.coerceAtLeast(0).toDouble() / template.goalReps) * 100.0)
+        .coerceAtMost(100.0)
+        .roundToInt()
 }

@@ -125,4 +125,10 @@ data class ExercisePerformance(
     val score: Int // Calculated score based on performance
 )
 
+data class ExerciseResultSubmission(
+    val reps: Int,
+    val accuracy: Double,
+    val timeTaken: Long
+)
+
 

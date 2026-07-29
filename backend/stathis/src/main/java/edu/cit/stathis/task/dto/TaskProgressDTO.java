@@ -1,5 +1,6 @@
 package edu.cit.stathis.task.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 @Getter
@@ -14,6 +15,13 @@ public class TaskProgressDTO {
     private int quizScore;
     private int maxQuizScore;
     private int quizAttempts;
+    private int exerciseReps;
+    private int goalExerciseReps;
+    private int exerciseScore;
+    private int maxExerciseScore;
+    private int exerciseAttempts;
+    @JsonProperty("isCompleted")
+    private boolean isCompleted;
     private Long totalTimeTaken;
     private String startedAt;
     private String completedAt;

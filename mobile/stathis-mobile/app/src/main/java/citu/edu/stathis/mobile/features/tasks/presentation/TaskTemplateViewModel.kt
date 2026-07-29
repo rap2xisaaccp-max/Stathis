@@ -27,6 +27,9 @@ class TaskTemplateViewModel @Inject constructor(
     private val _taskDetail = MutableStateFlow<Task?>(null)
     val taskDetail: StateFlow<Task?> = _taskDetail.asStateFlow()
 
+    private val _exerciseSubmissionState = MutableStateFlow<ExerciseSubmissionState>(ExerciseSubmissionState.Idle)
+    val exerciseSubmissionState: StateFlow<ExerciseSubmissionState> = _exerciseSubmissionState.asStateFlow()
+
     fun loadTemplate(taskId: String, templateType: String, templateId: String? = null) {
         viewModelScope.launch {
             try {
@@ -152,29 +155,41 @@ class TaskTemplateViewModel @Inject constructor(
     }
 
     fun submitExercise(taskId: String, performance: ExercisePerformance) {
+        if (_exerciseSubmissionState.value is ExerciseSubmissionState.Submitting) {
+            return
+        }
+
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
-                
-                // Mark exercise as completed for the task
-                taskRepository.completeExercise(taskId, performance.templateId)
-                
-                // Increment exercise attempts in cache (using LessonAttemptsCache for now)
+                _exerciseSubmissionState.value = ExerciseSubmissionState.Submitting
+
+                taskRepository.submitExerciseResult(
+                    taskId = taskId,
+                    exerciseTemplateId = performance.templateId,
+                    result = ExerciseResultSubmission(
+                        reps = performance.actualReps,
+                        accuracy = performance.actualAccuracy.toDouble(),
+                        timeTaken = performance.actualTime.toLong() * 1_000L
+                    )
+                ).first()
+
                 LessonAttemptsCache.increment(taskId)
-                
-                // Optimistic completion for UI
                 TaskCompletionCache.markCompleted(taskId)
-                
                 android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully")
-                // Refresh progress so list reflects completion immediately
                 runCatching { taskRepository.getTaskProgress(taskId).first() }
-                // Record streak
                 streakManager.recordActivity()
+                _exerciseSubmissionState.value = ExerciseSubmissionState.Success
             } catch (e: Exception) {
                 android.util.Log.e("TaskTemplateViewModel", "Failed to submit exercise", e)
                 _error.value = e.message
+                _exerciseSubmissionState.value = ExerciseSubmissionState.Error
             }
         }
+    }
+
+    fun consumeExerciseSubmission() {
+        _exerciseSubmissionState.value = ExerciseSubmissionState.Idle
     }
 
     fun submitQuizScore(taskId: String, templateId: String, score: Int) {
@@ -292,4 +307,11 @@ class TaskTemplateViewModel @Inject constructor(
             goalTime = 60
         )
     }
+}
+
+sealed class ExerciseSubmissionState {
+    object Idle : ExerciseSubmissionState()
+    object Submitting : ExerciseSubmissionState()
+    object Success : ExerciseSubmissionState()
+    object Error : ExerciseSubmissionState()
 }

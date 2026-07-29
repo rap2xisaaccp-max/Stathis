@@ -7,6 +7,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.ScoreResponse
 import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate
+import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizAutoCheckRequest
 import citu.edu.stathis.mobile.core.data.AuthTokenManager
@@ -176,6 +177,19 @@ class TaskRepositoryImpl @Inject constructor(
         val response = taskService.completeExercise(taskId, exerciseTemplateId)
         if (!response.isSuccessful) {
             throw IllegalStateException("Failed to complete exercise: ${response.code()} ${response.message()}")
+        }
+    }
+
+    override suspend fun submitExerciseResult(
+        taskId: String,
+        exerciseTemplateId: String,
+        result: ExerciseResultSubmission
+    ): Flow<ScoreResponse> = flow {
+        val response = taskService.submitExerciseResult(taskId, exerciseTemplateId, result)
+        if (response.isSuccessful) {
+            response.body()?.let { emit(it) } ?: throw IllegalStateException("Empty body for exercise result")
+        } else {
+            throw IllegalStateException("Failed to submit exercise result: ${response.code()} ${response.message()}")
         }
     }
 

@@ -7,6 +7,7 @@ import edu.cit.stathis.task.entity.Task;
 import edu.cit.stathis.task.repository.ScoreRepository;
 import edu.cit.stathis.task.repository.TaskCompletionRepository;
 import edu.cit.stathis.task.repository.TaskRepository;
+import edu.cit.stathis.task.repository.ExerciseTemplateRepository;
 import jakarta.annotation.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,9 @@ public class StudentProgressService {
 
     @Autowired
     private TaskCompletionRepository taskCompletionRepository;
+
+    @Autowired
+    private ExerciseTemplateRepository exerciseTemplateRepository;
 
     @Autowired
     private ClassroomService classroomService;
@@ -71,6 +75,8 @@ public class StudentProgressService {
         Integer scoreVal = null;
         Integer maxScoreVal = null;
         Integer attemptsVal = null;
+        Integer repsVal = null;
+        Integer goalRepsVal = null;
         var completedAt = completionOpt.map(tc -> tc.getCompletedAt()).orElse(null);
 
         if ("QUIZ".equals(taskType) && task.getQuizTemplateId() != null) {
@@ -84,7 +90,24 @@ public class StudentProgressService {
             }
         }
 
-        // If you track exercise scores, add similar block for EXERCISE here using findExerciseScore
+        if ("EXERCISE".equals(taskType) && task.getExerciseTemplateId() != null) {
+            var scoreOpt = scoreRepository.findExerciseScore(studentId, task.getPhysicalId(), task.getExerciseTemplateId());
+            if (scoreOpt.isPresent()) {
+                Score score = scoreOpt.get();
+                scoreVal = score.getScore();
+                maxScoreVal = score.getMaxScore() > 0 ? score.getMaxScore() : 100;
+                attemptsVal = score.getAttempts();
+                repsVal = score.getReps();
+                goalRepsVal = score.getGoalReps();
+                if (goalRepsVal <= 0) {
+                    goalRepsVal = exerciseTemplateRepository.findByPhysicalId(task.getExerciseTemplateId())
+                        .map(template -> template.getGoalReps())
+                        .orElse(0);
+                }
+                completed = completed || score.isCompleted();
+                if (completedAt == null) completedAt = score.getCompletedAt();
+            }
+        }
 
         return StudentProgressDTO.builder()
                 .taskId(task.getPhysicalId())
@@ -95,6 +118,8 @@ public class StudentProgressService {
                 .score(scoreVal)
                 .maxScore(maxScoreVal)
                 .attempts(attemptsVal)
+                .reps(repsVal)
+                .goalReps(goalRepsVal)
                 .completedAt(completedAt)
                 .submissionDate(task.getSubmissionDate() != null ? task.getSubmissionDate().toLocalDate() : null)
                 .closingDate(task.getClosingDate() != null ? task.getClosingDate().toLocalDate() : null)
