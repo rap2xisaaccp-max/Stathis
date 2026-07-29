@@ -11,7 +11,9 @@ interface ProfileRepository {
         firstName: String,
         lastName: String,
         birthdate: String?,
-        profilePictureUrl: String?
+        profilePictureUrl: String?,
+        heightInMeters: Double? = null,
+        weightInKg: Double? = null
     ): ClientResponse<UserResponseDTO>
 
     suspend fun updateStudentProfile(

@@ -272,25 +272,18 @@ public class UserService {
     userProfile.setLastName(profileDTO.getLastName());
     userProfile.setBirthdate(profileDTO.getBirthdate());
     userProfile.setProfilePictureUrl(profileDTO.getProfilePictureUrl());
+    if (profileDTO.getHeightInMeters() != null) {
+      userProfile.setHeightInMeters(profileDTO.getHeightInMeters());
+    }
+    if (profileDTO.getWeightInKg() != null) {
+      userProfile.setWeightInKg(profileDTO.getWeightInKg());
+    }
 
     userProfile = upRepo.save(userProfile);
 
     webhookService.notifyUserEvent(user, "updated profile");
 
-    return UserResponseDTO.builder()
-        .physicalId(user.getPhysicalId())
-        .email(user.getEmail())
-        .firstName(userProfile.getFirstName())
-        .lastName(userProfile.getLastName())
-        .birthdate(userProfile.getBirthdate())
-        .profilePictureUrl(userProfile.getProfilePictureUrl())
-        .role(user.getUserRole())
-        .school(userProfile.getSchool())
-        .course(userProfile.getCourse())
-        .yearLevel(userProfile.getYearLevel())
-        .department(userProfile.getDepartment())
-        .positionTitle(userProfile.getPositionTitle())
-        .build();
+    return toUserResponse(user, userProfile);
   }
 
   @Transactional
@@ -314,20 +307,7 @@ public class UserService {
 
     webhookService.notifyUserEvent(user, "updated student profile");
 
-    return UserResponseDTO.builder()
-        .physicalId(user.getPhysicalId())
-        .email(user.getEmail())
-        .firstName(userProfile.getFirstName())
-        .lastName(userProfile.getLastName())
-        .birthdate(userProfile.getBirthdate())
-        .profilePictureUrl(userProfile.getProfilePictureUrl())
-        .role(user.getUserRole())
-        .school(userProfile.getSchool())
-        .course(userProfile.getCourse())
-        .yearLevel(userProfile.getYearLevel())
-        .department(userProfile.getDepartment())
-        .positionTitle(userProfile.getPositionTitle())
-        .build();
+    return toUserResponse(user, userProfile);
   }
 
   @Transactional
@@ -351,60 +331,19 @@ public class UserService {
 
     webhookService.notifyUserEvent(user, "updated teacher profile");
 
-    return UserResponseDTO.builder()
-        .physicalId(user.getPhysicalId())
-        .email(user.getEmail())
-        .firstName(userProfile.getFirstName())
-        .lastName(userProfile.getLastName())
-        .birthdate(userProfile.getBirthdate())
-        .profilePictureUrl(userProfile.getProfilePictureUrl())
-        .role(user.getUserRole())
-        .school(userProfile.getSchool())
-        .course(userProfile.getCourse())
-        .yearLevel(userProfile.getYearLevel())
-        .department(userProfile.getDepartment())
-        .positionTitle(userProfile.getPositionTitle())
-        .build();
+    return toUserResponse(user, userProfile);
   }
 
   public UserResponseDTO getStudentUserProfile() {
     String physicalId = physicalIdService.getCurrentUserPhysicalId();
     UserProfile userProfile = findUserProfileByPhysicalId(physicalId);
-
-    return UserResponseDTO.builder()
-        .physicalId(physicalId)
-        .email(userProfile.getUser().getEmail())
-        .firstName(userProfile.getFirstName())
-        .lastName(userProfile.getLastName())
-        .birthdate(userProfile.getBirthdate())
-        .profilePictureUrl(userProfile.getProfilePictureUrl())
-        .role(userProfile.getUser().getUserRole())
-        .school(userProfile.getSchool())
-        .course(userProfile.getCourse())
-        .yearLevel(userProfile.getYearLevel())
-        .department(userProfile.getDepartment())
-        .positionTitle(userProfile.getPositionTitle())
-        .build();
+    return toUserResponse(userProfile.getUser(), userProfile);
   }
 
   public UserResponseDTO getTeacherUserProfile() {
     String physicalId = physicalIdService.getCurrentUserPhysicalId();
     UserProfile userProfile = findUserProfileByPhysicalId(physicalId);
-
-    return UserResponseDTO.builder()
-        .physicalId(physicalId)
-        .email(userProfile.getUser().getEmail())
-        .firstName(userProfile.getFirstName())
-        .lastName(userProfile.getLastName())
-        .birthdate(userProfile.getBirthdate())
-        .profilePictureUrl(userProfile.getProfilePictureUrl())
-        .role(userProfile.getUser().getUserRole())
-        .school(userProfile.getSchool())
-        .course(userProfile.getCourse())
-        .yearLevel(userProfile.getYearLevel())
-        .department(userProfile.getDepartment())
-        .positionTitle(userProfile.getPositionTitle())
-        .build();
+    return toUserResponse(userProfile.getUser(), userProfile);
   }
 
   @Transactional
@@ -417,19 +356,25 @@ public class UserService {
 
   public UserResponseDTO buildUserResponse(User user) {
     UserProfile profile = findUserProfileByUserId(user.getUserId());
+    return toUserResponse(user, profile);
+  }
+
+  private UserResponseDTO toUserResponse(User user, UserProfile userProfile) {
     return UserResponseDTO.builder()
         .physicalId(user.getPhysicalId())
         .email(user.getEmail())
-        .firstName(profile.getFirstName())
-        .lastName(profile.getLastName())
-        .birthdate(profile.getBirthdate())
-        .profilePictureUrl(profile.getProfilePictureUrl())
+        .firstName(userProfile.getFirstName())
+        .lastName(userProfile.getLastName())
+        .birthdate(userProfile.getBirthdate())
+        .profilePictureUrl(userProfile.getProfilePictureUrl())
         .role(user.getUserRole())
-        .school(profile.getSchool())
-        .course(profile.getCourse())
-        .yearLevel(profile.getYearLevel())
-        .department(profile.getDepartment())
-        .positionTitle(profile.getPositionTitle())
+        .school(userProfile.getSchool())
+        .course(userProfile.getCourse())
+        .yearLevel(userProfile.getYearLevel())
+        .department(userProfile.getDepartment())
+        .positionTitle(userProfile.getPositionTitle())
+        .heightInMeters(userProfile.getHeightInMeters())
+        .weightInKg(userProfile.getWeightInKg())
         .build();
   }
 

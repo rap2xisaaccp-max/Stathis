@@ -23,4 +23,6 @@ public class UserResponseDTO {
   private Integer yearLevel;
   private String department;
   private String positionTitle;
+  private Double heightInMeters;
+  private Double weightInKg;
 }

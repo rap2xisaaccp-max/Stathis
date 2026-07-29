@@ -317,6 +317,28 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
                 textAlign = TextAlign.Center
             )
 
+            val profile = uiState.value.profile
+            if (profile != null && (profile.heightInMeters != null || profile.weightInKg != null || !profile.birthdate.isNullOrBlank())) {
+                Spacer(modifier = Modifier.height(12.dp))
+                val heightLabel = profile.heightInMeters?.let { meters ->
+                    val cm = meters * 100.0
+                    if (cm % 1.0 == 0.0) "${cm.toInt()} cm" else "%.1f cm".format(cm)
+                }
+                val weightLabel = profile.weightInKg?.let { kg ->
+                    if (kg % 1.0 == 0.0) "${kg.toInt()} kg" else "%.1f kg".format(kg)
+                }
+                Text(
+                    text = listOfNotNull(
+                        profile.birthdate?.let { "DOB $it" },
+                        heightLabel,
+                        weightLabel
+                    ).joinToString(" • "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             if (uiState.value.profile != null) {

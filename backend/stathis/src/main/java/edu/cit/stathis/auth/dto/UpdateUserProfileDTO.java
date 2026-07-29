@@ -23,4 +23,8 @@ public class UpdateUserProfileDTO {
   private LocalDate birthdate;
 
   private String profilePictureUrl;
+
+  private Double heightInMeters;
+
+  private Double weightInKg;
 }

@@ -29,20 +29,28 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 
 @Composable
-fun EditProfileScreen(
+fun BodyMetricsSetupScreen(
     navController: NavHostController,
-    viewModel: EditProfileViewModel = hiltViewModel()
+    returnRoute: String? = null,
+    viewModel: BodyMetricsSetupViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
 
     LaunchedEffect(state.success) {
-        if (state.success) navController.popBackStack()
+        if (state.success) {
+            val destination = returnRoute?.takeIf { it.isNotBlank() } ?: "profile"
+            navController.navigate(destination) {
+                popUpTo(navController.graph.startDestinationId) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
     }
 
     Scaffold(
@@ -53,11 +61,20 @@ fun EditProfileScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { navController.popBackStack() }) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                if (!returnRoute.isNullOrBlank()) {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Edit profile", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    text = "Body metrics",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         }
     ) { innerPadding ->
@@ -82,31 +99,26 @@ fun EditProfileScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(text = "Basic information", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = state.firstName,
-                        onValueChange = viewModel::onFirstNameChange,
-                        label = { Text("First name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = "Tell us about your body",
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    OutlinedTextField(
-                        value = state.lastName,
-                        onValueChange = viewModel::onLastNameChange,
-                        label = { Text("Last name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = state.birthdate,
-                        onValueChange = viewModel::onBirthdateChange,
-                        label = { Text("Birthdate (YYYY-MM-DD)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = "We need your date of birth, height, and weight before you start exercises. You can update height and weight later in your profile.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Body metrics", style = MaterialTheme.typography.titleMedium)
+
+                    OutlinedTextField(
+                        value = state.birthdate,
+                        onValueChange = viewModel::onBirthdateChange,
+                        label = { Text("Date of birth (YYYY-MM-DD)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     OutlinedTextField(
                         value = state.heightCm,
                         onValueChange = viewModel::onHeightCmChange,
@@ -124,38 +136,18 @@ fun EditProfileScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Student details", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = state.school,
-                        onValueChange = viewModel::onSchoolChange,
-                        label = { Text("School") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = state.course,
-                        onValueChange = viewModel::onCourseChange,
-                        label = { Text("Course") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = state.yearLevel,
-                        onValueChange = viewModel::onYearLevelChange,
-                        label = { Text("Year level") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
                     if (state.errorMessage != null) {
-                        Text(text = state.errorMessage ?: "", color = MaterialTheme.colorScheme.error)
+                        Text(
+                            text = state.errorMessage ?: "",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+
                     Button(
-                        onClick = { viewModel.saveChanges() },
+                        onClick = { viewModel.saveBodyMetrics() },
                         enabled = !state.isSaving,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -169,7 +161,7 @@ fun EditProfileScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text("Save changes")
+                        Text("Save and continue")
                     }
                 }
             }

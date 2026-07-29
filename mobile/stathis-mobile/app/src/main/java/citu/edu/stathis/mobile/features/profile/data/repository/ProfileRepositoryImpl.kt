@@ -74,17 +74,19 @@ class ProfileRepositoryImpl @Inject constructor(
         firstName: String,
         lastName: String,
         birthdate: String?,
-        profilePictureUrl: String?
+        profilePictureUrl: String?,
+        heightInMeters: Double?,
+        weightInKg: Double?
     ): ClientResponse<UserResponseDTO> {
         return try {
             val request = UpdateUserProfileRequest(
                 firstName = firstName,
                 lastName = lastName,
                 birthdate = birthdate,
-                profilePictureUrl = profilePictureUrl
+                profilePictureUrl = profilePictureUrl,
+                heightInMeters = heightInMeters,
+                weightInKg = weightInKg
             )
-            // val userId = authTokenManager.getUserId()
-            //  val response = profileApiService.updateUserProfile(userId, request)
             val response = profileApiService.updateUserProfile(request)
             ClientResponse(success = true, data = response, message = "Profile updated successfully.")
         } catch (e: HttpException) {

@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavHostController
 import citu.edu.stathis.mobile.features.tasks.data.model.*
 import citu.edu.stathis.mobile.features.tasks.presentation.components.ExerciseTemplateRenderer
 import citu.edu.stathis.mobile.features.tasks.presentation.components.LessonTemplateRenderer
@@ -20,6 +21,7 @@ fun TaskTemplateScreen(
     taskId: String,
     templateType: String,
     templateId: String? = null,
+    navController: NavHostController? = null,
     onNavigateBack: () -> Unit = {},
     onTaskCompleted: () -> Unit = {},
     viewModel: TaskTemplateViewModel = hiltViewModel()
@@ -172,6 +174,12 @@ fun TaskTemplateScreen(
                                     ExerciseTemplateRenderer(
                                         template = exerciseTemplate,
                                         classroomId = "${currentTaskDetail.classroomPhysicalId}|${currentTaskDetail.physicalId}", // Encode both classroom and task IDs
+                                        navController = navController,
+                                        returnRouteAfterMetrics = if (templateId != null) {
+                                            "task_exercise/$taskId/$templateId"
+                                        } else {
+                                            null
+                                        },
                                         onComplete = { performance ->
                                             viewModel.submitExercise(taskId, performance)
                                             onTaskCompleted()

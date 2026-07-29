@@ -46,12 +46,18 @@ import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
+import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import com.google.mlkit.vision.pose.Pose
+import kotlinx.coroutines.launch
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
 
 @Composable
 fun ExerciseTemplateRenderer(
     template: ExerciseTemplate,
     classroomId: String? = null,
+    navController: NavHostController? = null,
+    returnRouteAfterMetrics: String? = null,
     onComplete: (ExercisePerformance) -> Unit,
     onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -60,6 +66,10 @@ fun ExerciseTemplateRenderer(
     var isExerciseCompleted by remember { mutableStateOf(false) }
     var exercisePerformance by remember { mutableStateOf<ExercisePerformance?>(null) }
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
+    var isCheckingBodyMetrics by remember { mutableStateOf(false) }
+    var bodyMetricsError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
 
     Box(
         modifier = modifier.fillMaxSize()
@@ -83,7 +93,30 @@ fun ExerciseTemplateRenderer(
                 ) {
                     ExerciseInstructions(
                         template = template,
-                        onStart = { isExerciseStarted = true },
+                        isCheckingBodyMetrics = isCheckingBodyMetrics,
+                        bodyMetricsError = bodyMetricsError,
+                        onStart = {
+                            scope.launch {
+                                isCheckingBodyMetrics = true
+                                bodyMetricsError = null
+                                val complete = ensureBodyMetrics.ensureComplete()
+                                isCheckingBodyMetrics = false
+                                if (complete) {
+                                    isExerciseStarted = true
+                                } else {
+                                    val destination = if (!returnRouteAfterMetrics.isNullOrBlank()) {
+                                        "body_metrics_setup?returnRoute=${Uri.encode(returnRouteAfterMetrics)}"
+                                    } else {
+                                        "body_metrics_setup?returnRoute="
+                                    }
+                                    if (navController != null) {
+                                        navController.navigate(destination)
+                                    } else {
+                                        bodyMetricsError = "Please complete your height, weight, and date of birth in Profile before starting."
+                                    }
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -217,6 +250,8 @@ private fun ExerciseHeader(
 private fun ExerciseInstructions(
     template: ExerciseTemplate,
     onStart: () -> Unit,
+    isCheckingBodyMetrics: Boolean = false,
+    bodyMetricsError: String? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -301,9 +336,21 @@ private fun ExerciseInstructions(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            if (bodyMetricsError != null) {
+                Text(
+                    text = bodyMetricsError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Start Button
             Button(
                 onClick = onStart,
+                enabled = !isCheckingBodyMetrics,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -312,16 +359,29 @@ private fun ExerciseInstructions(
                     .fillMaxWidth()
                     .height(56.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Start",
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Start Exercise",
-                    style = MaterialTheme.typography.labelLarge
-                )
+                if (isCheckingBodyMetrics) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Checking profile...",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Start",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Start Exercise",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
         }
     }

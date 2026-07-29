@@ -36,8 +36,7 @@ fun CreateProfileScreen(navController: NavHostController, viewModel: CreateProfi
     LaunchedEffect(state.success) {
         if (state.success) {
             snackbarHostState.showSnackbar("Account created! Welcome to Stathis.")
-            // Go to profile tab after successful auto-login
-            navController.navigate("profile") {
+            navController.navigate("body_metrics_setup?returnRoute=") {
                 popUpTo(navController.graph.startDestinationId) { inclusive = false }
                 launchSingleTop = true
             }
