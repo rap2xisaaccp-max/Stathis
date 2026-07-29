@@ -27,6 +27,9 @@ class TaskTemplateViewModel @Inject constructor(
     private val _taskDetail = MutableStateFlow<Task?>(null)
     val taskDetail: StateFlow<Task?> = _taskDetail.asStateFlow()
 
+    private val _exerciseAttempts = MutableStateFlow(0)
+    val exerciseAttempts: StateFlow<Int> = _exerciseAttempts.asStateFlow()
+
     fun loadTemplate(taskId: String, templateType: String, templateId: String? = null) {
         viewModelScope.launch {
             try {
@@ -41,6 +44,13 @@ class TaskTemplateViewModel @Inject constructor(
                 }.onFailure { e ->
                     // Non-fatal; proceed without task detail
                     _error.value = _error.value
+                }
+
+                if (templateType == "EXERCISE") {
+                    runCatching { taskRepository.getTaskProgress(taskId).first() }
+                        .onSuccess { progress ->
+                            _exerciseAttempts.value = progress.exerciseAttempts ?: 0
+                        }
                 }
 
                 val template = when (templateType) {
@@ -155,19 +165,34 @@ class TaskTemplateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
-                
-                // Mark exercise as completed for the task
-                taskRepository.completeExercise(taskId, performance.templateId)
-                
+
+                val submission = citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission(
+                    reps = performance.actualReps,
+                    accuracy = performance.actualAccuracy.toDouble(),
+                    timeTaken = performance.actualTime * 1000L,
+                    goalReps = performance.goalReps,
+                    caloriesBurned = performance.caloriesBurned,
+                    exerciseType = performance.exerciseType,
+                    classroomId = performance.classroomId
+                )
+
+                val score = taskRepository.completeExercise(taskId, performance.templateId, submission)
+
                 // Increment exercise attempts in cache (using LessonAttemptsCache for now)
                 LessonAttemptsCache.increment(taskId)
-                
+
                 // Optimistic completion for UI
                 TaskCompletionCache.markCompleted(taskId)
-                
-                android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully")
+
+                _exerciseAttempts.value = score?.attempts
+                    ?: (_exerciseAttempts.value + 1)
+
+                android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully (calories=${performance.caloriesBurned}, attempts=${_exerciseAttempts.value})")
                 // Refresh progress so list reflects completion immediately
                 runCatching { taskRepository.getTaskProgress(taskId).first() }
+                    .onSuccess { progress ->
+                        progress.exerciseAttempts?.let { _exerciseAttempts.value = it }
+                    }
                 // Record streak
                 streakManager.recordActivity()
             } catch (e: Exception) {

@@ -659,9 +659,10 @@ export default function StudentProgressDetailPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[40%]">Task Name</TableHead>
-                              <TableHead className="w-[30%]">Completed</TableHead>
-                              <TableHead className="w-[30%] text-right">Score</TableHead>
+                              <TableHead className="w-[35%]">Task Name</TableHead>
+                              <TableHead className="w-[20%]">Completed</TableHead>
+                              <TableHead className="w-[20%]">Reps</TableHead>
+                              <TableHead className="w-[25%] text-right">Score</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -680,6 +681,11 @@ export default function StudentProgressDetailPage() {
                                       <span className="font-medium">No</span>
                                     </span>
                                   )}
+                                </TableCell>
+                                <TableCell>
+                                  {item.reps != null
+                                    ? `${item.reps}${item.goalReps != null ? ` / ${item.goalReps}` : ''}`
+                                    : '—'}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <span className="font-medium">

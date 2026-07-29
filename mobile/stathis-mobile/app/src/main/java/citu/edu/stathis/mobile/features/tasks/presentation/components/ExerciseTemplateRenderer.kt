@@ -46,6 +46,8 @@ import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
+import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
+import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import com.google.mlkit.vision.pose.Pose
 import kotlinx.coroutines.launch
@@ -62,13 +64,49 @@ private enum class IdentityPhase {
     VERIFIED
 }
 
+private fun parseClassroomAndTaskId(encoded: String?): Pair<String?, String?> {
+    if (encoded.isNullOrBlank()) return null to null
+    val parts = encoded.split('|', limit = 2)
+    return if (parts.size == 2) parts[0] to parts[1] else encoded to null
+}
+
+private fun buildExercisePerformance(
+    template: ExerciseTemplate,
+    classroomIdEncoded: String?,
+    actualReps: Int,
+    actualAccuracy: Float,
+    actualTime: Int,
+    weightKg: Double? = null
+): ExercisePerformance {
+    val (classroomId, taskId) = parseClassroomAndTaskId(classroomIdEncoded)
+    val calories = ExerciseCalorieCalculator.calculate(template.exerciseType, actualReps, weightKg)
+    return ExercisePerformance(
+        taskId = taskId.orEmpty(),
+        templateId = template.physicalId,
+        actualReps = actualReps,
+        actualAccuracy = actualAccuracy,
+        actualTime = actualTime,
+        goalReps = template.goalReps,
+        goalAccuracy = template.goalAccuracy,
+        goalTime = template.goalTime,
+        isCompleted = actualReps >= template.goalReps && actualAccuracy >= template.goalAccuracy,
+        score = calculateScore(actualReps, actualAccuracy, actualTime, template),
+        caloriesBurned = calories,
+        exerciseType = template.exerciseType,
+        classroomId = classroomId
+    )
+}
+
 @Composable
 fun ExerciseTemplateRenderer(
     template: ExerciseTemplate,
     classroomId: String? = null,
     navController: NavHostController? = null,
     returnRouteAfterMetrics: String? = null,
-    onComplete: (ExercisePerformance) -> Unit,
+    maxAttempts: Int = 0,
+    attemptsUsed: Int = 0,
+    onSessionFinished: (ExercisePerformance) -> Unit,
+    onFinishSession: () -> Unit,
     onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -78,6 +116,7 @@ fun ExerciseTemplateRenderer(
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
     var isCheckingBodyMetrics by remember { mutableStateOf(false) }
     var bodyMetricsError by remember { mutableStateOf<String?>(null) }
+    var displayedAttempts by remember { mutableIntStateOf(attemptsUsed) }
     var identityPhase by remember { mutableStateOf(IdentityPhase.UNVERIFIED) }
     var identityMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -94,10 +133,53 @@ fun ExerciseTemplateRenderer(
         }
     }
 
+    LaunchedEffect(attemptsUsed) {
+        if (attemptsUsed > displayedAttempts) {
+            displayedAttempts = attemptsUsed
+        }
+    }
+
     Box(
         modifier = modifier.fillMaxSize()
     ) {
         if (!isExerciseStarted) {
+            if (maxAttempts > 0 && attemptsUsed >= maxAttempts) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Maximum attempts reached",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You have used all $maxAttempts attempts for this exercise.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = onFinishSession,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Complete")
+                    }
+                }
+            } else {
             // Show header and instructions when exercise hasn't started
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -146,6 +228,7 @@ fun ExerciseTemplateRenderer(
                     )
                 }
             }
+            }
         } else if (!isExerciseCompleted) {
             val isVerified = identityPhase == IdentityPhase.VERIFIED
 
@@ -192,7 +275,8 @@ fun ExerciseTemplateRenderer(
                 onComplete = { performance ->
                     exercisePerformance = performance
                     isExerciseCompleted = true
-                    onComplete(performance)
+                    displayedAttempts = maxOf(displayedAttempts + 1, attemptsUsed + 1)
+                    onSessionFinished(performance)
                 },
                 onCancel = {
                     isExerciseStarted = false
@@ -210,11 +294,14 @@ fun ExerciseTemplateRenderer(
                 ExerciseResults(
                     template = template,
                     performance = performance,
+                    attemptsUsed = displayedAttempts,
+                    maxAttempts = maxAttempts,
                     onRetry = {
                         isExerciseStarted = false
                         isExerciseCompleted = false
                         exercisePerformance = null
                     },
+                    onComplete = onFinishSession,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -499,17 +586,12 @@ private fun ExerciseInProgress(
             }
 
             // Exercise completed
-            val performance = ExercisePerformance(
-                taskId = "",
-                templateId = template.physicalId,
+            val performance = buildExercisePerformance(
+                template = template,
+                classroomIdEncoded = null,
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
-                actualTime = currentTime,
-                goalReps = template.goalReps,
-                goalAccuracy = template.goalAccuracy,
-                goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                actualTime = currentTime
             )
             onComplete(performance)
         }
@@ -768,7 +850,8 @@ private fun ExerciseControlsOverlay(
     onTrackingActive: Boolean,
     onComplete: (ExercisePerformance) -> Unit,
     onCancel: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    exerciseSyncViewModel: ExerciseSyncViewModel = hiltViewModel()
 ) {
     var currentReps by remember { mutableIntStateOf(0) }
     var currentTime by remember { mutableIntStateOf(0) }
@@ -776,6 +859,8 @@ private fun ExerciseControlsOverlay(
     var isTimerRunning by remember { mutableStateOf(false) }
     var shouldRequestPermissions by remember { mutableStateOf(false) }
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
+    val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
+    val (parsedClassroomId, parsedTaskId) = remember(classroomId) { parseClassroomAndTaskId(classroomId) }
 
     // Pose detection state
     val exerciseDetector = remember { ExerciseDetector() }
@@ -800,6 +885,23 @@ private fun ExerciseControlsOverlay(
         if (identityPhase != IdentityPhase.VERIFIED) {
             isTimerRunning = false
         }
+    }
+
+    // Publish live progress to teacher dashboard every 2s while running
+    LaunchedEffect(isTimerRunning, currentReps, currentTime, currentAccuracy) {
+        if (!isTimerRunning) return@LaunchedEffect
+        kotlinx.coroutines.delay(2000)
+        exerciseSyncViewModel.publishProgress(
+            classroomId = parsedClassroomId,
+            taskId = parsedTaskId,
+            exerciseTemplateId = template.physicalId,
+            exerciseType = template.exerciseType,
+            reps = currentReps,
+            goalReps = template.goalReps,
+            accuracy = currentAccuracy.toDouble(),
+            timeTakenSeconds = currentTime,
+            completed = false
+        )
     }
 
     // Function to handle pose detection
@@ -942,17 +1044,24 @@ private fun ExerciseControlsOverlay(
             exerciseVitalsMonitoringService.stopMonitoringWithPostActivity(vitalSigns ?: fallbackVitals)
 
             // Exercise completed
-            val performance = ExercisePerformance(
-                taskId = "",
-                templateId = template.physicalId,
+            val performance = buildExercisePerformance(
+                template = template,
+                classroomIdEncoded = classroomId,
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
                 actualTime = currentTime,
+                weightKg = weightKg
+            )
+            exerciseSyncViewModel.publishProgress(
+                classroomId = parsedClassroomId,
+                taskId = parsedTaskId,
+                exerciseTemplateId = template.physicalId,
+                exerciseType = template.exerciseType,
+                reps = currentReps,
                 goalReps = template.goalReps,
-                goalAccuracy = template.goalAccuracy,
-                goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                accuracy = currentAccuracy.toDouble(),
+                timeTakenSeconds = currentTime,
+                completed = true
             )
             onComplete(performance)
         } else {
@@ -1316,36 +1425,47 @@ private fun ExerciseControlsOverlay(
                             )
                         }
 
-                        Button(
-                            onClick = {
-                                shouldStopWithPostActivity = true
-                                val performance = ExercisePerformance(
-                                    taskId = "",
-                                    templateId = template.physicalId,
-                                    actualReps = currentReps,
-                                    actualAccuracy = currentAccuracy,
-                                    actualTime = currentTime,
-                                    goalReps = template.goalReps,
-                                    goalAccuracy = template.goalAccuracy,
-                                    goalTime = template.goalTime,
-                                    isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                                    score = calculateScore(currentReps, currentAccuracy, currentTime, template)
-                                )
-                                onComplete(performance)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Complete",
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Complete", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
+                // Finish attempt Button
+                Button(
+                    onClick = {
+                        // Stop vitals monitoring with post-activity vitals
+                        shouldStopWithPostActivity = true
+                        // End this attempt and show performance results
+                        val performance = buildExercisePerformance(
+                            template = template,
+                            classroomIdEncoded = classroomId,
+                            actualReps = currentReps,
+                            actualAccuracy = currentAccuracy,
+                            actualTime = currentTime,
+                            weightKg = weightKg
+                        )
+                        exerciseSyncViewModel.publishProgress(
+                            classroomId = parsedClassroomId,
+                            taskId = parsedTaskId,
+                            exerciseTemplateId = template.physicalId,
+                            exerciseType = template.exerciseType,
+                            reps = currentReps,
+                            goalReps = template.goalReps,
+                            accuracy = currentAccuracy.toDouble(),
+                            timeTakenSeconds = currentTime,
+                            completed = true
+                        )
+                        onComplete(performance)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Finish",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Finish",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }
@@ -1369,9 +1489,19 @@ private fun resolveExerciseType(rawType: String): ExerciseType? {
 private fun ExerciseResults(
     template: ExerciseTemplate,
     performance: ExercisePerformance,
+    attemptsUsed: Int,
+    maxAttempts: Int,
     onRetry: () -> Unit,
+    onComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val canRetry = maxAttempts <= 0 || attemptsUsed < maxAttempts
+    val attemptsLabel = if (maxAttempts <= 0) {
+        "Attempt $attemptsUsed"
+    } else {
+        "Attempts: $attemptsUsed / $maxAttempts"
+    }
+
     Card(
         modifier = modifier
             .fillMaxSize()
@@ -1384,6 +1514,7 @@ private fun ExerciseResults(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -1412,12 +1543,37 @@ private fun ExerciseResults(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            Text(
+                text = attemptsLabel,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Score
             Text(
                 text = "Score: ${performance.score}/100",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
+            )
+
+            Text(
+                text = "Reps ${performance.actualReps}/${performance.goalReps} · ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Calories burned: ${"%.1f".format(performance.caloriesBurned)} kcal",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.tertiary
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -1463,14 +1619,33 @@ private fun ExerciseResults(
                         isGood = performance.actualTime <= performance.goalTime,
                         suffix = "s"
                     )
+
+                    Text(
+                        text = "Calories: ${"%.1f".format(performance.caloriesBurned)} kcal",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Retry Button
+            if (!canRetry) {
+                Text(
+                    text = "Maximum attempts reached. Tap Complete to finish.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
+            // Try Again
             Button(
                 onClick = onRetry,
+                enabled = canRetry,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -1484,6 +1659,22 @@ private fun ExerciseResults(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Try Again")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Complete — always available to exit regardless of remaining attempts
+            OutlinedButton(
+                onClick = onComplete,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Complete",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Complete")
             }
         }
     }
@@ -1552,11 +1743,9 @@ private fun calculateScore(
     actualTime: Int,
     template: ExerciseTemplate
 ): Int {
-    val repsScore = (actualReps.toFloat() / template.goalReps * 40f).coerceAtMost(40f)
-    val accuracyScore = (actualAccuracy / template.goalAccuracy * 40f).coerceAtMost(40f)
-    val timeScore = if (actualTime <= template.goalTime) 20f else {
-        (template.goalTime.toFloat() / actualTime * 20f).coerceAtLeast(0f)
-    }
-
-    return (repsScore + accuracyScore + timeScore).toInt()
+    if (template.goalReps <= 0) return 0
+    // Score = completed reps / target reps × 100 (capped at 100)
+    return ((actualReps.toFloat() / template.goalReps) * 100f)
+        .coerceIn(0f, 100f)
+        .toInt()
 }
