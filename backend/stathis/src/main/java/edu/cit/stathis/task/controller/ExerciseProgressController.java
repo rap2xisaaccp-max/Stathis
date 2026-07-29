@@ -38,6 +38,16 @@ public class ExerciseProgressController {
                             studentId, progress.getExerciseType(), progress.getReps()));
         }
 
+        if (progress.getScore() == null) {
+            Integer goalReps = progress.getGoalReps();
+            if (goalReps != null && goalReps > 0) {
+                progress.setScore((int) Math.round(
+                        Math.min(1.0, (double) progress.getReps() / goalReps) * 100.0));
+            } else {
+                progress.setScore(0);
+            }
+        }
+
         exerciseProgressService.publishProgress(progress);
         return ResponseEntity.ok(progress);
     }

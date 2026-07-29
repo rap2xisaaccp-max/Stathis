@@ -102,6 +102,10 @@ public class StudentTaskService {
                 .maxQuizScore(0)
                 .quizAttempts(0)
                 .exerciseAttempts(0)
+                .exerciseScore(0)
+                .maxExerciseScore(100)
+                .exerciseReps(0)
+                .exerciseGoalReps(null)
                 .totalTimeTaken(0L)
                 .build();
         }
@@ -114,6 +118,10 @@ public class StudentTaskService {
             .maxQuizScore(quizScore != null ? quizScore.getMaxScore() : 0)
             .quizAttempts(quizScore != null ? quizScore.getAttempts() : 0)
             .exerciseAttempts(exerciseScore != null ? exerciseScore.getAttempts() : 0)
+            .exerciseScore(exerciseScore != null ? exerciseScore.getScore() : 0)
+            .maxExerciseScore(exerciseScore != null ? exerciseScore.getMaxScore() : 100)
+            .exerciseReps(exerciseScore != null ? exerciseScore.getReps() : 0)
+            .exerciseGoalReps(exerciseScore != null ? exerciseScore.getGoalReps() : null)
             .totalTimeTaken(completion.getTotalTimeTaken())
             .startedAt(completion.getStartedAt().toString())
             .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null)
@@ -376,6 +384,7 @@ public class StudentTaskService {
                 .timeTakenMs(timeTaken)
                 .sessionCaloriesBurned(sessionCalories)
                 .totalCaloriesBurned(savedScore.getCaloriesBurned())
+                .score(savedScore.getScore())
                 .completed(true)
                 .timestamp(OffsetDateTime.now().toString())
                 .build());
@@ -384,9 +393,11 @@ public class StudentTaskService {
     }
 
     private int computeExerciseScore(int reps, double accuracy, int goalReps, int goalAccuracy) {
-        double repRatio = goalReps > 0 ? Math.min(1.0, (double) reps / goalReps) : 0.0;
-        double accuracyRatio = goalAccuracy > 0 ? Math.min(1.0, accuracy / goalAccuracy) : Math.min(1.0, accuracy / 100.0);
-        return (int) Math.round(((repRatio * 0.6) + (accuracyRatio * 0.4)) * 100.0);
+        if (goalReps <= 0) {
+            return 0;
+        }
+        // Score = completed reps / target reps × 100 (capped at 100)
+        return (int) Math.round(Math.min(1.0, (double) reps / goalReps) * 100.0);
     }
 
     @Transactional

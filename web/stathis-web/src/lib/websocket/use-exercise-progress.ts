@@ -16,6 +16,7 @@ export interface ExerciseProgressDTO {
   timeTakenMs?: number;
   sessionCaloriesBurned?: number;
   totalCaloriesBurned?: number;
+  score?: number;
   completed?: boolean;
   timestamp?: string;
 }
@@ -56,6 +57,12 @@ export function useExerciseProgress(classroomId: string, taskId?: string) {
         timeTakenMs: data.timeTakenMs,
         sessionCaloriesBurned: data.sessionCaloriesBurned,
         totalCaloriesBurned: data.totalCaloriesBurned,
+        score:
+          typeof data.score === 'number'
+            ? data.score
+            : data.goalReps && data.goalReps > 0
+              ? Math.min(100, Math.round((data.reps / data.goalReps) * 100))
+              : undefined,
         completed: !!data.completed,
         timestamp: data.timestamp || new Date().toISOString(),
       };

@@ -62,6 +62,7 @@ interface Student {
   exerciseReps?: number;
   exerciseGoalReps?: number;
   exerciseCalories?: number;
+  exerciseScore?: number;
   exerciseType?: string;
   exerciseCompleted?: boolean;
 }
@@ -187,11 +188,17 @@ function useWebSocketMonitor(classroomId: string | null) {
         hasChanges = true;
         const calories =
           progress.totalCaloriesBurned ?? progress.sessionCaloriesBurned;
+        const liveScore =
+          progress.score ??
+          (progress.goalReps && progress.goalReps > 0
+            ? Math.min(100, Math.round((progress.reps / progress.goalReps) * 100))
+            : undefined);
         return {
           ...student,
           exerciseReps: progress.reps,
           exerciseGoalReps: progress.goalReps,
           exerciseCalories: calories,
+          exerciseScore: liveScore,
           exerciseType: progress.exerciseType,
           exerciseCompleted: progress.completed,
           isActive: true,
@@ -514,7 +521,7 @@ const StudentCard = memo(function StudentCardBase({ student }: { student: Studen
           </div>
         </div>
 
-        {(student.exerciseReps !== undefined || student.exerciseCalories !== undefined) && (
+        {(student.exerciseReps !== undefined || student.exerciseCalories !== undefined || student.exerciseScore !== undefined) && (
           <div className="flex items-center space-x-3 rounded-xl bg-muted/40 px-3 py-2">
             <div className="p-2 rounded-lg bg-primary/10">
               <Dumbbell className="h-4 w-4 text-primary" />
@@ -527,9 +534,11 @@ const StudentCard = memo(function StudentCardBase({ student }: { student: Studen
                 {student.exerciseCompleted ? ' · Done' : ' · Live'}
               </p>
               <p className="text-sm font-semibold">
-                {student.exerciseReps ?? 0}
-                {student.exerciseGoalReps != null ? ` / ${student.exerciseGoalReps}` : ''} reps
+                Score {student.exerciseScore ?? 0}/100
                 <span className="text-muted-foreground font-normal">
+                  {' · '}
+                  {student.exerciseReps ?? 0}
+                  {student.exerciseGoalReps != null ? `/${student.exerciseGoalReps}` : ''} reps
                   {' · '}
                   {student.exerciseCalories != null
                     ? `${Number(student.exerciseCalories).toFixed(1)} kcal`
@@ -575,6 +584,7 @@ const StudentCard = memo(function StudentCardBase({ student }: { student: Studen
     prevStudent.exerciseReps === nextStudent.exerciseReps &&
     prevStudent.exerciseGoalReps === nextStudent.exerciseGoalReps &&
     prevStudent.exerciseCalories === nextStudent.exerciseCalories &&
+    prevStudent.exerciseScore === nextStudent.exerciseScore &&
     prevStudent.exerciseCompleted === nextStudent.exerciseCompleted &&
     prevStudent.exerciseType === nextStudent.exerciseType
   );

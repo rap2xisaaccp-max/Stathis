@@ -47,6 +47,11 @@ class ExerciseSyncViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             val sessionCalories = caloriesFor(exerciseType, reps)
+            val score = if (goalReps > 0) {
+                ((reps.toDouble() / goalReps) * 100.0).coerceIn(0.0, 100.0).toInt()
+            } else {
+                0
+            }
             taskRepository.publishExerciseProgress(
                 ExerciseProgressPayload(
                     classroomId = classroomId,
@@ -58,6 +63,7 @@ class ExerciseSyncViewModel @Inject constructor(
                     accuracy = accuracy,
                     timeTakenMs = timeTakenSeconds * 1000L,
                     sessionCaloriesBurned = sessionCalories,
+                    score = score,
                     completed = completed
                 )
             )

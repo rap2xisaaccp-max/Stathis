@@ -20,5 +20,6 @@ data class ExerciseProgressPayload(
     val accuracy: Double = 0.0,
     val timeTakenMs: Long = 0,
     val sessionCaloriesBurned: Double? = null,
+    val score: Int? = null,
     val completed: Boolean = false
 )

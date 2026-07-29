@@ -303,6 +303,22 @@ fun TaskDetailScreen(
                             || exerciseAttempts > 0
                         val maxAttempts = currentTask.maxAttempts
                         val canStartExercise = maxAttempts <= 0 || exerciseAttempts < maxAttempts
+                        val exerciseScore = progress?.exerciseScore
+                        val maxExerciseScore = progress?.maxExerciseScore ?: 100
+                        val exerciseReps = progress?.exerciseReps
+                        val exerciseGoalReps = progress?.exerciseGoalReps
+                            ?: currentTask.exerciseTemplate?.goalReps
+                        val exerciseScoreText = when {
+                            exerciseScore != null && exerciseScore > 0 -> {
+                                val repsPart = if (exerciseReps != null) {
+                                    " · Reps: ${exerciseReps}/${exerciseGoalReps ?: "—"}"
+                                } else ""
+                                "Score: ${exerciseScore}/${maxExerciseScore}$repsPart"
+                            }
+                            exerciseReps != null && exerciseReps > 0 ->
+                                "Reps: ${exerciseReps}/${exerciseGoalReps ?: "—"}"
+                            else -> null
+                        }
                         
                         item {
                             TaskComponentCard(
@@ -312,6 +328,7 @@ fun TaskDetailScreen(
                                 attempts = exerciseAttempts,
                                 maxAttempts = maxAttempts,
                                 canStart = canStartExercise,
+                                score = exerciseScoreText,
                                 onClick = {
                                     if (!isUnavailable) {
                                         onStartExercise(exerciseTemplatePhysicalId!!)

@@ -1408,6 +1408,13 @@ private fun ExerciseResults(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            Text(
+                text = "Reps ${performance.actualReps}/${performance.goalReps} · ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
@@ -1584,11 +1591,9 @@ private fun calculateScore(
     actualTime: Int,
     template: ExerciseTemplate
 ): Int {
-    val repsScore = (actualReps.toFloat() / template.goalReps * 40f).coerceAtMost(40f)
-    val accuracyScore = (actualAccuracy / template.goalAccuracy * 40f).coerceAtMost(40f)
-    val timeScore = if (actualTime <= template.goalTime) 20f else {
-        (template.goalTime.toFloat() / actualTime * 20f).coerceAtLeast(0f)
-    }
-
-    return (repsScore + accuracyScore + timeScore).toInt()
+    if (template.goalReps <= 0) return 0
+    // Score = completed reps / target reps × 100 (capped at 100)
+    return ((actualReps.toFloat() / template.goalReps) * 100f)
+        .coerceIn(0f, 100f)
+        .toInt()
 }

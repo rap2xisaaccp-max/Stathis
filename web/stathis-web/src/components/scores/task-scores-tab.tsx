@@ -78,6 +78,11 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
       return prev.map((score) => {
         const live = progressByStudent[score.studentId];
         if (!live) return score;
+        const liveScore =
+          live.score ??
+          (live.goalReps && live.goalReps > 0
+            ? Math.min(100, Math.round((live.reps / live.goalReps) * 100))
+            : score.score);
         return {
           ...score,
           reps: live.reps,
@@ -87,6 +92,8 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
             live.totalCaloriesBurned ??
             live.sessionCaloriesBurned ??
             score.caloriesBurned,
+          score: liveScore,
+          maxScore: score.maxScore || 100,
         };
       });
     });
@@ -293,7 +300,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                {taskType === 'EXERCISE' ? 'Average Accuracy' : 'Average Score'}
+                Average Score
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -301,10 +308,9 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
                 {isLoadingAverage ? (
                   <Loader2 className="h-6 w-6 animate-spin" />
                 ) : taskType === 'EXERCISE' ? (
-                  // For exercises, show average accuracy
-                  scores.length > 0 && scores.some(s => s.accuracy !== undefined) ? 
-                  `${(scores.reduce((sum, s) => sum + (s.accuracy || 0), 0) / scores.length).toFixed(1)}%` : 
-                  'N/A'
+                  scores.length > 0
+                    ? `${(scores.reduce((sum, s) => sum + (s.score || 0), 0) / scores.length).toFixed(1)}%`
+                    : 'N/A'
                 ) : (
                   // For quizzes and lessons, show average score
                   averageScore !== null && averageScore !== undefined ? 
@@ -343,7 +349,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
               <TableHeader>
                 <TableRow>
                   <TableHead>Student ID</TableHead>
-                  <TableHead>{taskType === 'EXERCISE' ? 'Performance' : 'Score'}</TableHead>
+                  <TableHead>{taskType === 'EXERCISE' ? 'Score & Reps' : 'Score'}</TableHead>
                   <TableHead>Attempts</TableHead>
                   <TableHead>Submission Date</TableHead>
                   <TableHead>Status</TableHead>
@@ -362,15 +368,17 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
                         {isExercise ? (
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">Reps:</span>
-                              <span className="font-medium">{score.reps || 0}/{score.goalReps || 'N/A'}</span>
+                              <span className="text-xs text-muted-foreground">Score:</span>
+                              <span className="font-semibold text-primary">
+                                {score.score ?? 0}/{score.maxScore || 100}
+                              </span>
                               {progressByStudent[score.studentId] && !progressByStudent[score.studentId].completed && (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700">Live</Badge>
                               )}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">Accuracy:</span>
-                              <span className="font-medium">{score.accuracy !== undefined ? `${score.accuracy.toFixed(1)}%` : 'N/A'}</span>
+                              <span className="text-xs text-muted-foreground">Reps:</span>
+                              <span className="font-medium">{score.reps || 0}/{score.goalReps || 'N/A'}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Calories:</span>
@@ -443,14 +451,14 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
             {(taskType === 'EXERCISE' || selectedScore?.exerciseTemplateId) && (
               <div className="grid grid-cols-3 gap-4 p-3 bg-muted rounded-lg">
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Repetitions</p>
-                  <p className="text-sm font-medium">{selectedScore?.reps || 0} / {selectedScore?.goalReps || 'N/A'}</p>
+                  <p className="text-xs text-muted-foreground mb-1">Score</p>
+                  <p className="text-sm font-medium">
+                    {selectedScore?.score ?? 0} / {selectedScore?.maxScore || 100}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Accuracy</p>
-                  <p className="text-sm font-medium">
-                    {selectedScore?.accuracy !== undefined ? `${selectedScore.accuracy.toFixed(1)}%` : 'N/A'}
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-1">Repetitions</p>
+                  <p className="text-sm font-medium">{selectedScore?.reps || 0} / {selectedScore?.goalReps || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Calories</p>
@@ -465,7 +473,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
             
             <div className="grid gap-2">
               <label htmlFor="score" className="text-sm font-medium">
-                {taskType === 'EXERCISE' ? 'Final Score (based on accuracy)' : 'Score'}
+                {taskType === 'EXERCISE' ? 'Final Score (reps ÷ goal × 100)' : 'Score'}
               </label>
               <Input
                 id="score"
@@ -477,7 +485,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
               />
               <p className="text-xs text-muted-foreground">
                 {taskType === 'EXERCISE' 
-                  ? `Score is calculated from accuracy. Maximum: ${selectedScore?.maxScore || 100}` 
+                  ? `Auto score = completed reps / target reps × 100. Maximum: ${selectedScore?.maxScore || 100}` 
                   : `Maximum score: ${selectedScore?.maxScore || 'N/A'}`
                 }
               </p>

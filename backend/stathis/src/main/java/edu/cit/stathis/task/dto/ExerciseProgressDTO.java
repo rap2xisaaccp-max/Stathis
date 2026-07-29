@@ -20,6 +20,7 @@ public class ExerciseProgressDTO {
     private long timeTakenMs;
     private Double sessionCaloriesBurned;
     private Double totalCaloriesBurned;
+    private Integer score;
     private boolean completed;
     private String timestamp;
 }
