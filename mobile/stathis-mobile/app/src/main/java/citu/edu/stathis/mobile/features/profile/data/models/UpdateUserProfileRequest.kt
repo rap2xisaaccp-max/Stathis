@@ -1,6 +1,5 @@
 package citu.edu.stathis.mobile.features.profile.data.models
 
-
 import kotlinx.serialization.Serializable
 
 @Serializable
