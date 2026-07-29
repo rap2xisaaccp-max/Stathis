@@ -26,7 +26,8 @@ class FaceIdentityViewModel @Inject constructor(
         val statusText: String = "Position your face in the frame",
         val lastSimilarity: Float = 0f,
         val registrationSamplesReady: Boolean = false,
-        val registrationSampleCount: Int = 0
+        val registrationSampleCount: Int = 0,
+        val identityVerified: Boolean = false
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -69,45 +70,76 @@ class FaceIdentityViewModel @Inject constructor(
         verifySession.reset()
         _state.value = _state.value.copy(
             statusText = "Look at the camera to verify your identity.",
+            lastSimilarity = 0f,
+            identityVerified = false
+        )
+    }
+
+    fun clearSessionVerification() {
+        verifySession.reset()
+        _state.value = _state.value.copy(
+            identityVerified = false,
+            statusText = "Position your face in the frame",
             lastSimilarity = 0f
         )
     }
 
     /**
-     * Biometric verification against the enrolled FaceNet embedding.
-     * Requires consecutive matches so a different person cannot briefly spoof a frame.
+     * One-time biometric verification for this exercise session.
      */
-    fun onVerificationProbe(embedding: FloatArray?): Boolean {
+    fun onVerificationProbe(
+        embedding: FloatArray?,
+        qualityMessage: String? = null
+    ): Boolean {
+        if (_state.value.identityVerified) return true
         val enrolled = _state.value.enrolledEmbedding ?: run {
             _state.value = _state.value.copy(statusText = "No registered face found for this account.")
             return false
         }
-        val progress = verifySession.onProbe(faceRecognitionService, embedding, enrolled)
+        val progress = verifySession.onProbe(
+            service = faceRecognitionService,
+            probe = embedding,
+            enrolled = enrolled,
+            qualityMessage = qualityMessage
+        )
         _state.value = _state.value.copy(
             statusText = progress.statusText,
-            lastSimilarity = progress.similarity
+            lastSimilarity = progress.similarity,
+            identityVerified = progress.verified
         )
         return progress.verified
     }
 
-    /**
-     * Collect stable FaceNet samples during registration, then average and store.
-     */
-    fun onRegistrationProbe(embedding: FloatArray?) {
-        if (_state.value.isSaving || embedding == null) {
-            if (embedding == null) {
-                _state.value = _state.value.copy(statusText = "Looking for your face...")
-            }
+    fun onRegistrationProbe(
+        embedding: FloatArray?,
+        qualityMessage: String? = null
+    ) {
+        if (_state.value.isSaving) return
+        if (embedding == null) {
+            _state.value = _state.value.copy(
+                statusText = qualityMessage ?: "Looking for your face..."
+            )
             return
         }
-        registrationSamples.add(embedding)
-        val needed = REGISTRATION_SAMPLES
-        val count = registrationSamples.size.coerceAtMost(needed)
-        if (registrationSamples.size > needed) {
-            while (registrationSamples.size > needed) {
-                registrationSamples.removeAt(0)
+
+        // Keep registration cluster consistent (reject outliers vs current mean)
+        if (registrationSamples.isNotEmpty()) {
+            val mean = averageEmbeddings(registrationSamples)
+            val sim = faceRecognitionService.cosineSimilarity(embedding, mean)
+            if (sim < FaceRecognitionService.MATCH_THRESHOLD - 0.05f) {
+                _state.value = _state.value.copy(
+                    statusText = "Keep the same face centered — sample rejected."
+                )
+                return
             }
         }
+
+        registrationSamples.add(embedding)
+        val needed = REGISTRATION_SAMPLES
+        while (registrationSamples.size > needed) {
+            registrationSamples.removeAt(0)
+        }
+        val count = registrationSamples.size
         _state.value = _state.value.copy(
             statusText = if (count < needed) {
                 "Hold still… capturing biometric sample $count/$needed"
@@ -119,8 +151,6 @@ class FaceIdentityViewModel @Inject constructor(
         )
     }
 
-    fun hasRegistrationSamplesReady(): Boolean = registrationSamples.size >= REGISTRATION_SAMPLES
-
     fun registerCapturedSamples() {
         if (_state.value.isSaving) return
         if (registrationSamples.size < REGISTRATION_SAMPLES) {
@@ -129,8 +159,7 @@ class FaceIdentityViewModel @Inject constructor(
             )
             return
         }
-        val averaged = averageEmbeddings(registrationSamples.takeLast(REGISTRATION_SAMPLES))
-        registerEmbedding(averaged)
+        registerEmbedding(averageEmbeddings(registrationSamples.takeLast(REGISTRATION_SAMPLES)))
     }
 
     fun registerEmbedding(embedding: FloatArray) {
@@ -146,7 +175,9 @@ class FaceIdentityViewModel @Inject constructor(
                     registrationSuccess = true,
                     faceRegistered = true,
                     enrolledEmbedding = embedding,
-                    statusText = "Face registered successfully"
+                    statusText = "Face registered successfully",
+                    registrationSamplesReady = false,
+                    registrationSampleCount = 0
                 )
             } else {
                 _state.value.copy(
@@ -162,13 +193,10 @@ class FaceIdentityViewModel @Inject constructor(
         val size = samples.first().size
         val sum = FloatArray(size)
         for (sample in samples) {
-            for (i in 0 until size) {
-                sum[i] += sample[i]
-            }
+            for (i in 0 until size) sum[i] += sample[i]
         }
         val n = samples.size.toFloat()
         for (i in sum.indices) sum[i] /= n
-        // L2 normalize averaged vector
         var norm = 0.0
         for (v in sum) norm += v * v
         val denom = kotlin.math.sqrt(norm).toFloat().coerceAtLeast(1e-10f)
@@ -179,6 +207,6 @@ class FaceIdentityViewModel @Inject constructor(
     fun faceService(): FaceRecognitionService = faceRecognitionService
 
     companion object {
-        private const val REGISTRATION_SAMPLES = 5
+        private const val REGISTRATION_SAMPLES = 6
     }
 }

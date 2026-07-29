@@ -226,7 +226,10 @@ fun ExerciseScreen(
                                     faceRecognitionService = faceService,
                                     onResult = { result ->
                                         if (!faceVerifiedLatch.get()) {
-                                            val verified = faceIdentityViewModel.onVerificationProbe(result.embedding)
+                                            val verified = faceIdentityViewModel.onVerificationProbe(
+                                                embedding = result.embedding,
+                                                qualityMessage = result.qualityMessage
+                                            )
                                             if (verified && faceVerifiedLatch.compareAndSet(false, true)) {
                                                 onFaceVerified?.invoke()
                                             }

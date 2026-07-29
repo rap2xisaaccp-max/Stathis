@@ -2,15 +2,12 @@ package citu.edu.stathis.mobile.features.exercise.data.facerecognition
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import kotlin.math.max
 import kotlin.math.sqrt
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -50,26 +47,18 @@ class MobileFaceNetEmbedder @Inject constructor(
     }
 
     private fun prepareFaceBitmap(source: Bitmap): Bitmap {
-        val squared = toSquareBitmap(source)
-        val scaled = if (squared.width == INPUT_SIZE && squared.height == INPUT_SIZE) {
-            squared
+        // Center-crop to square (better for FaceNet than black letterboxing)
+        val size = minOf(source.width, source.height)
+        val x = (source.width - size) / 2
+        val y = (source.height - size) / 2
+        val cropped = Bitmap.createBitmap(source, x, y, size, size)
+        return if (cropped.width == INPUT_SIZE && cropped.height == INPUT_SIZE) {
+            cropped
         } else {
-            Bitmap.createScaledBitmap(squared, INPUT_SIZE, INPUT_SIZE, true).also {
-                if (it !== squared) squared.recycle()
+            Bitmap.createScaledBitmap(cropped, INPUT_SIZE, INPUT_SIZE, true).also {
+                if (it !== cropped) cropped.recycle()
             }
         }
-        return scaled
-    }
-
-    private fun toSquareBitmap(source: Bitmap): Bitmap {
-        val size = max(source.width, source.height)
-        val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(output)
-        canvas.drawColor(Color.BLACK)
-        val left = (size - source.width) / 2f
-        val top = (size - source.height) / 2f
-        canvas.drawBitmap(source, left, top, null)
-        return output
     }
 
     private fun fillInputBuffer(bitmap: Bitmap) {

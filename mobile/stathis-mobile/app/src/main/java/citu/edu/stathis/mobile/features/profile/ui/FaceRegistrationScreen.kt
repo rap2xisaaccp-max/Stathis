@@ -142,8 +142,8 @@ fun FaceRegistrationScreen(
             } else {
                 FaceCameraPreview(
                     faceService = viewModel.faceService(),
-                    onEmbedding = { embedding ->
-                        viewModel.onRegistrationProbe(embedding)
+                    onEmbedding = { embedding, qualityMessage ->
+                        viewModel.onRegistrationProbe(embedding, qualityMessage)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -197,7 +197,7 @@ fun FaceRegistrationScreen(
 @Composable
 private fun FaceCameraPreview(
     faceService: citu.edu.stathis.mobile.features.exercise.data.facerecognition.FaceRecognitionService,
-    onEmbedding: (FloatArray?) -> Unit,
+    onEmbedding: (FloatArray?, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -250,7 +250,9 @@ private fun FaceCameraPreview(
                             FaceAnalyzer(
                                 executor = analysisExecutor,
                                 faceRecognitionService = faceService,
-                                onResult = { result -> onEmbedding(result.embedding) }
+                                onResult = { result ->
+                                    onEmbedding(result.embedding, result.qualityMessage)
+                                }
                             )
                         )
                     }
