@@ -170,6 +170,7 @@ fun TaskTemplateScreen(
                             if (exerciseTemplate != null) {
                                 // Wait for task detail to load before rendering exercise template
                                 val currentTaskDetail = taskDetail
+                                val exerciseAttemptsUsed by viewModel.exerciseAttempts.collectAsState()
                                 if (currentTaskDetail != null) {
                                     ExerciseTemplateRenderer(
                                         template = exerciseTemplate,
@@ -180,10 +181,12 @@ fun TaskTemplateScreen(
                                         } else {
                                             null
                                         },
-                                        onComplete = { performance ->
+                                        maxAttempts = currentTaskDetail.maxAttempts,
+                                        attemptsUsed = exerciseAttemptsUsed,
+                                        onSessionFinished = { performance ->
                                             viewModel.submitExercise(taskId, performance)
-                                            onTaskCompleted()
                                         },
+                                        onFinishSession = onTaskCompleted,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 } else {

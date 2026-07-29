@@ -71,20 +71,33 @@ public class StudentProgressService {
         Integer scoreVal = null;
         Integer maxScoreVal = null;
         Integer attemptsVal = null;
+        Integer repsVal = null;
+        Integer goalRepsVal = null;
         var completedAt = completionOpt.map(tc -> tc.getCompletedAt()).orElse(null);
 
         if ("QUIZ".equals(taskType) && task.getQuizTemplateId() != null) {
             var scoreOpt = scoreRepository.findQuizScore(studentId, task.getPhysicalId(), task.getQuizTemplateId());
             if (scoreOpt.isPresent()) {
                 Score s = scoreOpt.get();
-                scoreVal = s.getScore();
+                scoreVal = ScoreService.effectiveScore(s);
                 maxScoreVal = s.getMaxScore();
                 attemptsVal = s.getAttempts();
                 if (completedAt == null) completedAt = s.getCompletedAt();
             }
         }
 
-        // If you track exercise scores, add similar block for EXERCISE here using findExerciseScore
+        if ("EXERCISE".equals(taskType) && task.getExerciseTemplateId() != null) {
+            var scoreOpt = scoreRepository.findExerciseScore(studentId, task.getPhysicalId(), task.getExerciseTemplateId());
+            if (scoreOpt.isPresent()) {
+                Score s = scoreOpt.get();
+                scoreVal = ScoreService.effectiveScore(s);
+                maxScoreVal = s.getMaxScore() > 0 ? s.getMaxScore() : 100;
+                attemptsVal = s.getAttempts();
+                repsVal = s.getReps();
+                goalRepsVal = s.getGoalReps();
+                if (completedAt == null) completedAt = s.getCompletedAt();
+            }
+        }
 
         return StudentProgressDTO.builder()
                 .taskId(task.getPhysicalId())
@@ -95,6 +108,8 @@ public class StudentProgressService {
                 .score(scoreVal)
                 .maxScore(maxScoreVal)
                 .attempts(attemptsVal)
+                .reps(repsVal)
+                .goalReps(goalRepsVal)
                 .completedAt(completedAt)
                 .submissionDate(task.getSubmissionDate() != null ? task.getSubmissionDate().toLocalDate() : null)
                 .closingDate(task.getClosingDate() != null ? task.getClosingDate().toLocalDate() : null)

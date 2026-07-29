@@ -28,10 +28,24 @@ public interface ScoreRepository extends JpaRepository<Score, UUID> {
     @Query("SELECT s FROM Score s WHERE s.studentId = :studentId AND s.taskId = :taskId AND s.exerciseTemplateId = :exerciseTemplateId")
     Optional<Score> findExerciseScore(@Param("studentId") String studentId, @Param("taskId") String taskId, @Param("exerciseTemplateId") String exerciseTemplateId);
     
-    @Query("SELECT AVG(s.score) FROM Score s WHERE s.taskId = :taskId AND s.quizTemplateId = :quizTemplateId")
+    @Query("""
+            SELECT AVG((COALESCE(s.manualScore, s.score) * 1.0 / s.maxScore) * 100)
+            FROM Score s
+            WHERE s.taskId = :taskId
+              AND s.quizTemplateId = :quizTemplateId
+              AND s.maxScore > 0
+              AND (s.isCompleted = true OR s.attempts > 0)
+            """)
     Double getAverageQuizScore(@Param("taskId") String taskId, @Param("quizTemplateId") String quizTemplateId);
     
-    @Query("SELECT AVG(s.score) FROM Score s WHERE s.taskId = :taskId AND s.exerciseTemplateId = :exerciseTemplateId")
+    @Query("""
+            SELECT AVG((COALESCE(s.manualScore, s.score) * 1.0 / s.maxScore) * 100)
+            FROM Score s
+            WHERE s.taskId = :taskId
+              AND s.exerciseTemplateId = :exerciseTemplateId
+              AND s.maxScore > 0
+              AND (s.isCompleted = true OR s.attempts > 0)
+            """)
     Double getAverageExerciseScore(@Param("taskId") String taskId, @Param("exerciseTemplateId") String exerciseTemplateId);
     
     boolean existsByPhysicalId(String physicalId);

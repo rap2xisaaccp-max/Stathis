@@ -13,4 +13,8 @@ public class ScoreDTO {
     private boolean isCompleted;
     private String teacherFeedback;
     private Integer manualScore;
+    private Integer reps;
+    private Integer goalReps;
+    private Double accuracy;
+    private Double caloriesBurned;
 } 

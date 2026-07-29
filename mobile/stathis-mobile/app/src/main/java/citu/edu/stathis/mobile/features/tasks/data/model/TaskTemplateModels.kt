@@ -122,7 +122,10 @@ data class ExercisePerformance(
     val goalAccuracy: Int,
     val goalTime: Int,
     val isCompleted: Boolean,
-    val score: Int // Calculated score based on performance
+    val score: Int, // Calculated score based on performance
+    val caloriesBurned: Double = 0.0,
+    val exerciseType: String? = null,
+    val classroomId: String? = null
 )
 
 

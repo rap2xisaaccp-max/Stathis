@@ -442,12 +442,12 @@ export default function StudentProgressPage() {
                           const completedTasks = studentProgress.filter(item => item.completed).length;
                           const totalTasks = studentProgress.length;
                           
-                          const scoreValues = studentProgress
-                            .filter(item => item.score !== null)
-                            .map(item => item.score || 0);
+                          const scorePcts = studentProgress
+                            .filter(item => item.score !== null && (item.maxScore || 0) > 0 && item.taskType?.toUpperCase() !== 'LESSON')
+                            .map(item => ((item.score || 0) / (item.maxScore || 100)) * 100);
                           
-                          const avgScore = scoreValues.length > 0 
-                            ? scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length 
+                          const avgScore = scorePcts.length > 0 
+                            ? scorePcts.reduce((a, b) => a + b, 0) / scorePcts.length 
                             : 0;
                             
                           return (
@@ -474,8 +474,8 @@ export default function StudentProgressPage() {
                                   <Skeleton className="h-4 w-16" />
                                 ) : (
                                   <div>
-                                    {scoreValues.length > 0 ? (
-                                      <div className="font-medium">{Math.round(avgScore)}%</div>
+                                    {scorePcts.length > 0 ? (
+                                      <div className="font-medium">{Math.round(avgScore * 10) / 10}%</div>
                                     ) : (
                                       <div className="text-muted-foreground">0%</div>
                                     )}
@@ -561,16 +561,24 @@ export default function StudentProgressPage() {
                       <>
                         <div className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                           {allProgressData?.length ? 
-                            `${Math.round((allProgressData
-                              .filter(progress => progress.score !== null)
-                              .reduce((sum: number, progress: StudentProgressItemDTO) => sum + (progress.score || 0), 0) / 
-                              Math.max(1, allProgressData.filter((p: StudentProgressItemDTO) => p.score !== null).length)) * 10) / 10}%` : 
+                            (() => {
+                              const pcts = allProgressData
+                                .filter(p => p.score !== null && (p.maxScore || 0) > 0 && p.taskType?.toUpperCase() !== 'LESSON')
+                                .map(p => ((p.score || 0) / (p.maxScore || 100)) * 100);
+                              return pcts.length > 0
+                                ? `${Math.round((pcts.reduce((a, b) => a + b, 0) / pcts.length) * 10) / 10}%`
+                                : '0%';
+                            })() : 
                             '0%'}
                         </div>
                         <p className="text-xs text-muted-foreground mt-2">
                           {allProgressData?.length ? 
                             (() => {
-                              const uniqueTasks = new Set(allProgressData.filter(p => p.score !== null).map(p => p.taskId));
+                              const uniqueTasks = new Set(
+                                allProgressData
+                                  .filter(p => p.score !== null && p.taskType?.toUpperCase() !== 'LESSON')
+                                  .map(p => p.taskId)
+                              );
                               return `Based on ${uniqueTasks.size} unique task${uniqueTasks.size === 1 ? '' : 's'}`;
                             })() : 
                             'No tasks available'}

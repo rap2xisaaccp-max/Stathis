@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/dashboard/sidebar';
 import { AuthNavbar } from '@/components/auth-navbar';
 import { WebSocketManager } from '@/lib/websocket/websocket-client';
 import { useHeartRateAlerts } from '@/lib/websocket/use-heart-rate-alerts';
+import { useExerciseProgress } from '@/lib/websocket/use-exercise-progress';
 import { getTeacherClassrooms, getClassroomStudents } from '@/services/api-classroom';
 import { cn } from '@/lib/utils';
 import {
@@ -38,6 +39,7 @@ import {
   Wifi,
   WifiOff,
   Loader2,
+  Dumbbell,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -56,6 +58,13 @@ interface Student {
   status: "excellent" | "good" | "warning" | "inactive";
   profilePictureUrl?: string;
   verified: boolean;
+  // Live exercise tracking (from /topic/classroom/{id}/exercise-progress)
+  exerciseReps?: number;
+  exerciseGoalReps?: number;
+  exerciseCalories?: number;
+  exerciseScore?: number;
+  exerciseType?: string;
+  exerciseCompleted?: boolean;
 }
 
 // WebSocket message types - matching mobile app's VitalsWebSocketDTO
@@ -164,6 +173,44 @@ function useWebSocketMonitor(classroomId: string | null) {
   
   // Subscribe to heart rate alerts from backend (85% of max HR based on age)
   const { alerts } = useHeartRateAlerts(classroomId || '');
+  const { progressByStudent } = useExerciseProgress(classroomId || '');
+
+  // Merge live exercise progress into student cards
+  useEffect(() => {
+    const entries = Object.values(progressByStudent);
+    if (entries.length === 0) return;
+
+    setStudents((prevStudents) => {
+      let hasChanges = false;
+      const updated = prevStudents.map((student) => {
+        const progress = progressByStudent[student.id];
+        if (!progress) return student;
+        hasChanges = true;
+        const calories =
+          progress.totalCaloriesBurned ?? progress.sessionCaloriesBurned;
+        const liveScore =
+          progress.score ??
+          (progress.goalReps && progress.goalReps > 0
+            ? Math.min(100, Math.round((progress.reps / progress.goalReps) * 100))
+            : undefined);
+        return {
+          ...student,
+          exerciseReps: progress.reps,
+          exerciseGoalReps: progress.goalReps,
+          exerciseCalories: calories,
+          exerciseScore: liveScore,
+          exerciseType: progress.exerciseType,
+          exerciseCompleted: progress.completed,
+          isActive: true,
+          lastUpdate: progress.timestamp
+            ? formatRelativeTime(progress.timestamp)
+            : student.lastUpdate,
+          lastUpdateTimestamp: new Date(),
+        };
+      });
+      return hasChanges ? updated : prevStudents;
+    });
+  }, [progressByStudent]);
 
   // Throttled function to process buffered updates
   const processBufferedUpdates = useCallback(() => {
@@ -440,7 +487,7 @@ const StudentCard = memo(function StudentCardBase({ student }: { student: Studen
         </div>
       </CardHeader>
       
-      <CardContent className="pb-3 pt-2">
+      <CardContent className="pb-3 pt-2 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className={cn(
@@ -473,6 +520,34 @@ const StudentCard = memo(function StudentCardBase({ student }: { student: Studen
             </div>
           </div>
         </div>
+
+        {(student.exerciseReps !== undefined || student.exerciseCalories !== undefined || student.exerciseScore !== undefined) && (
+          <div className="flex items-center space-x-3 rounded-xl bg-muted/40 px-3 py-2">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Dumbbell className="h-4 w-4 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground font-medium truncate">
+                {student.exerciseType
+                  ? student.exerciseType.replace(/_/g, ' ')
+                  : 'Exercise'}
+                {student.exerciseCompleted ? ' · Done' : ' · Live'}
+              </p>
+              <p className="text-sm font-semibold">
+                Score {student.exerciseScore ?? 0}/100
+                <span className="text-muted-foreground font-normal">
+                  {' · '}
+                  {student.exerciseReps ?? 0}
+                  {student.exerciseGoalReps != null ? `/${student.exerciseGoalReps}` : ''} reps
+                  {' · '}
+                  {student.exerciseCalories != null
+                    ? `${Number(student.exerciseCalories).toFixed(1)} kcal`
+                    : '—'}
+                </span>
+              </p>
+            </div>
+          </div>
+        )}
       </CardContent>
       
       <CardFooter className="pt-2 pb-3 text-xs text-muted-foreground border-t border-border/30">
@@ -505,7 +580,13 @@ const StudentCard = memo(function StudentCardBase({ student }: { student: Studen
     prevStudent.heartRate === nextStudent.heartRate &&
     prevStudent.isActive === nextStudent.isActive &&
     prevStudent.lastUpdate === nextStudent.lastUpdate &&
-    prevStudent.status === nextStudent.status
+    prevStudent.status === nextStudent.status &&
+    prevStudent.exerciseReps === nextStudent.exerciseReps &&
+    prevStudent.exerciseGoalReps === nextStudent.exerciseGoalReps &&
+    prevStudent.exerciseCalories === nextStudent.exerciseCalories &&
+    prevStudent.exerciseScore === nextStudent.exerciseScore &&
+    prevStudent.exerciseCompleted === nextStudent.exerciseCompleted &&
+    prevStudent.exerciseType === nextStudent.exerciseType
   );
 });
 
@@ -675,7 +756,7 @@ export default function MonitoringPage() {
               <div>
                 <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Student Health Monitoring</h1>
                 <p className="text-muted-foreground mt-1">
-                  Real-time vitals tracking • {classroomsData?.find(c => c.physicalId === selectedClassroom)?.name || 'Class'} • {lastUpdateTime.toLocaleTimeString()}
+                  Real-time vitals & exercise tracking • {classroomsData?.find(c => c.physicalId === selectedClassroom)?.name || 'Class'} • {lastUpdateTime.toLocaleTimeString()}
                 </p>
               </div>
             </div>
