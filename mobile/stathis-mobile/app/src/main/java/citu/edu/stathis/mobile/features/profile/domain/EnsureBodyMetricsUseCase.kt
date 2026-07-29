@@ -6,12 +6,11 @@ import javax.inject.Inject
 class EnsureBodyMetricsUseCase @Inject constructor(
     private val profileRepository: ProfileRepository
 ) {
-    /**
-     * @return true if body metrics are complete and the caller may proceed;
-     * false if the user must complete body metrics setup first.
-     */
     suspend operator fun invoke(): Boolean {
         val response = profileRepository.getUserProfile()
-        return response.success && response.data?.hasCompleteBodyMetrics() == true
+        val profile = response.data ?: return false
+        return response.success
+            && profile.hasCompleteBodyMetrics()
+            && profile.hasFaceRegistered()
     }
 }
