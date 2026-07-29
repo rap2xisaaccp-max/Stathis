@@ -539,7 +539,8 @@ private fun UpcomingTasksSection(
                     val pastDeadline = runCatching { java.time.OffsetDateTime.parse(task.closingDate) }
                         .getOrNull()?.isBefore(now) == true
                     val active = task.isActive ?: true
-                    !pastDeadline && active // Only include tasks that are not past deadline and are active
+                    val started = task.isStarted == true
+                    !pastDeadline && active && started // Only tasks started by the teacher
                 }
                 
                 if (availableTasks.isEmpty()) {

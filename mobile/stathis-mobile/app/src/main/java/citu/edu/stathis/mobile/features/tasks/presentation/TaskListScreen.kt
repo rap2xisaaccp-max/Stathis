@@ -250,7 +250,7 @@ fun TaskListScreen(
                     val progress = taskProgressMap[task.physicalId]
                     val active = task.isActive ?: true
                     val started = task.isStarted ?: false
-                    val isUnavailable = pastDeadline || !active
+                    val isUnavailable = pastDeadline || !active || !started
                     
                     // Debug logging for status determination
                     android.util.Log.d("TaskListScreen", "Status logic for ${task.name}:")
@@ -359,7 +359,12 @@ fun TaskListScreen(
                                         val pastDeadline = runCatching { OffsetDateTime.parse(task.closingDate) }
                                             .getOrNull()?.isBefore(OffsetDateTime.now()) == true
                                         val activeVal = task.isActive ?: true
-                                        if (!activeVal) append("Task is deactivated.")
+                                        val startedVal = task.isStarted == true
+                                        if (!startedVal) append("Task has not been started by the teacher.")
+                                        if (!activeVal) {
+                                            if (isNotEmpty()) append(" ")
+                                            append("Task is deactivated.")
+                                        }
                                         if (pastDeadline) {
                                             if (isNotEmpty()) append(" ")
                                             append("Deadline has passed.")
@@ -388,7 +393,8 @@ private fun TaskCard(
         .getOrNull()?.isBefore(OffsetDateTime.now()) == true
     // Status logic: prioritize deactivation over completion
     val active = task.isActive ?: true
-    val isUnavailable = pastDeadline || !active
+    val started = task.isStarted == true
+    val isUnavailable = pastDeadline || !active || !started
     // Check individual component completions - task is completed if student has made at least one attempt
     val hasQuizAttempts = (progress?.quizAttempts ?: 0) > 0
     val hasLessonAttempts = (progress?.lessonCompleted == true) || LessonAttemptsCache.getAttempts(task.physicalId) > 0

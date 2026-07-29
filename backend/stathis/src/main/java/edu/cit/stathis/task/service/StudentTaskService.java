@@ -143,8 +143,7 @@ public class StudentTaskService {
         }
 
         // Enforce max attempts based on Task configuration
-        Task task = taskRepository.findByPhysicalId(taskId)
-            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        Task task = requireAvailableTask(taskId);
         validateAttempts(task, existingScore);
 
         // Ensure maxScore is populated from quiz template if available
@@ -268,8 +267,7 @@ public class StudentTaskService {
         }
 
         // Enforce max attempts based on Task configuration
-        Task task = taskRepository.findByPhysicalId(taskId)
-            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        Task task = requireAvailableTask(taskId);
         validateAttempts(task, existingScore);
 
         existingScore.setScore(computedScore);
@@ -290,8 +288,32 @@ public class StudentTaskService {
         }
     }
 
+    /**
+     * Students may only submit work after the teacher has started the task,
+     * while the task remains active and before the closing deadline.
+     */
+    private void assertTaskAvailableForStudent(Task task) {
+        if (!task.isStarted()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Task has not been started by the teacher");
+        }
+        if (!task.isActive()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Task is inactive");
+        }
+        if (task.getClosingDate() != null && task.getClosingDate().isBefore(OffsetDateTime.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Task deadline has passed");
+        }
+    }
+
+    private Task requireAvailableTask(String taskId) {
+        Task task = taskRepository.findByPhysicalId(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        assertTaskAvailableForStudent(task);
+        return task;
+    }
+
     @Transactional
     public void completeLesson(String studentId, String taskId, String lessonTemplateId) {
+        requireAvailableTask(taskId);
         updateTaskCompletion(studentId, taskId, "lesson", true);
     }
 
@@ -319,8 +341,7 @@ public class StudentTaskService {
                 ? result.getCaloriesBurned()
                 : exerciseCalorieService.calculateCalories(studentId, exerciseType, reps);
 
-        Task task = taskRepository.findByPhysicalId(taskId)
-                .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        Task task = requireAvailableTask(taskId);
 
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
@@ -481,6 +502,7 @@ public class StudentTaskService {
             .score(score != null ? buildScoreDTO(score) : null)
             .isCompleted(score != null && score.isCompleted())
             .isStarted(task.isStarted())
+            .isActive(task.isActive())
             .createdAt(task.getCreatedAt().toString())
             .updatedAt(task.getUpdatedAt().toString())
             .build();
