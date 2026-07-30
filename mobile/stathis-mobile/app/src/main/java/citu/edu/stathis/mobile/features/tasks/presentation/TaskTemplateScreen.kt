@@ -186,6 +186,7 @@ fun TaskTemplateScreen(
                                         onSessionFinished = { performance ->
                                             viewModel.submitExercise(taskId, performance)
                                         },
+                                        onExerciseAttemptReady = { viewModel.prepareExerciseAttempt() },
                                         onFinishSession = onTaskCompleted,
                                         modifier = Modifier.fillMaxSize()
                                     )

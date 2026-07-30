@@ -209,7 +209,7 @@ fun ExerciseScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        key(verifyFace, useFrontCamera, monitorSkeletonPresence, enableExerciseTracking) {
+        key(verifyFace, useFrontCamera) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->

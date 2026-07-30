@@ -30,6 +30,14 @@ class TaskTemplateViewModel @Inject constructor(
     private val _exerciseAttempts = MutableStateFlow(0)
     val exerciseAttempts: StateFlow<Int> = _exerciseAttempts.asStateFlow()
 
+    /** Prevents double POST of the same in-progress exercise attempt (auto-complete + Finish race). */
+    private val exerciseSubmissionGuard = ExerciseSubmissionGuard()
+
+    /** Call when the student starts a new exercise attempt (or retries after results). */
+    fun prepareExerciseAttempt() {
+        exerciseSubmissionGuard.reset()
+    }
+
     fun loadTemplate(taskId: String, templateType: String, templateId: String? = null) {
         viewModelScope.launch {
             try {
@@ -162,6 +170,13 @@ class TaskTemplateViewModel @Inject constructor(
     }
 
     fun submitExercise(taskId: String, performance: ExercisePerformance) {
+        if (!exerciseSubmissionGuard.tryAcquire()) {
+            android.util.Log.w(
+                "TaskTemplateViewModel",
+                "Ignoring duplicate exercise submit for task=$taskId template=${performance.templateId}"
+            )
+            return
+        }
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
@@ -198,6 +213,8 @@ class TaskTemplateViewModel @Inject constructor(
             } catch (e: Exception) {
                 android.util.Log.e("TaskTemplateViewModel", "Failed to submit exercise", e)
                 _error.value = e.message
+                // Allow a deliberate retry after a failed network submit
+                exerciseSubmissionGuard.reset()
             }
         }
     }
