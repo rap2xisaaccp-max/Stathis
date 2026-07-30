@@ -941,7 +941,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           <div className="min-h-[300px]">
             <BarChart
               title="Modality effectiveness"
-              description="Mean severity reduction from closed-loop profile buckets"
+              description="Mean severity reduction from closed-loop responses"
               data={modalityData}
               index="modality"
               categories={['delta']}
@@ -953,7 +953,11 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="text-base">Modality effectiveness</CardTitle>
-              <CardDescription>No modality evidence yet.</CardDescription>
+              <CardDescription>
+                Connected to insights — no closed-loop modality samples yet (
+                {data.totalInterventions ?? 0} response pairs). Needs form coaching with a
+                recorded feedback response, not Score completion alone.
+              </CardDescription>
             </CardHeader>
           </Card>
         )}
@@ -974,7 +978,11 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="text-base">Recurring form errors</CardTitle>
-              <CardDescription>No recurring form errors recorded yet.</CardDescription>
+              <CardDescription>
+                Connected to insights — no coached form errors yet (
+                {(data.recentInterventions || []).length} recent events). Clean sessions with
+                perfect form will stay empty here.
+              </CardDescription>
             </CardHeader>
           </Card>
         )}
@@ -996,7 +1004,9 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
             <CardHeader>
               <CardTitle className="text-base">Mastery timeline</CardTitle>
               <CardDescription>
-                Timeline appears after adaptive sessions create profile snapshots.
+                Connected to insights — no profile history or mastery/session seed yet (
+                {(data.mastery || []).length} mastery rows). Complete an exercise so mobile
+                calls adaptive flush + recordSession.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1018,7 +1028,11 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="text-base">Mastery by exercise</CardTitle>
-              <CardDescription>No mastery records yet.</CardDescription>
+              <CardDescription>
+                Connected to insights — `exercise_mastery` has no rows for this student yet.
+                Graded Score completion alone does not create mastery; adaptive
+                recordSession / feedback responses do.
+              </CardDescription>
             </CardHeader>
           </Card>
         )}

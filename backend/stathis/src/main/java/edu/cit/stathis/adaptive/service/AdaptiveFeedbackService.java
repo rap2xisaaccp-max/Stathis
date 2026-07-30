@@ -201,30 +201,30 @@ public class AdaptiveFeedbackService {
                 .map(i -> i.getErrorCode() != null ? i.getErrorCode().name() : null)
                 .collect(Collectors.toList()));
 
-    Map<String, Double> modalityMeanDelta = new HashMap<>();
     StudentLearningProfileDTO profile = getProfile(studentId);
-    if (profile.getModalityEffectivenessJson() != null) {
-      for (FeedbackModality modality : FeedbackModality.values()) {
-        Object raw = profile.getModalityEffectivenessJson().get(modality.name());
-        if (raw instanceof Map<?, ?> map) {
-          Object mean = map.get("meanDelta");
-          if (mean instanceof Number number) {
-            modalityMeanDelta.put(modality.name(), number.doubleValue());
-          }
-        }
-      }
+    List<FeedbackResponse> allResponses =
+        responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId);
+
+    Map<String, Double> modalityMeanDelta =
+        extractModalityMeanDelta(profile.getModalityEffectivenessJson());
+    // Fallback: derive from closed-loop FR↔FI when profile buckets are empty/unreadable
+    if (modalityMeanDelta.isEmpty() && !allResponses.isEmpty()) {
+      modalityMeanDelta = modalityMeanDeltaFromResponses(allInterventions, allResponses);
     }
 
     // Closed-loop success: successes / response pairs (not FI count).
-    long closedPairs = responseRepository.countByStudentId(studentId);
-    long successes = responseRepository.countByStudentIdAndSuccessTrue(studentId);
+    long closedPairs = allResponses.size();
+    long successes = allResponses.stream().filter(FeedbackResponse::isSuccess).count();
     List<ExerciseMasteryDTO> mastery = getMastery(studentId);
     List<ProfileHistoryPointDTO> history = profileService.listHistory(studentId);
 
     // Seed a current point so the timeline chart is useful before the 5th snapshot.
+    // Include FI/FR presence so Score-only gaps don't hide timeline when adaptive telemetry exists.
     if (history.isEmpty()
         && ((profile.getTotalInterventions() != null && profile.getTotalInterventions() > 0)
-            || (mastery != null && !mastery.isEmpty()))) {
+            || (mastery != null && !mastery.isEmpty())
+            || !allInterventions.isEmpty()
+            || closedPairs > 0)) {
       double meanMastery =
           mastery == null || mastery.isEmpty()
               ? 0.0
@@ -469,6 +469,54 @@ public class AdaptiveFeedbackService {
     if (!sharedClassroom) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized for this student");
     }
+  }
+
+  /** Read modality meanΔ from profile JSON buckets (modality enum keys only). */
+  private Map<String, Double> extractModalityMeanDelta(Map<String, Object> effectiveness) {
+    Map<String, Double> modalityMeanDelta = new HashMap<>();
+    if (effectiveness == null || effectiveness.isEmpty()) {
+      return modalityMeanDelta;
+    }
+    for (FeedbackModality modality : FeedbackModality.values()) {
+      Object raw = effectiveness.get(modality.name());
+      if (!(raw instanceof Map<?, ?> map)) {
+        continue;
+      }
+      Object mean = map.get("meanDelta");
+      if (mean == null) {
+        mean = map.get("bayesianMeanDelta");
+      }
+      if (mean instanceof Number number) {
+        modalityMeanDelta.put(modality.name(), number.doubleValue());
+      }
+    }
+    return modalityMeanDelta;
+  }
+
+  /** Aggregate mean Δ per modality from closed FI↔FR pairs (teacher chart fallback). */
+  private Map<String, Double> modalityMeanDeltaFromResponses(
+      List<FeedbackIntervention> interventions, List<FeedbackResponse> responses) {
+    Map<String, String> interventionModality = new HashMap<>();
+    for (FeedbackIntervention intervention : interventions) {
+      if (intervention.getPhysicalId() != null && intervention.getModality() != null) {
+        interventionModality.put(intervention.getPhysicalId(), intervention.getModality().name());
+      }
+    }
+    Map<String, List<Double>> deltasByModality = new HashMap<>();
+    for (FeedbackResponse response : responses) {
+      String modality = interventionModality.get(response.getInterventionPhysicalId());
+      if (modality == null || modality.isBlank()) {
+        continue;
+      }
+      deltasByModality
+          .computeIfAbsent(modality, k -> new ArrayList<>())
+          .add(response.getDelta());
+    }
+    Map<String, Double> means = new HashMap<>();
+    for (Map.Entry<String, List<Double>> entry : deltasByModality.entrySet()) {
+      means.put(entry.getKey(), RctEvaluationMetrics.mean(entry.getValue()));
+    }
+    return means;
   }
 
   private FeedbackInterventionResponseDTO toInterventionDto(FeedbackIntervention entity) {
