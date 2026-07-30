@@ -80,7 +80,8 @@ export default function StudentProgressDetailPage() {
     queryFn: () => fetchStudentProgressItems(studentId, classroomId),
     enabled: !!studentId && !!classroomId, // Only run if we have both IDs
     retry: 2, // Retry failed requests up to 2 times
-    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    staleTime: 1000 * 30, // Prefer fresher Scores/Adaptive snapshot after student completes
+    refetchOnWindowFocus: true,
   });
 
   // Fetch student badges

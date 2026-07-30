@@ -234,34 +234,39 @@ export function AdaptiveLearningInsights({
     queryKey: ['adaptive-insights', studentId],
     queryFn: () => fetchAdaptiveInsights(studentId),
     enabled: !!studentId,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
   const evaluationQuery = useQuery({
     queryKey: ['adaptive-evaluation', studentId],
     queryFn: () => fetchAdaptiveEvaluation(studentId),
     enabled: !!studentId,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
   const classroomQuery = useQuery({
     queryKey: ['adaptive-classroom-evaluation', classroomId],
     queryFn: () => fetchClassroomEvaluation(classroomId!),
     enabled: !!classroomId,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
   const difficultyQuery = useQuery({
     queryKey: ['adaptive-difficulty-recommendations', studentId],
     queryFn: () => fetchDifficultyRecommendations(studentId),
     enabled: !!studentId,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
 
   if (insightsQuery.isLoading) {
     return (
       <div className="space-y-4">
+        <StudentProgressSnapshotCard progressItems={progressItems} />
         <Skeleton className="h-28 w-full rounded-2xl" />
         <Skeleton className="h-64 w-full rounded-2xl" />
         <Skeleton className="h-64 w-full rounded-2xl" />
@@ -271,32 +276,38 @@ export function AdaptiveLearningInsights({
 
   if (insightsQuery.isError) {
     return (
-      <QueryErrorCard
-        title="Could not load adaptive insights"
-        message={
-          insightsQuery.error instanceof Error
-            ? insightsQuery.error.message
-            : 'The adaptive API request failed. This is not an empty profile — try again.'
-        }
-        onRetry={() => insightsQuery.refetch()}
-      />
+      <div className="space-y-4">
+        <StudentProgressSnapshotCard progressItems={progressItems} />
+        <QueryErrorCard
+          title="Could not load adaptive insights"
+          message={
+            insightsQuery.error instanceof Error
+              ? insightsQuery.error.message
+              : 'The adaptive API request failed. This is not an empty profile — try again.'
+          }
+          onRetry={() => insightsQuery.refetch()}
+        />
+      </div>
     );
   }
 
   if (!insightsQuery.data) {
     return (
-      <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Brain className="h-4 w-4" />
-            Adaptive learning
-          </CardTitle>
-          <CardDescription>
-            No adaptive coaching data yet for this student. Insights appear after
-            exercise sessions with closed-loop feedback.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <div className="space-y-4">
+        <StudentProgressSnapshotCard progressItems={progressItems} />
+        <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Brain className="h-4 w-4" />
+              Adaptive learning
+            </CardTitle>
+            <CardDescription>
+              No adaptive coaching data yet for this student. Insights appear after
+              exercise sessions with closed-loop feedback.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
     );
   }
 

@@ -94,6 +94,8 @@ class AdaptiveSessionViewModel @Inject constructor(
             engine.endSession()
             _sessionSummary.value = engine.sessionSummary()
             publishDelivery(null)
+            // Refresh profile/mastery so sessionsCount and related UI stay current
+            loadLearningProfileAndMastery()
         }
     }
 

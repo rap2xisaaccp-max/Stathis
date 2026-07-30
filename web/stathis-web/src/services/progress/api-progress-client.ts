@@ -809,13 +809,13 @@ export async function fetchStudentProgressItems(studentId: string, classroomId?:
     // If we have progress data and tasks, enhance the progress items with task details
     const progressItems = Array.isArray(data) ? data as StudentProgressItemDTO[] : [];
     
-    // If we have task data, enhance the progress items with task names and types
+    // If we have task data, enhance progress items with display names only.
+    // Preserve backend taskType so multi-component tasks (QUIZ + EXERCISE) stay distinct.
     if (Object.keys(tasks).length > 0) {
       for (const item of progressItems) {
         const taskInfo = tasks[item.taskId];
         if (taskInfo) {
           item.taskName = taskInfo.name || item.taskName;
-          item.taskType = taskInfo.type || item.taskType;
         }
       }
     }

@@ -38,6 +38,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
     private val sessionModalities = linkedSetOf<String>()
     private val sessionErrorCodes = linkedSetOf<String>()
     @Volatile private var sessionInterventionCount: Int = 0
+    @Volatile private var sessionRecorded: Boolean = false
 
     /** Exposed for tests / diagnostics. */
     fun offlineQueueForTests(): AdaptiveOfflineQueue = offlineQueue
@@ -58,6 +59,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
         this.activeDelivery = null
         this.cooldownMs = 8000L
         this.sessionInterventionCount = 0
+        this.sessionRecorded = false
         sessionModalities.clear()
         sessionErrorCodes.clear()
         interventionGate.reset()
@@ -311,25 +313,37 @@ class AdaptiveFeedbackEngine @Inject constructor(
         pendingResponses.clear()
 
         val (queuedInterventions, queuedResponses) = offlineQueue.drain()
-        if (queuedInterventions.isEmpty() && queuedResponses.isEmpty()) return
+        val hasBatch = queuedInterventions.isNotEmpty() || queuedResponses.isNotEmpty()
 
-        try {
-            withContext(Dispatchers.IO) {
-                adaptiveApi.ingestBatch(
-                    AdaptiveBatchIngestDto(
-                        interventions = queuedInterventions.map { it.payload },
-                        responses = queuedResponses.map { it.payload }
+        if (hasBatch) {
+            try {
+                withContext(Dispatchers.IO) {
+                    adaptiveApi.ingestBatch(
+                        AdaptiveBatchIngestDto(
+                            interventions = queuedInterventions.map { it.payload },
+                            responses = queuedResponses.map { it.payload }
+                        )
                     )
-                )
+                }
+            } catch (t: Throwable) {
+                Timber.w(t, "Failed to flush adaptive batch; re-queueing with retry budget")
+                offlineQueue.requeueAfterFailure(queuedInterventions, queuedResponses)
+                // Still attempt session recording below so clean/empty sessions count.
             }
+        }
+
+        // Always bump mastery sessionsCount once per ended session, even with an empty queue
+        // (clean sessions with zero interventions previously skipped recordSession).
+        if (!sessionRecorded && exerciseType.isNotBlank()) {
+            sessionRecorded = true
             runCatching {
                 withContext(Dispatchers.IO) {
                     adaptiveApi.recordSession(exerciseType)
                 }
+            }.onFailure { t ->
+                sessionRecorded = false
+                Timber.w(t, "Failed to record adaptive session for %s", exerciseType)
             }
-        } catch (t: Throwable) {
-            Timber.w(t, "Failed to flush adaptive batch; re-queueing with retry budget")
-            offlineQueue.requeueAfterFailure(queuedInterventions, queuedResponses)
         }
     }
 
