@@ -983,58 +983,17 @@ private fun ExerciseControlsOverlay(
     var exerciseFeedback by remember { mutableStateOf<List<String>>(emptyList()) }
     var latestPose by remember { mutableStateOf<Pose?>(null) }
 
-    fun applyLiveReps(detectorReps: Int, source: String) {
-        val previous = currentReps
+    fun applyLiveReps(detectorReps: Int) {
         val total = sessionRepAccumulator.applyDetectorReps(detectorReps)
         currentReps = total
         onSessionRepsChange(total)
-        // #region agent log
-        if (detectorReps < previous || total != detectorReps || source == "reverify-resume") {
-            try {
-                val payload =
-                    """{"sessionId":"b7147e","runId":"post-fix","hypothesisId":"D","location":"ExerciseControlsOverlay:applyLiveReps","message":"rep accumulate","data":{"source":"$source","detectorReps":$detectorReps,"previous":$previous,"sessionReps":$total,"anchor":${sessionRepAccumulator.anchorForTests()}},"timestamp":${System.currentTimeMillis()}}"""
-                Thread {
-                    try {
-                        val urls = listOf(
-                            "http://10.0.2.2:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12",
-                            "http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12"
-                        )
-                        for (u in urls) {
-                            try {
-                                val conn = java.net.URL(u).openConnection() as java.net.HttpURLConnection
-                                conn.requestMethod = "POST"
-                                conn.setRequestProperty("Content-Type", "application/json")
-                                conn.setRequestProperty("X-Debug-Session-Id", "b7147e")
-                                conn.doOutput = true
-                                conn.connectTimeout = 400
-                                conn.readTimeout = 400
-                                conn.outputStream.use { it.write(payload.toByteArray()) }
-                                conn.responseCode
-                                break
-                            } catch (_: Exception) {
-                            }
-                        }
-                    } catch (_: Exception) {
-                    }
-                }.start()
-            } catch (_: Exception) {
-            }
-            android.util.Log.i(
-                "APSLE_DEBUG",
-                "reps source=$source detector=$detectorReps prev=$previous session=$total anchor=${sessionRepAccumulator.anchorForTests()}"
-            )
-        }
-        // #endregion
     }
 
     // Re-apply when timer resumes after re-verify even if feedback object identity is unchanged
     LaunchedEffect(liveExerciseFeedback, isTimerRunning, onTrackingActive, identityPhase) {
         val feedback = liveExerciseFeedback ?: return@LaunchedEffect
         if (onTrackingActive && isTimerRunning && identityPhase == IdentityPhase.VERIFIED) {
-            applyLiveReps(
-                detectorReps = feedback.repCount,
-                source = if (isTimerRunning) "live-or-resume" else "gated"
-            )
+            applyLiveReps(feedback.repCount)
             exerciseState = feedback.exerciseState
             exerciseConfidence = feedback.confidence
             exerciseFeedback = feedback.formIssues
@@ -1045,33 +1004,6 @@ private fun ExerciseControlsOverlay(
     LaunchedEffect(identityPhase) {
         when (identityPhase) {
             IdentityPhase.REVERIFYING -> {
-                // #region agent log
-                android.util.Log.i(
-                    "APSLE_DEBUG",
-                    "reverify pause reps=$currentReps sessionInProgress=$sessionInProgress timer=$isTimerRunning"
-                )
-                try {
-                    val payload =
-                        """{"sessionId":"b7147e","runId":"post-fix","hypothesisId":"B","location":"ExerciseControlsOverlay:reverify","message":"reverify pause","data":{"currentReps":$currentReps,"sessionInProgress":$sessionInProgress,"isTimerRunning":$isTimerRunning},"timestamp":${System.currentTimeMillis()}}"""
-                    Thread {
-                        try {
-                            val conn =
-                                java.net.URL("http://10.0.2.2:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12")
-                                    .openConnection() as java.net.HttpURLConnection
-                            conn.requestMethod = "POST"
-                            conn.setRequestProperty("Content-Type", "application/json")
-                            conn.setRequestProperty("X-Debug-Session-Id", "b7147e")
-                            conn.doOutput = true
-                            conn.connectTimeout = 400
-                            conn.readTimeout = 400
-                            conn.outputStream.use { it.write(payload.toByteArray()) }
-                            conn.responseCode
-                        } catch (_: Exception) {
-                        }
-                    }.start()
-                } catch (_: Exception) {
-                }
-                // #endregion
                 if (isTimerRunning) {
                     onResumeTimerAfterReverifyChange(true)
                     isTimerRunning = false
@@ -1081,9 +1013,6 @@ private fun ExerciseControlsOverlay(
                 if (resumeTimerAfterReverify) {
                     isTimerRunning = true
                     onResumeTimerAfterReverifyChange(false)
-                    // #region agent log
-                    android.util.Log.i("APSLE_DEBUG", "reverify resume reps=$currentReps sessionReps=$sessionReps")
-                    // #endregion
                 }
             }
             IdentityPhase.UNVERIFIED, IdentityPhase.VERIFYING -> {
@@ -1123,7 +1052,7 @@ private fun ExerciseControlsOverlay(
             else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
         }
 
-        applyLiveReps(result.repCount, source = "overlay-detector")
+        applyLiveReps(result.repCount)
         exerciseState = result.state
         exerciseConfidence = result.confidence ?: 0f
         exerciseFeedback = result.feedback
@@ -1242,38 +1171,8 @@ private fun ExerciseControlsOverlay(
                 currentReps = 0
                 onSessionRepsChange(0)
                 currentTime = 0
-                // #region agent log
-                android.util.Log.i("APSLE_DEBUG", "new attempt start — counters cleared")
-                // #endregion
             } else {
                 currentReps = sessionReps
-                // #region agent log
-                android.util.Log.i(
-                    "APSLE_DEBUG",
-                    "resume after remount — restored sessionReps=$sessionReps (skipped clear)"
-                )
-                try {
-                    val payload =
-                        """{"sessionId":"b7147e","runId":"post-fix","hypothesisId":"F","location":"ExerciseControlsOverlay:timerStart","message":"skipped counter clear on remount resume","data":{"sessionReps":$sessionReps,"sessionInProgress":true},"timestamp":${System.currentTimeMillis()}}"""
-                    Thread {
-                        try {
-                            val conn =
-                                java.net.URL("http://10.0.2.2:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12")
-                                    .openConnection() as java.net.HttpURLConnection
-                            conn.requestMethod = "POST"
-                            conn.setRequestProperty("Content-Type", "application/json")
-                            conn.setRequestProperty("X-Debug-Session-Id", "b7147e")
-                            conn.doOutput = true
-                            conn.connectTimeout = 400
-                            conn.readTimeout = 400
-                            conn.outputStream.use { it.write(payload.toByteArray()) }
-                            conn.responseCode
-                        } catch (_: Exception) {
-                        }
-                    }.start()
-                } catch (_: Exception) {
-                }
-                // #endregion
             }
         }
 
