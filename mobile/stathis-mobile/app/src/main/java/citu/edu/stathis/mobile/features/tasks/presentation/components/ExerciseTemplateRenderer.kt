@@ -266,11 +266,11 @@ fun ExerciseTemplateRenderer(
                 },
                 monitorSkeletonPresence = isRecognized,
                 onSkeletonLeftFrame = {
-                    // End recognition session — pause counting until face matches again
+                    // Only after 5s out of frame — pause counting until face matches again
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         identityPhase = IdentityPhase.REVERIFYING
                         identityMessage =
-                            "Skeleton left the camera. Verify your face to resume tracking."
+                            "You left the camera for 5 seconds. Verify your face to resume tracking."
                         faceIdentityViewModel.resetVerification()
                     }
                 }

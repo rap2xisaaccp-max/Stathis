@@ -1,13 +1,21 @@
 package citu.edu.stathis.mobile.features.exercise.data.facerecognition
 
+import android.os.SystemClock
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 
 /**
  * Determines whether the user's skeleton is sufficiently visible in frame.
- * When the torso leaves the camera, facial re-verification is required.
+ *
+ * After initial face verification, re-verification is required only when the
+ * recognized person's skeleton has been missing from the camera for
+ * [OUT_OF_FRAME_GRACE_MS] (5 seconds). Brief gaps while exercising must not
+ * interrupt the session with repeated verify prompts.
  */
 object SkeletonPresenceTracker {
+
+    /** Grace period before leaving the frame forces facial re-verification. */
+    const val OUT_OF_FRAME_GRACE_MS = 5_000L
 
     private val TORSO_LANDMARKS = listOf(
         PoseLandmark.LEFT_SHOULDER,
@@ -18,7 +26,10 @@ object SkeletonPresenceTracker {
 
     private const val IN_FRAME_LIKELIHOOD = 0.45f
     private const val MIN_VISIBLE_TORSO_POINTS = 3
-    /** Slightly longer debounce so brief occlusion does not end recognition. */
+    /**
+     * Short frame debounce so a few missed detections do not start the grace timer.
+     * At ~30 fps this is roughly 0.4s of noise rejection before the 5s clock starts.
+     */
     private const val OUT_OF_FRAME_CONFIRM_FRAMES = 12
 
     /**
@@ -34,18 +45,36 @@ object SkeletonPresenceTracker {
     }
 
     /**
-     * Debounces brief detection gaps so a single missed frame does not force re-verify.
+     * Tracks skeleton presence with a 5-second out-of-frame grace period.
+     *
+     * Flow:
+     * 1. Skeleton visible → [SkeletonStatus.IN_FRAME]
+     * 2. Brief gaps → [SkeletonStatus.UNSTABLE] (no re-verify)
+     * 3. Confirmed missing → grace timer starts; still [SkeletonStatus.UNSTABLE]
+     *    until [OUT_OF_FRAME_GRACE_MS] elapses
+     * 4. Still missing after 5s → [SkeletonStatus.LEFT_FRAME] (re-verify)
+     * 5. Skeleton returns during grace → timer resets; stay recognized
      */
     class Session {
         private var consecutiveMissing = 0
+        private var outOfFrameSinceMs: Long? = null
 
         fun onPose(pose: Pose?): SkeletonStatus {
             return if (isSkeletonInFrame(pose)) {
                 consecutiveMissing = 0
+                outOfFrameSinceMs = null
                 SkeletonStatus.IN_FRAME
             } else {
                 consecutiveMissing++
-                if (consecutiveMissing >= OUT_OF_FRAME_CONFIRM_FRAMES) {
+                if (consecutiveMissing < OUT_OF_FRAME_CONFIRM_FRAMES) {
+                    return SkeletonStatus.UNSTABLE
+                }
+
+                val now = SystemClock.elapsedRealtime()
+                val startedAt = outOfFrameSinceMs ?: now.also { outOfFrameSinceMs = it }
+                val elapsed = now - startedAt
+
+                if (elapsed >= OUT_OF_FRAME_GRACE_MS) {
                     SkeletonStatus.LEFT_FRAME
                 } else {
                     SkeletonStatus.UNSTABLE
@@ -53,8 +82,16 @@ object SkeletonPresenceTracker {
             }
         }
 
+        /** Milliseconds remaining in the grace window, or 0 if not timing out. */
+        fun graceRemainingMs(): Long {
+            val startedAt = outOfFrameSinceMs ?: return 0L
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            return (OUT_OF_FRAME_GRACE_MS - elapsed).coerceAtLeast(0L)
+        }
+
         fun reset() {
             consecutiveMissing = 0
+            outOfFrameSinceMs = null
         }
     }
 
