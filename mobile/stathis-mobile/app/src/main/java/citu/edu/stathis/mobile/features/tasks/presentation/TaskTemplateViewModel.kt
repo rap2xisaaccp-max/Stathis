@@ -164,7 +164,10 @@ class TaskTemplateViewModel @Inject constructor(
     fun submitExercise(taskId: String, performance: ExercisePerformance) {
         viewModelScope.launch {
             try {
-                android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
+                android.util.Log.d(
+                    "TaskTemplateViewModel",
+                    "Submitting exercise completion for task: $taskId, template: ${performance.templateId}"
+                )
 
                 val submission = citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission(
                     reps = performance.actualReps,
@@ -177,27 +180,34 @@ class TaskTemplateViewModel @Inject constructor(
                 )
 
                 val score = taskRepository.completeExercise(taskId, performance.templateId, submission)
+                    ?: throw IllegalStateException("Server did not return a score for this exercise")
 
-                // Increment exercise attempts in cache (using LessonAttemptsCache for now)
                 LessonAttemptsCache.increment(taskId)
-
-                // Optimistic completion for UI
                 TaskCompletionCache.markCompleted(taskId)
+                _exerciseAttempts.value = score.attempts ?: (_exerciseAttempts.value + 1)
 
-                _exerciseAttempts.value = score?.attempts
-                    ?: (_exerciseAttempts.value + 1)
-
-                android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully (calories=${performance.caloriesBurned}, attempts=${_exerciseAttempts.value})")
-                // Refresh progress so list reflects completion immediately
+                android.util.Log.d(
+                    "TaskTemplateViewModel",
+                    "Exercise submitted successfully (calories=${performance.caloriesBurned}, attempts=${_exerciseAttempts.value}, score=${score.score})"
+                )
                 runCatching { taskRepository.getTaskProgress(taskId).first() }
                     .onSuccess { progress ->
                         progress.exerciseAttempts?.let { _exerciseAttempts.value = it }
                     }
-                // Record streak
                 streakManager.recordActivity()
             } catch (e: Exception) {
                 android.util.Log.e("TaskTemplateViewModel", "Failed to submit exercise", e)
-                _error.value = e.message
+                val message = e.message.orEmpty()
+                _error.value = when {
+                    message.contains("401") ||
+                        message.contains("403") ||
+                        message.contains("Unauthorized", ignoreCase = true) ||
+                        message.contains("Forbidden", ignoreCase = true) ->
+                        "Session expired. Please sign in again, then tap Complete to sync your score."
+                    message.contains("404") ->
+                        "This exercise task was not found. Ask your teacher to reassign it."
+                    else -> message.ifBlank { "Failed to sync exercise progress. Please try again." }
+                }
             }
         }
     }

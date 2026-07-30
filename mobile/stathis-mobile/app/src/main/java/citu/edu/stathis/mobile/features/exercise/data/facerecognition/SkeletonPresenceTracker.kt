@@ -1,11 +1,14 @@
 package citu.edu.stathis.mobile.features.exercise.data.facerecognition
 
+import android.os.SystemClock
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 
 /**
  * Determines whether the user's skeleton is sufficiently visible in frame.
- * When the torso leaves the camera, facial re-verification is required.
+ * Re-verification is only required after the skeleton has been continuously
+ * absent for [OUT_OF_FRAME_GRACE_MS] (5 seconds), so brief movement during
+ * exercise does not interrupt recognition.
  */
 object SkeletonPresenceTracker {
 
@@ -18,8 +21,8 @@ object SkeletonPresenceTracker {
 
     private const val IN_FRAME_LIKELIHOOD = 0.45f
     private const val MIN_VISIBLE_TORSO_POINTS = 3
-    /** Slightly longer debounce so brief occlusion does not end recognition. */
-    private const val OUT_OF_FRAME_CONFIRM_FRAMES = 12
+    /** Grace period before ending recognition / requiring face re-verify. */
+    const val OUT_OF_FRAME_GRACE_MS = 5_000L
 
     /**
      * Returns true when enough torso landmarks are confidently in frame.
@@ -34,18 +37,21 @@ object SkeletonPresenceTracker {
     }
 
     /**
-     * Debounces brief detection gaps so a single missed frame does not force re-verify.
+     * Tracks continuous absence of the skeleton using wall-clock time.
+     * Re-verify only after 5 seconds continuously out of frame.
      */
     class Session {
-        private var consecutiveMissing = 0
+        private var missingSinceElapsedMs: Long? = null
 
         fun onPose(pose: Pose?): SkeletonStatus {
+            val now = SystemClock.elapsedRealtime()
             return if (isSkeletonInFrame(pose)) {
-                consecutiveMissing = 0
+                missingSinceElapsedMs = null
                 SkeletonStatus.IN_FRAME
             } else {
-                consecutiveMissing++
-                if (consecutiveMissing >= OUT_OF_FRAME_CONFIRM_FRAMES) {
+                val started = missingSinceElapsedMs ?: now.also { missingSinceElapsedMs = it }
+                val absentMs = now - started
+                if (absentMs >= OUT_OF_FRAME_GRACE_MS) {
                     SkeletonStatus.LEFT_FRAME
                 } else {
                     SkeletonStatus.UNSTABLE
@@ -54,7 +60,7 @@ object SkeletonPresenceTracker {
         }
 
         fun reset() {
-            consecutiveMissing = 0
+            missingSinceElapsedMs = null
         }
     }
 

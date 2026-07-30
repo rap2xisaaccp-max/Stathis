@@ -270,7 +270,7 @@ fun ExerciseTemplateRenderer(
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         identityPhase = IdentityPhase.REVERIFYING
                         identityMessage =
-                            "Skeleton left the camera. Verify your face to resume tracking."
+                            "Skeleton left the camera for 5 seconds. Verify your face to resume tracking."
                         faceIdentityViewModel.resetVerification()
                     }
                 }
@@ -1114,7 +1114,8 @@ private fun ExerciseControlsOverlay(
 
     Box(
         modifier = modifier.fillMaxSize()
-    ) {
+    )
+    {
         if (identityPhase == IdentityPhase.VERIFIED) {
         // Minimal progress overlay at the very top edge
         Card(
@@ -1337,7 +1338,7 @@ private fun ExerciseControlsOverlay(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = if (identityPhase == IdentityPhase.REVERIFYING) {
-                                "Rep counting is paused. Only the registered student can resume."
+                                "Rep counting is paused after 5s out of frame. Only the registered student can resume."
                             } else {
                                 "Only the registered student can pass this check."
                             },

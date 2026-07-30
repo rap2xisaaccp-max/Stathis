@@ -25,7 +25,6 @@ import edu.cit.stathis.task.entity.ExerciseTemplate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.List;
-import java.util.Random;
 import java.util.stream.Collectors;
 import edu.cit.stathis.classroom.service.ClassroomService;
 import jakarta.persistence.EntityNotFoundException;
@@ -372,22 +371,30 @@ public class StudentTaskService {
             classroomId = task.getClassroomPhysicalId();
         }
 
-        exerciseProgressService.publishProgress(ExerciseProgressDTO.builder()
-                .studentId(studentId)
-                .classroomId(classroomId)
-                .taskId(taskId)
-                .exerciseTemplateId(exerciseTemplateId)
-                .exerciseType(exerciseType)
-                .reps(savedScore.getReps() != null ? savedScore.getReps() : reps)
-                .goalReps(goalReps)
-                .accuracy(accuracy)
-                .timeTakenMs(timeTaken)
-                .sessionCaloriesBurned(sessionCalories)
-                .totalCaloriesBurned(savedScore.getCaloriesBurned())
-                .score(savedScore.getScore())
-                .completed(true)
-                .timestamp(OffsetDateTime.now().toString())
-                .build());
+        // Live teacher dashboard broadcast must not roll back persisted Score/TaskCompletion.
+        try {
+            exerciseProgressService.publishProgress(ExerciseProgressDTO.builder()
+                    .studentId(studentId)
+                    .classroomId(classroomId)
+                    .taskId(taskId)
+                    .exerciseTemplateId(exerciseTemplateId)
+                    .exerciseType(exerciseType)
+                    .reps(savedScore.getReps() != null ? savedScore.getReps() : reps)
+                    .goalReps(goalReps)
+                    .accuracy(accuracy)
+                    .timeTakenMs(timeTaken)
+                    .sessionCaloriesBurned(sessionCalories)
+                    .totalCaloriesBurned(savedScore.getCaloriesBurned())
+                    .score(savedScore.getScore())
+                    .completed(true)
+                    .timestamp(OffsetDateTime.now().toString())
+                    .build());
+        } catch (Exception publishError) {
+            // Persistence already succeeded; teachers still see data via Student Progress API.
+            org.slf4j.LoggerFactory.getLogger(StudentTaskService.class)
+                    .warn("Exercise score saved but live progress publish failed for task {}: {}",
+                            taskId, publishError.getMessage());
+        }
 
         return savedScore;
     }
@@ -450,11 +457,7 @@ public class StudentTaskService {
     }
 
     private String provideUniquePhysicalId() {
-        String year = String.valueOf(OffsetDateTime.now().getYear()).substring(2);
-        Random random = new Random();
-        String secondPart = String.format("%04d", random.nextInt(10000));
-        String thirdPart = String.format("%03d", random.nextInt(1000));
-        return String.format("TASK-%s-%s-%s", year, secondPart, thirdPart);
+        return "COMPLETION-" + UUID.randomUUID().toString().toUpperCase();
     }
 
     private StudentTaskResponseDTO buildStudentTaskResponse(Task task, String studentId) {

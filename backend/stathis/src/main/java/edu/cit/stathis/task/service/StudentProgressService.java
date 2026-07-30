@@ -86,16 +86,23 @@ public class StudentProgressService {
             }
         }
 
-        if ("EXERCISE".equals(taskType) && task.getExerciseTemplateId() != null) {
+        // Always attach exercise metrics when the task has an exercise template, even if the
+        // primary type is QUIZ/LESSON (multi-component tasks) so Student Progress can show reps/score.
+        if (task.getExerciseTemplateId() != null) {
             var scoreOpt = scoreRepository.findExerciseScore(studentId, task.getPhysicalId(), task.getExerciseTemplateId());
             if (scoreOpt.isPresent()) {
                 Score s = scoreOpt.get();
-                scoreVal = ScoreService.effectiveScore(s);
-                maxScoreVal = s.getMaxScore() > 0 ? s.getMaxScore() : 100;
-                attemptsVal = s.getAttempts();
+                if ("EXERCISE".equals(taskType) || scoreVal == null) {
+                    scoreVal = ScoreService.effectiveScore(s);
+                    maxScoreVal = s.getMaxScore() > 0 ? s.getMaxScore() : 100;
+                    attemptsVal = s.getAttempts();
+                }
                 repsVal = s.getReps();
                 goalRepsVal = s.getGoalReps();
                 if (completedAt == null) completedAt = s.getCompletedAt();
+                if (!completed && (s.isCompleted() || (s.getAttempts() > 0))) {
+                    completed = true;
+                }
             }
         }
 
@@ -117,11 +124,23 @@ public class StudentProgressService {
     }
 
     private String resolveTaskType(Task task) {
-        if (task.getQuizTemplateId() != null) return "QUIZ";
-        if (task.getExerciseTemplateId() != null) return "EXERCISE";
-        if (task.getLessonTemplateId() != null) return "LESSON";
+        boolean hasQuiz = task.getQuizTemplateId() != null;
+        boolean hasExercise = task.getExerciseTemplateId() != null;
+        boolean hasLesson = task.getLessonTemplateId() != null;
+        int count = (hasQuiz ? 1 : 0) + (hasExercise ? 1 : 0) + (hasLesson ? 1 : 0);
+
+        // Single-component tasks: use that component's type so exercise-only assignments
+        // always appear under Exercises in Student Progress.
+        if (count == 1) {
+            if (hasQuiz) return "QUIZ";
+            if (hasExercise) return "EXERCISE";
+            return "LESSON";
+        }
+
+        if (hasQuiz) return "QUIZ";
+        if (hasExercise) return "EXERCISE";
+        if (hasLesson) return "LESSON";
         return "UNKNOWN";
     }
 }
-
 

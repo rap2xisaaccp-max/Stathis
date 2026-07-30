@@ -58,30 +58,51 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String username = jwtUtil.extractUsername(token);
             logger.debug("Extracted username: {}", username);
 
-    if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-      UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-      if (jwtUtil.validateToken(token, username)) {
-                    String role = jwtUtil.extractClaim(token, claims -> claims.get("role", String.class));
-                    if (!role.startsWith("ROLE_")) {
-                        role = "ROLE_" + role;
-                    }
-                    logger.debug("Role from token: {}", role);
-                    logger.debug("User authorities: {}", userDetails.getAuthorities());
+            if (username == null || username.isBlank()) {
+              response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+              response.setContentType("application/json");
+              response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Invalid token\"}");
+              return;
+            }
 
-        UsernamePasswordAuthenticationToken authToken =
-            new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            Collections.singletonList(new SimpleGrantedAuthority(role)));
-        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-        SecurityContextHolder.getContext().setAuthentication(authToken);
-                    logger.debug("Authentication set in context: {}", 
-                        SecurityContextHolder.getContext().getAuthentication());
-      }
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
+              UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+              if (!jwtUtil.validateToken(token, username)) {
+                // Present-but-invalid/expired tokens must be 401 so mobile can refresh+retry.
+                // Continuing as anonymous yields Spring Security 403 and skips OkHttp Authenticator.
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response
+                    .getWriter()
+                    .write("{\"error\":\"Unauthorized\",\"message\":\"Token expired or invalid\"}");
+                return;
+              }
+
+              String role = jwtUtil.extractClaim(token, claims -> claims.get("role", String.class));
+              if (role == null || role.isBlank()) {
+                role = "ROLE_STUDENT";
+              } else if (!role.startsWith("ROLE_")) {
+                role = "ROLE_" + role;
+              }
+              logger.debug("Role from token: {}", role);
+              logger.debug("User authorities: {}", userDetails.getAuthorities());
+
+              UsernamePasswordAuthenticationToken authToken =
+                  new UsernamePasswordAuthenticationToken(
+                      userDetails,
+                      null,
+                      Collections.singletonList(new SimpleGrantedAuthority(role)));
+              authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+              SecurityContextHolder.getContext().setAuthentication(authToken);
+              logger.debug(
+                  "Authentication set in context: {}",
+                  SecurityContextHolder.getContext().getAuthentication());
             }
         } catch (Exception e) {
             logger.error("Error processing JWT token: {}", e.getMessage(), e);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Invalid token\"}");
             return;
     }
 

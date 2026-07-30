@@ -179,9 +179,17 @@ class TaskRepositoryImpl @Inject constructor(
     ): ScoreResponse? {
         val response = taskService.completeExercise(taskId, exerciseTemplateId, result)
         if (!response.isSuccessful) {
-            throw IllegalStateException("Failed to complete exercise: ${response.code()} ${response.message()}")
+            val errorBody = response.errorBody()?.string().orEmpty()
+            android.util.Log.e(
+                "TaskRepositoryImpl",
+                "Exercise complete failed: code=${response.code()} task=$taskId template=$exerciseTemplateId body=$errorBody"
+            )
+            throw IllegalStateException(
+                "Failed to complete exercise: ${response.code()} ${response.message()}"
+            )
         }
         return response.body()
+            ?: throw IllegalStateException("Empty body when completing exercise")
     }
 
     override suspend fun publishExerciseProgress(

@@ -30,11 +30,13 @@ object NetworkModule {
     fun provideBackendOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
         authInterceptor: AuthInterceptor,
+        authRetryInterceptor: citu.edu.stathis.mobile.core.network.AuthRetryInterceptor,
         tokenAuthenticator: citu.edu.stathis.mobile.core.network.TokenAuthenticator,
     ): OkHttpClient =
         OkHttpClient
             .Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(authRetryInterceptor)
             .addInterceptor(loggingInterceptor)
             .authenticator(tokenAuthenticator)
             .build()

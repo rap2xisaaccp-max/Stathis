@@ -425,18 +425,18 @@ function processTasksData(data: any, classroomId: string): Record<string, { name
     // Map each task to our format
     tasks.forEach((task: TaskData) => {
       if (task.physicalId) {
-        // Determine task type based on available properties
+        // Determine task type based on available properties (match backend priority)
         let taskType = 'TASK';
         if (task.quizTemplateId) taskType = 'QUIZ';
-        else if (task.lessonTemplateId) taskType = 'LESSON';
         else if (task.exerciseTemplateId) taskType = 'EXERCISE';
+        else if (task.lessonTemplateId) taskType = 'LESSON';
         // Fallback to name-based inference if needed
         else if (task.name) {
           const name = task.name.toLowerCase();
           if (name.includes('quiz')) taskType = 'QUIZ';
           else if (name.includes('test')) taskType = 'TEST';
-          else if (name.includes('lesson')) taskType = 'LESSON';
           else if (name.includes('exercise')) taskType = 'EXERCISE';
+          else if (name.includes('lesson')) taskType = 'LESSON';
           else if (name.includes('assess')) taskType = 'ASSESSMENT';
         }
         
@@ -536,18 +536,18 @@ export async function getStudentScores(studentId: string): Promise<ScoreResponse
       if (Array.isArray(data)) {
         data.forEach((task: TaskData) => {
           if (task.physicalId) {
-            // Determine task type based on templates
+            // Determine task type based on templates (match backend: quiz > exercise > lesson)
             let taskType = 'TASK';
             if (task.quizTemplateId) taskType = 'QUIZ';
-            else if (task.lessonTemplateId) taskType = 'LESSON';
             else if (task.exerciseTemplateId) taskType = 'EXERCISE';
+            else if (task.lessonTemplateId) taskType = 'LESSON';
             // Name-based inference as fallback
             else if (task.name) {
               const name = task.name.toLowerCase();
               if (name.includes('quiz')) taskType = 'QUIZ';
               else if (name.includes('test')) taskType = 'TEST';
-              else if (name.includes('lesson')) taskType = 'LESSON';
               else if (name.includes('exercise')) taskType = 'EXERCISE';
+              else if (name.includes('lesson')) taskType = 'LESSON';
             }
             
             allClassroomTasks[task.physicalId] = {
@@ -807,15 +807,18 @@ export async function fetchStudentProgressItems(studentId: string, classroomId?:
     }
     
     // If we have progress data and tasks, enhance the progress items with task details
+    // Prefer backend taskType when present; only fill missing names/types from classroom tasks.
     const progressItems = Array.isArray(data) ? data as StudentProgressItemDTO[] : [];
     
-    // If we have task data, enhance the progress items with task names and types
     if (Object.keys(tasks).length > 0) {
       for (const item of progressItems) {
         const taskInfo = tasks[item.taskId];
         if (taskInfo) {
-          item.taskName = taskInfo.name || item.taskName;
-          item.taskType = taskInfo.type || item.taskType;
+          if (!item.taskName) item.taskName = taskInfo.name;
+          // Never downgrade a known EXERCISE/QUIZ/LESSON from the aggregated API
+          if (!item.taskType || item.taskType === 'UNKNOWN' || item.taskType === 'TASK') {
+            item.taskType = taskInfo.type || item.taskType;
+          }
         }
       }
     }
@@ -847,14 +850,14 @@ function determineTaskType(taskData: TaskDTO): string {
   if (!taskData) return "UNKNOWN";
   
   if (taskData.quizTemplateId) return "QUIZ";
-  if (taskData.lessonTemplateId) return "LESSON";
   if (taskData.exerciseTemplateId) return "EXERCISE";
+  if (taskData.lessonTemplateId) return "LESSON";
   
   // Check for type indicators in the task name
   const name = taskData.name?.toLowerCase() || "";
   if (name.includes("quiz")) return "QUIZ";
-  if (name.includes("lesson")) return "LESSON";
   if (name.includes("exercise") || name.includes("push up") || name.includes("pushup")) return "EXERCISE";
+  if (name.includes("lesson")) return "LESSON";
   
   return "TASK";
 }
