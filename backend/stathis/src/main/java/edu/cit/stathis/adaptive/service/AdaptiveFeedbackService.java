@@ -408,7 +408,13 @@ public class AdaptiveFeedbackService {
         RctEvaluationMetrics.armStats("STATIC", staticDeltas, staticSuccesses, null);
     RctEvaluationMetrics.AblationContrast contrast =
         RctEvaluationMetrics.contrast(adaptiveStats, staticStats);
-    double d = RctEvaluationMetrics.cohensD(adaptiveDeltas, staticDeltas);
+    boolean bothArmsHaveData = !adaptiveDeltas.isEmpty() && !staticDeltas.isEmpty();
+    Double adaptiveMeanDelta = adaptiveDeltas.isEmpty() ? null : adaptiveStats.meanDelta();
+    Double staticMeanDelta = staticDeltas.isEmpty() ? null : staticStats.meanDelta();
+    Double meanDeltaLift = bothArmsHaveData ? contrast.meanDeltaLift() : null;
+    Double successRateLift = bothArmsHaveData ? contrast.successRateLift() : null;
+    Double cohensD =
+        bothArmsHaveData ? RctEvaluationMetrics.cohensD(adaptiveDeltas, staticDeltas) : null;
 
     return ClassroomEvaluationDTO.builder()
         .classroomId(classroomId)
@@ -426,12 +432,12 @@ public class AdaptiveFeedbackService {
         .practiceInterventions(practiceInterventions)
         .taskInterventions(taskInterventions)
         .interventionsByArm(interventionsByArm)
-        .adaptiveMeanDelta(adaptiveStats.meanDelta())
-        .staticMeanDelta(staticStats.meanDelta())
-        .meanDeltaLift(contrast.meanDeltaLift())
-        .successRateLift(contrast.successRateLift())
-        .cohensD(d)
-        .adaptiveOutperformsOnDelta(contrast.adaptiveOutperformsOnDelta())
+        .adaptiveMeanDelta(adaptiveMeanDelta)
+        .staticMeanDelta(staticMeanDelta)
+        .meanDeltaLift(meanDeltaLift)
+        .successRateLift(successRateLift)
+        .cohensD(cohensD)
+        .adaptiveOutperformsOnDelta(bothArmsHaveData && contrast.adaptiveOutperformsOnDelta())
         .students(studentSummaries)
         .build();
   }

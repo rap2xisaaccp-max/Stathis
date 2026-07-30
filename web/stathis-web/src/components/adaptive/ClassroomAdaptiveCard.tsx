@@ -92,7 +92,9 @@ export function ClassroomAdaptiveCard({ classroomId }: { classroomId?: string })
               insights.
             </CardDescription>
           </div>
-          {data?.adaptiveOutperformsOnDelta != null && (
+          {data?.adaptiveMeanDelta != null &&
+            data?.staticMeanDelta != null &&
+            data?.adaptiveOutperformsOnDelta != null && (
             <Badge variant={data.adaptiveOutperformsOnDelta ? 'default' : 'secondary'}>
               {data.adaptiveOutperformsOnDelta
                 ? 'Adaptive leading on Δ'
@@ -106,6 +108,11 @@ export function ClassroomAdaptiveCard({ classroomId }: { classroomId?: string })
           <p className="text-sm text-muted-foreground">
             No classroom coaching comparison yet. Metrics appear after both study arms log
             interventions.
+          </p>
+        ) : data.adaptiveMeanDelta == null || data.staticMeanDelta == null ? (
+          <p className="text-sm text-muted-foreground">
+            Insufficient data for Adaptive vs Static comparison. Both study arms require
+            completed sessions before lift metrics are shown.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-3 text-sm">

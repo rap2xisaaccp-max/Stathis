@@ -341,6 +341,37 @@ function ClassroomAblationCard({
     );
   }
 
+  const bothArmsHaveData =
+    classroomEvaluation.adaptiveMeanDelta != null &&
+    classroomEvaluation.staticMeanDelta != null;
+
+  if (!bothArmsHaveData) {
+    return (
+      <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-base">Classroom comparison (Adaptive vs Static)</CardTitle>
+          <CardDescription>
+            Insufficient data for Adaptive vs Static comparison. Both study arms require
+            completed sessions with logged interventions before lift, success-rate lift, and
+            Cohen&apos;s d are shown.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
+          <div>
+            <p className="text-muted-foreground">Adaptive improvement (mean Δ)</p>
+            <p className="font-medium">
+              {formatDelta(classroomEvaluation.adaptiveMeanDelta)}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Static improvement (mean Δ)</p>
+            <p className="font-medium">{formatDelta(classroomEvaluation.staticMeanDelta)}</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
       <CardHeader>
