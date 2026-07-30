@@ -116,6 +116,37 @@ public class StudentProgressService {
                 goalRepsVal = s.getGoalReps();
                 if (completedAt == null) completedAt = s.getCompletedAt();
             }
+            // #region agent log
+            try {
+                String payload = "{\"sessionId\":\"b7147e\",\"runId\":\"pre-fix\",\"hypothesisId\":\"B,E\",\"location\":\"StudentProgressService.buildComponentProgress\",\"message\":\"exercise progress row\",\"data\":{\"studentId\":\""
+                        + studentId + "\",\"taskId\":\"" + task.getPhysicalId()
+                        + "\",\"templateId\":\"" + task.getExerciseTemplateId()
+                        + "\",\"scoreFound\":" + scoreOpt.isPresent()
+                        + ",\"scoreVal\":" + scoreVal
+                        + ",\"maxScoreVal\":" + maxScoreVal
+                        + ",\"attempts\":" + attemptsVal
+                        + ",\"reps\":" + repsVal
+                        + ",\"goalReps\":" + goalRepsVal
+                        + ",\"completed\":" + completed
+                        + ",\"rawScore\":" + (scoreOpt.map(Score::getScore).orElse(null))
+                        + ",\"manualScore\":" + (scoreOpt.map(Score::getManualScore).orElse(null))
+                        + "},\"timestamp\":" + System.currentTimeMillis() + "}\n";
+                for (String p : new String[]{
+                        System.getProperty("user.dir") + java.io.File.separator + "debug-b7147e.log",
+                        System.getProperty("user.dir") + java.io.File.separator + ".." + java.io.File.separator + ".." + java.io.File.separator + "debug-b7147e.log",
+                        "C:\\Users\\ASUS\\Stathis\\debug-b7147e.log"
+                }) {
+                    try {
+                        java.nio.file.Files.writeString(
+                                java.nio.file.Path.of(p),
+                                payload,
+                                java.nio.file.StandardOpenOption.CREATE,
+                                java.nio.file.StandardOpenOption.APPEND);
+                        break;
+                    } catch (Exception ignoredPath) {}
+                }
+            } catch (Exception ignored) {}
+            // #endregion
         }
 
         return StudentProgressDTO.builder()
