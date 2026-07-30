@@ -116,12 +116,11 @@ fun ExerciseTemplateRenderer(
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
     var isCheckingBodyMetrics by remember { mutableStateOf(false) }
     var bodyMetricsError by remember { mutableStateOf<String?>(null) }
-<<<<<<< HEAD
+
     var identityPhase by remember { mutableStateOf(IdentityPhase.UNVERIFIED) }
     var identityMessage by remember { mutableStateOf<String?>(null) }
-=======
+
     var displayedAttempts by remember { mutableIntStateOf(attemptsUsed) }
->>>>>>> c7897781c05d32f77b2a0c9430fc318d4155c876
     val scope = rememberCoroutineScope()
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
     val faceIdentityViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel =
@@ -806,7 +805,7 @@ private fun MinimalProgressIndicator(
     } else {
         progress
     }
-    
+
     Row(
         modifier = modifier.width(76.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1428,38 +1427,7 @@ private fun ExerciseControlsOverlay(
                             )
                         }
 
-<<<<<<< HEAD
-                        Button(
-                            onClick = {
-                                shouldStopWithPostActivity = true
-                                val performance = ExercisePerformance(
-                                    taskId = "",
-                                    templateId = template.physicalId,
-                                    actualReps = currentReps,
-                                    actualAccuracy = currentAccuracy,
-                                    actualTime = currentTime,
-                                    goalReps = template.goalReps,
-                                    goalAccuracy = template.goalAccuracy,
-                                    goalTime = template.goalTime,
-                                    isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                                    score = calculateScore(currentReps, currentAccuracy, currentTime, template)
-                                )
-                                onComplete(performance)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Complete",
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Complete", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-=======
+
                 // Finish attempt Button
                 Button(
                     onClick = {
@@ -1501,7 +1469,8 @@ private fun ExerciseControlsOverlay(
                         text = "Finish",
                         style = MaterialTheme.typography.bodyMedium
                     )
->>>>>>> c7897781c05d32f77b2a0c9430fc318d4155c876
+                }}
+
                 }
             }
         }
