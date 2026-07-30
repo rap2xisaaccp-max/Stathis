@@ -83,6 +83,9 @@ export async function fetchAdaptiveInsights(
   if (error || !data) {
     throw new Error(error || `Adaptive insights unavailable (${status})`);
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'adaptive-ui',hypothesisId:'W1',location:'api-adaptive-client.ts:fetchAdaptiveInsights',message:'insights loaded',data:{status,hasProfile:!!data.profile,masteryCount:(data.mastery||[]).length,modalityKeys:Object.keys(data.modalityMeanDelta||{}).length,errorKeys:Object.keys(data.topRecurringErrors||{}).length,recentCount:(data.recentInterventions||[]).length,historyCount:(data.profileHistory||[]).length,totalInterventions:data.totalInterventions,successRate:data.overallSuccessRate},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return data;
 }
 
@@ -124,6 +127,9 @@ export async function fetchAdaptiveEvaluation(
   if (error || !data) {
     throw new Error(error || `Adaptive evaluation unavailable (${status})`);
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'adaptive-ui',hypothesisId:'W2',location:'api-adaptive-client.ts:fetchAdaptiveEvaluation',message:'evaluation loaded',data:{status,arm:data.experimentArm,successRate:data.successRate,meanDelta:data.meanDelta,modalityKeys:Object.keys(data.meanDeltaByModality||{}).length,sessionsTracked:data.sessionsTracked},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return data;
 }
 
@@ -157,5 +163,8 @@ export async function fetchClassroomEvaluation(
   if (error || !data) {
     throw new Error(error || `Classroom evaluation unavailable (${status})`);
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'adaptive-ui',hypothesisId:'W3',location:'api-adaptive-client.ts:fetchClassroomEvaluation',message:'classroom evaluation loaded',data:{status,studentCount:data.studentCount,hasBothArms:data.adaptiveMeanDelta!=null&&data.staticMeanDelta!=null,studentsLen:(data.students||[]).length,overallSuccessRate:data.overallSuccessRate,meanMasteryLevel:data.meanMasteryLevel},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return data;
 }

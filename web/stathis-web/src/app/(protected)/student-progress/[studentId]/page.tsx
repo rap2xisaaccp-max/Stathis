@@ -801,7 +801,11 @@ export default function StudentProgressDetailPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <AdaptiveLearningInsights studentId={studentId} classroomId={classroomId} />
+                <AdaptiveLearningInsights
+                  studentId={studentId}
+                  classroomId={classroomId}
+                  progressItems={progressItems}
+                />
               </CardContent>
             </Card>
           </TabsContent>
