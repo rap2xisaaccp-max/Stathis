@@ -593,14 +593,15 @@ export default function StudentProgressDetailPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[40%]">Task Name</TableHead>
-                              <TableHead className="w-[30%]">Completed</TableHead>
-                              <TableHead className="w-[30%] text-right">Score</TableHead>
+                              <TableHead className="w-[35%]">Task Name</TableHead>
+                              <TableHead className="w-[20%]">Completed</TableHead>
+                              <TableHead className="w-[20%]">Score</TableHead>
+                              <TableHead className="w-[25%] text-right">Attempts</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {quizItems.map((item) => (
-                              <TableRow key={item.taskId}>
+                              <TableRow key={`${item.taskId}-QUIZ`}>
                                 <TableCell className="font-medium">{item.taskName}</TableCell>
                                 <TableCell>
                                   {item.completed ? (
@@ -615,7 +616,7 @@ export default function StudentProgressDetailPage() {
                                     </span>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell>
                                   <span className="font-medium">
                                     {item.score !== null ? 
                                       item.maxScore !== null ? 
@@ -626,6 +627,9 @@ export default function StudentProgressDetailPage() {
                                       )
                                     }
                                   </span>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {item.attempts != null ? item.attempts : '—'}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -663,15 +667,16 @@ export default function StudentProgressDetailPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[35%]">Task Name</TableHead>
-                              <TableHead className="w-[20%]">Completed</TableHead>
-                              <TableHead className="w-[20%]">Reps</TableHead>
-                              <TableHead className="w-[25%] text-right">Score</TableHead>
+                              <TableHead className="w-[28%]">Task Name</TableHead>
+                              <TableHead className="w-[16%]">Completed</TableHead>
+                              <TableHead className="w-[18%]">Reps</TableHead>
+                              <TableHead className="w-[18%]">Attempts</TableHead>
+                              <TableHead className="w-[20%] text-right">Score</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {exerciseItems.map((item) => (
-                              <TableRow key={item.taskId}>
+                              <TableRow key={`${item.taskId}-EXERCISE`}>
                                 <TableCell className="font-medium">{item.taskName}</TableCell>
                                 <TableCell>
                                   {item.completed ? (
@@ -688,8 +693,11 @@ export default function StudentProgressDetailPage() {
                                 </TableCell>
                                 <TableCell>
                                   {item.reps != null
-                                    ? `${item.reps}${item.goalReps != null ? ` / ${item.goalReps}` : ''}`
+                                    ? `${item.reps}${item.goalReps != null ? ` / ${item.goalReps}` : ''} total`
                                     : '—'}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {item.attempts != null ? item.attempts : '—'}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <span className="font-medium">

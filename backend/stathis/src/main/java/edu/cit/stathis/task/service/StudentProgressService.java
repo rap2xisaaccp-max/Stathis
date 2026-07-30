@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -45,15 +46,33 @@ public class StudentProgressService {
         }
 
         return tasks.stream()
-                .map(task -> buildProgressDTO(task, studentId))
+                .flatMap(task -> buildProgressRows(task, studentId).stream())
                 .sorted(Comparator.comparing(StudentProgressDTO::getClosingDate, Comparator.nullsLast(LocalDate::compareTo)))
                 .collect(Collectors.toList());
     }
 
-    private StudentProgressDTO buildProgressDTO(Task task, String studentId) {
-        String taskType = resolveTaskType(task);
+    /**
+     * One progress row per task component so multi-template tasks (quiz+exercise)
+     * appear in both teacher Quizzes and Exercises sections with correct scores/attempts.
+     */
+    private List<StudentProgressDTO> buildProgressRows(Task task, String studentId) {
+        List<StudentProgressDTO> rows = new ArrayList<>();
+        if (task.getQuizTemplateId() != null) {
+            rows.add(buildComponentProgress(task, studentId, "QUIZ"));
+        }
+        if (task.getExerciseTemplateId() != null) {
+            rows.add(buildComponentProgress(task, studentId, "EXERCISE"));
+        }
+        if (task.getLessonTemplateId() != null) {
+            rows.add(buildComponentProgress(task, studentId, "LESSON"));
+        }
+        if (rows.isEmpty()) {
+            rows.add(buildComponentProgress(task, studentId, "UNKNOWN"));
+        }
+        return rows;
+    }
 
-        // Completion flags
+    private StudentProgressDTO buildComponentProgress(Task task, String studentId, String taskType) {
         var completionOpt = taskCompletionRepository.findByStudentIdAndTaskId(studentId, task.getPhysicalId());
         boolean completed = completionOpt.map(tc -> {
             switch (taskType) {
@@ -73,7 +92,7 @@ public class StudentProgressService {
         Integer attemptsVal = null;
         Integer repsVal = null;
         Integer goalRepsVal = null;
-        var completedAt = completionOpt.map(tc -> tc.getCompletedAt()).orElse(null);
+        OffsetDateTime completedAt = completionOpt.map(tc -> tc.getCompletedAt()).orElse(null);
 
         if ("QUIZ".equals(taskType) && task.getQuizTemplateId() != null) {
             var scoreOpt = scoreRepository.findQuizScore(studentId, task.getPhysicalId(), task.getQuizTemplateId());
@@ -115,13 +134,4 @@ public class StudentProgressService {
                 .closingDate(task.getClosingDate() != null ? task.getClosingDate().toLocalDate() : null)
                 .build();
     }
-
-    private String resolveTaskType(Task task) {
-        if (task.getQuizTemplateId() != null) return "QUIZ";
-        if (task.getExerciseTemplateId() != null) return "EXERCISE";
-        if (task.getLessonTemplateId() != null) return "LESSON";
-        return "UNKNOWN";
-    }
 }
-
-

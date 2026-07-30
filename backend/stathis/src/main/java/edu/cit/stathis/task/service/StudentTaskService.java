@@ -350,6 +350,7 @@ public class StudentTaskService {
         int previousReps = existingScore.getReps() != null ? existingScore.getReps() : 0;
         double previousCalories =
                 existingScore.getCaloriesBurned() != null ? existingScore.getCaloriesBurned() : 0.0;
+        int previousScore = existingScore.getScore();
 
         // Accumulate reps and calories across repeated attempts
         existingScore.setReps(previousReps + reps);
@@ -361,7 +362,9 @@ public class StudentTaskService {
         existingScore.setAttempts(existingScore.getAttempts() + 1);
         existingScore.setCompleted(true);
         existingScore.setCompletedAt(OffsetDateTime.now());
-        existingScore.setScore(computeExerciseScore(reps, accuracy, goalReps, template.getGoalAccuracy()));
+        // Session score from this attempt; keep best score across attempts for teacher progress
+        int sessionScore = computeExerciseScore(reps, accuracy, goalReps, template.getGoalAccuracy());
+        existingScore.setScore(Math.max(previousScore, sessionScore));
         existingScore.setMaxScore(100);
 
         Score savedScore = scoreRepository.save(existingScore);
