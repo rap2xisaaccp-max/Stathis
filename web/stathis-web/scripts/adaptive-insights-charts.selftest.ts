@@ -16,6 +16,13 @@ assert.deepEqual(
 
 assert.equal(buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1).length, 1);
 assert.equal(buildMasteryByExerciseChartData([{ physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.42 }])[0].masteryPct, 42);
+assert.deepEqual(
+  buildMasteryByExerciseChartData([
+    { physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.4, lastSessionAt: '2026-01-01T00:00:00Z' },
+    { physicalId: 'm2', studentId: 's', exerciseType: 'PUSH_UP', masteryLevel: 0.9, lastSessionAt: '2026-06-01T00:00:00Z' },
+  ]).map((r) => r.exercise),
+  ['PUSH UP', 'SQUAT']
+);
 assert.equal(
   hasChartableInsights({
     studentId: 's',

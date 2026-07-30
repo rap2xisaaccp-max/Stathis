@@ -821,9 +821,6 @@ export async function fetchStudentProgressItems(studentId: string, classroomId?:
     }
     
     console.log(`Successfully retrieved ${progressItems.length} progress items for student ${studentId}`);
-    // #region agent log
-    fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'pre-fix',hypothesisId:'A,B,C',location:'api-progress-client.ts:fetchStudentProgressItems',message:'progress items from API',data:{studentId,classroomId:targetClassroomId,count:progressItems.length,items:progressItems.map(i=>({taskId:i.taskId,taskType:i.taskType,taskName:i.taskName,score:i.score,maxScore:i.maxScore,completed:i.completed,attempts:i.attempts,reps:i.reps,goalReps:i.goalReps,scoreType:typeof i.score}))},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     return progressItems;
   } catch (error) {
     console.error('Error in fetchStudentProgressItems:', error);

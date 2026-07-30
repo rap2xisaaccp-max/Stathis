@@ -29,10 +29,11 @@ function formatSuccessLift(value: number | null | undefined): string {
 
 export function ClassroomAdaptiveCard({ classroomId }: { classroomId?: string }) {
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['adaptive-classroom-evaluation', classroomId, 'teaser'],
+    queryKey: ['adaptive-classroom-evaluation', classroomId],
     queryFn: () => fetchClassroomEvaluation(classroomId!),
     enabled: !!classroomId,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
 

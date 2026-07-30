@@ -193,9 +193,13 @@ public class AdaptiveFeedbackService {
         allInterventions.stream().limit(25).collect(Collectors.toList());
 
     Map<String, Long> topErrors =
-        allInterventions.stream()
-            .collect(
-                Collectors.groupingBy(i -> i.getErrorCode().name(), Collectors.counting()));
+        RctEvaluationMetrics.countDistinctSessionErrors(
+            allInterventions.stream()
+                .map(FeedbackIntervention::getSessionId)
+                .collect(Collectors.toList()),
+            allInterventions.stream()
+                .map(i -> i.getErrorCode() != null ? i.getErrorCode().name() : null)
+                .collect(Collectors.toList()));
 
     Map<String, Double> modalityMeanDelta = new HashMap<>();
     StudentLearningProfileDTO profile = getProfile(studentId);
@@ -211,7 +215,8 @@ public class AdaptiveFeedbackService {
       }
     }
 
-    long total = interventionRepository.countByStudentId(studentId);
+    // Closed-loop success: successes / response pairs (not FI count).
+    long closedPairs = responseRepository.countByStudentId(studentId);
     long successes = responseRepository.countByStudentIdAndSuccessTrue(studentId);
     List<ExerciseMasteryDTO> mastery = getMastery(studentId);
     List<ProfileHistoryPointDTO> history = profileService.listHistory(studentId);
@@ -247,9 +252,9 @@ public class AdaptiveFeedbackService {
         .mastery(mastery)
         .modalityMeanDelta(modalityMeanDelta)
         .topRecurringErrors(topErrors)
-        .totalInterventions(total)
+        .totalInterventions(closedPairs)
         .successfulInterventions(successes)
-        .overallSuccessRate(total == 0 ? 0.0 : (double) successes / Math.max(1, total))
+        .overallSuccessRate(RctEvaluationMetrics.successRate(successes, closedPairs))
         .recentInterventions(
             recent.stream().map(this::toInterventionDto).collect(Collectors.toList()))
         .profileHistory(history)
@@ -350,8 +355,8 @@ public class AdaptiveFeedbackService {
     List<Double> staticDeltas = new ArrayList<>();
     long adaptiveSuccesses = 0;
     long staticSuccesses = 0;
-    long totalInterventions = 0;
-    long successfulInterventions = 0;
+    long totalClosedPairs = 0;
+    long successfulClosedPairs = 0;
     long practiceInterventions = 0;
     long taskInterventions = 0;
     double masterySum = 0.0;
@@ -360,33 +365,43 @@ public class AdaptiveFeedbackService {
     for (String studentId : studentIds) {
       AdaptiveEvaluationSummaryDTO summary = getEvaluationSummary(teacherId, studentId);
       studentSummaries.add(summary);
-      totalInterventions += summary.getTotalInterventions();
-      successfulInterventions += summary.getSuccessfulInterventions();
-      practiceInterventions += summary.getPracticeInterventions();
-      taskInterventions += summary.getTaskInterventions();
       if (summary.getMeanMasteryLevel() != null) {
         masterySum += summary.getMeanMasteryLevel();
         masteryN++;
       }
-      if (summary.getInterventionsByArm() != null) {
-        summary
-            .getInterventionsByArm()
-            .forEach((k, v) -> interventionsByArm.merge(k, v, Long::sum));
+
+      // Classroom-scoped FI only (exclude blank classroomId to avoid cross-room bleed).
+      List<FeedbackIntervention> classroomInterventions =
+          interventionRepository.findByStudentIdOrderByDeliveredAtDesc(studentId).stream()
+              .filter(i -> RctEvaluationMetrics.matchesClassroom(i.getClassroomId(), classroomId))
+              .toList();
+
+      Map<String, String> interventionArm = new HashMap<>();
+      java.util.HashSet<String> classroomInterventionIds = new java.util.HashSet<>();
+      for (FeedbackIntervention intervention : classroomInterventions) {
+        classroomInterventionIds.add(intervention.getPhysicalId());
+        String arm =
+            intervention.getExperimentArm() == null || intervention.getExperimentArm().isBlank()
+                ? "ADAPTIVE"
+                : intervention.getExperimentArm();
+        interventionArm.put(intervention.getPhysicalId(), arm);
+        interventionsByArm.merge(arm, 1L, Long::sum);
+        if (RctEvaluationMetrics.isPracticeArm(arm)) {
+          practiceInterventions++;
+        } else {
+          taskInterventions++;
+        }
       }
 
-      // Collect per-response deltas by base arm for Cohen's d.
-      Map<String, String> interventionArm =
-          interventionRepository.findByStudentIdOrderByDeliveredAtDesc(studentId).stream()
-              .collect(
-                  Collectors.toMap(
-                      FeedbackIntervention::getPhysicalId,
-                      i ->
-                          i.getExperimentArm() == null || i.getExperimentArm().isBlank()
-                              ? "ADAPTIVE"
-                              : i.getExperimentArm(),
-                      (a, b) -> a));
       for (FeedbackResponse response :
           responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId)) {
+        if (!classroomInterventionIds.contains(response.getInterventionPhysicalId())) {
+          continue;
+        }
+        totalClosedPairs++;
+        if (response.isSuccess()) {
+          successfulClosedPairs++;
+        }
         String rawArm =
             interventionArm.getOrDefault(response.getInterventionPhysicalId(), "ADAPTIVE");
         String base = RctEvaluationMetrics.baseArm(rawArm);
@@ -418,18 +433,19 @@ public class AdaptiveFeedbackService {
     Double cohensD =
         bothArmsHaveData ? RctEvaluationMetrics.cohensD(adaptiveDeltas, staticDeltas) : null;
 
+    // Classroom mean Δ from classroom-scoped closed responses only.
+    List<Double> allClassroomDeltas = new ArrayList<>();
+    allClassroomDeltas.addAll(adaptiveDeltas);
+    allClassroomDeltas.addAll(staticDeltas);
+
     return ClassroomEvaluationDTO.builder()
         .classroomId(classroomId)
         .studentCount(studentIds.size())
-        .totalInterventions(totalInterventions)
-        .successfulInterventions(successfulInterventions)
+        .totalInterventions(totalClosedPairs)
+        .successfulInterventions(successfulClosedPairs)
         .overallSuccessRate(
-            RctEvaluationMetrics.successRate(successfulInterventions, totalInterventions))
-        .meanDelta(
-            RctEvaluationMetrics.mean(
-                studentSummaries.stream()
-                    .map(AdaptiveEvaluationSummaryDTO::getMeanDelta)
-                    .toList()))
+            RctEvaluationMetrics.successRate(successfulClosedPairs, totalClosedPairs))
+        .meanDelta(RctEvaluationMetrics.mean(allClassroomDeltas))
         .meanMasteryLevel(masteryN == 0 ? 0.0 : masterySum / masteryN)
         .practiceInterventions(practiceInterventions)
         .taskInterventions(taskInterventions)

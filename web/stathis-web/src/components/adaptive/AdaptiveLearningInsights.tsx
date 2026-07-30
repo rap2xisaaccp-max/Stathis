@@ -70,9 +70,16 @@ function suggestionText(item: {
   recommendedDifficulty?: string | null;
   recommendedGoalReps?: number | null;
 }): string {
-  const difficulty = item.recommendedDifficulty || 'BEGINNER';
-  const reps = item.recommendedGoalReps ?? 8;
-  return `${item.exerciseType}: difficulty ${difficulty}, goalReps ${reps}`;
+  const bits: string[] = [];
+  if (item.recommendedDifficulty) {
+    bits.push(`difficulty ${item.recommendedDifficulty}`);
+  }
+  if (item.recommendedGoalReps != null) {
+    bits.push(`goalReps ${item.recommendedGoalReps}`);
+  }
+  return bits.length > 0
+    ? `${item.exerciseType}: ${bits.join(', ')}`
+    : item.exerciseType;
 }
 
 function MasteryRecommendationRow({
@@ -118,10 +125,16 @@ function MasteryRecommendationRow({
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">{item.exerciseType.replaceAll('_', ' ')}</span>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">
-            Suggest {item.recommendedDifficulty || 'BEGINNER'}
-          </Badge>
-          <Badge variant="outline">~{item.recommendedGoalReps ?? 8} reps</Badge>
+          {item.recommendedDifficulty ? (
+            <Badge variant="secondary">Suggest {item.recommendedDifficulty}</Badge>
+          ) : (
+            <Badge variant="outline">Difficulty —</Badge>
+          )}
+          {item.recommendedGoalReps != null ? (
+            <Badge variant="outline">~{item.recommendedGoalReps} reps</Badge>
+          ) : (
+            <Badge variant="outline">Reps —</Badge>
+          )}
           {(item.requiresTeacherApproval ?? true) && (
             <Badge variant="outline">Teacher approval</Badge>
           )}
@@ -263,21 +276,40 @@ export function AdaptiveLearningInsights({
     retry: 1,
   });
 
-  if (insightsQuery.isLoading) {
-    return (
-      <div className="space-y-4">
-        <StudentProgressSnapshotCard progressItems={progressItems} />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-      </div>
-    );
-  }
+  return (
+    <div className="space-y-4">
+      <StudentProgressSnapshotCard progressItems={progressItems} />
 
-  if (insightsQuery.isError) {
-    return (
-      <div className="space-y-4">
-        <StudentProgressSnapshotCard progressItems={progressItems} />
+      <EvaluationSummaryCard
+        evaluation={evaluationQuery.data}
+        isError={evaluationQuery.isError}
+        isLoading={evaluationQuery.isLoading}
+        onRetry={() => evaluationQuery.refetch()}
+      />
+
+      <FeedbackEffectivenessCard
+        evaluation={evaluationQuery.data}
+        isLoading={evaluationQuery.isLoading}
+        isError={evaluationQuery.isError}
+        onRetry={() => evaluationQuery.refetch()}
+      />
+
+      <ClassroomAblationCard
+        classroomId={classroomId}
+        classroomEvaluation={classroomQuery.data}
+        isLoading={classroomQuery.isLoading}
+        isError={classroomQuery.isError}
+        onRetry={() => classroomQuery.refetch()}
+      />
+
+      {insightsQuery.isLoading && (
+        <>
+          <Skeleton className="h-28 w-full rounded-2xl" />
+          <Skeleton className="h-64 w-full rounded-2xl" />
+        </>
+      )}
+
+      {insightsQuery.isError && (
         <QueryErrorCard
           title="Could not load adaptive insights"
           message={
@@ -287,14 +319,9 @@ export function AdaptiveLearningInsights({
           }
           onRetry={() => insightsQuery.refetch()}
         />
-      </div>
-    );
-  }
+      )}
 
-  if (!insightsQuery.data) {
-    return (
-      <div className="space-y-4">
-        <StudentProgressSnapshotCard progressItems={progressItems} />
+      {!insightsQuery.isLoading && !insightsQuery.isError && !insightsQuery.data && (
         <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -307,25 +334,19 @@ export function AdaptiveLearningInsights({
             </CardDescription>
           </CardHeader>
         </Card>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <AdaptiveInsightsBody
-      data={insightsQuery.data}
-      evaluation={evaluationQuery.data}
-      evaluationError={evaluationQuery.isError}
-      onRetryEvaluation={() => evaluationQuery.refetch()}
-      classroomId={classroomId}
-      classroomEvaluation={classroomQuery.data}
-      classroomLoading={classroomQuery.isLoading}
-      classroomError={classroomQuery.isError}
-      onRetryClassroom={() => classroomQuery.refetch()}
-      difficultyRecommendations={difficultyQuery.data}
-      difficultyError={difficultyQuery.isError}
-      progressItems={progressItems}
-    />
+      {!insightsQuery.isLoading && !insightsQuery.isError && insightsQuery.data && (
+        <InsightsChartsSection data={insightsQuery.data} />
+      )}
+
+      <AdaptiveRecommendationsCard
+        mastery={insightsQuery.data?.mastery}
+        difficultyRecommendations={difficultyQuery.data}
+        difficultyError={difficultyQuery.isError}
+        insightsLoading={insightsQuery.isLoading}
+      />
+    </div>
   );
 }
 
@@ -520,12 +541,17 @@ function ClassroomAblationCard({
 function EvaluationSummaryCard({
   evaluation,
   isError,
+  isLoading,
   onRetry,
 }: {
   evaluation: AdaptiveEvaluationSummaryDTO | null | undefined;
   isError?: boolean;
+  isLoading?: boolean;
   onRetry?: () => void;
 }) {
+  if (isLoading) {
+    return <Skeleton className="h-40 w-full rounded-2xl" />;
+  }
   if (isError) {
     return (
       <QueryErrorCard
@@ -589,7 +615,7 @@ function EvaluationSummaryCard({
           <p className="font-medium">{evaluation.practiceInterventions ?? 0}</p>
         </div>
         <div>
-          <p className="text-muted-foreground">Total / successful</p>
+          <p className="text-muted-foreground">Closed-loop success</p>
           <p className="font-medium">
             {evaluation.successfulInterventions}/{evaluation.totalInterventions}
           </p>
@@ -610,17 +636,35 @@ function EvaluationSummaryCard({
 
 function FeedbackEffectivenessCard({
   evaluation,
-  insightsSuccessRate,
+  isLoading,
+  isError,
+  onRetry,
 }: {
   evaluation?: AdaptiveEvaluationSummaryDTO | null;
-  insightsSuccessRate?: number;
+  isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
 }) {
   const modalityData = useMemo(
     () => buildModalityEffectivenessChartData(evaluation?.meanDeltaByModality),
     [evaluation?.meanDeltaByModality]
   );
 
-  if (!evaluation && insightsSuccessRate == null) {
+  if (isLoading) {
+    return <Skeleton className="h-48 w-full rounded-2xl" />;
+  }
+
+  if (isError) {
+    return (
+      <QueryErrorCard
+        title="Feedback effectiveness failed"
+        message="Could not load closed-loop evaluation metrics for this student."
+        onRetry={onRetry}
+      />
+    );
+  }
+
+  if (!evaluation) {
     return (
       <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
         <CardHeader>
@@ -638,28 +682,24 @@ function FeedbackEffectivenessCard({
       <CardHeader>
         <CardTitle className="text-base">Feedback effectiveness</CardTitle>
         <CardDescription>
-          Whether coaching reduced form severity — overall and by modality (from
-          evaluation + insights).
+          Closed-loop responses only — coaching reduced form severity overall and by
+          modality.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3 text-sm">
           <div>
-            <p className="text-muted-foreground">Evaluation success rate</p>
-            <p className="text-lg font-medium">
-              {formatPct(evaluation?.successRate ?? insightsSuccessRate)}
-            </p>
+            <p className="text-muted-foreground">Success rate</p>
+            <p className="text-lg font-medium">{formatPct(evaluation.successRate)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Mean improvement (Δ)</p>
-            <p className="text-lg font-medium">{formatDelta(evaluation?.meanDelta)}</p>
+            <p className="text-lg font-medium">{formatDelta(evaluation.meanDelta)}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">Events measured</p>
+            <p className="text-muted-foreground">Closed pairs</p>
             <p className="text-lg font-medium">
-              {evaluation
-                ? `${evaluation.successfulInterventions}/${evaluation.totalInterventions}`
-                : '—'}
+              {evaluation.successfulInterventions}/{evaluation.totalInterventions}
             </p>
           </div>
         </div>
@@ -667,7 +707,7 @@ function FeedbackEffectivenessCard({
           <div className="min-h-[240px]">
             <BarChart
               title="Effectiveness by modality"
-              description="Mean Δ from evaluation (higher = more severity reduction)"
+              description="Mean Δ from closed-loop responses (higher = more severity reduction)"
               data={modalityData}
               index="modality"
               categories={['delta']}
@@ -818,43 +858,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
   );
 }
 
-function AdaptiveInsightsBody({
-  data,
-  evaluation,
-  evaluationError,
-  onRetryEvaluation,
-  classroomId,
-  classroomEvaluation,
-  classroomLoading,
-  classroomError,
-  onRetryClassroom,
-  difficultyRecommendations,
-  difficultyError,
-  progressItems,
-}: {
-  data: AdaptiveInsightsDTO;
-  evaluation?: AdaptiveEvaluationSummaryDTO | null;
-  evaluationError?: boolean;
-  onRetryEvaluation?: () => void;
-  classroomId?: string;
-  classroomEvaluation?: ClassroomEvaluationDTO | null;
-  classroomLoading?: boolean;
-  classroomError?: boolean;
-  onRetryClassroom?: () => void;
-  difficultyRecommendations?: DifficultyRecommendationDTO[];
-  difficultyError?: boolean;
-  progressItems?: Array<{
-    taskId: string;
-    taskName: string;
-    taskType?: string | null;
-    completed?: boolean;
-    score?: number | null;
-    maxScore?: number | null;
-    attempts?: number | null;
-    reps?: number | null;
-    goalReps?: number | null;
-  }>;
-}) {
+function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
   const modalityData = useMemo(
     () => buildModalityEffectivenessChartData(data.modalityMeanDelta),
     [data.modalityMeanDelta]
@@ -871,71 +875,9 @@ function AdaptiveInsightsBody({
     () => buildMasteryTimelineChartData(data.profileHistory),
     [data.profileHistory]
   );
-  const mastery = data.mastery || [];
-  const difficultyByType = useMemo(() => {
-    const map = new Map<string, DifficultyRecommendationDTO>();
-    for (const rec of difficultyRecommendations || []) {
-      map.set(rec.exerciseType, rec);
-    }
-    return map;
-  }, [difficultyRecommendations]);
-
-  // Prefer mastery rows; enrich with difficulty API topErrors / rationale when present.
-  const softRecs =
-    mastery.length > 0
-      ? mastery.map((item) => {
-          const rec = difficultyByType.get(item.exerciseType);
-          return {
-            physicalId: item.physicalId,
-            exerciseType: item.exerciseType,
-            masteryLevel: item.masteryLevel,
-            sessionsCount: item.sessionsCount,
-            recommendedDifficulty:
-              item.recommendedDifficulty || rec?.recommendedDifficulty || 'BEGINNER',
-            recommendedGoalReps:
-              item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? 8,
-            recommendationRationale:
-              item.recommendationRationale || rec?.rationale || null,
-            requiresTeacherApproval:
-              item.requiresTeacherApproval ?? rec?.requiresTeacherApproval ?? true,
-            topErrors: rec?.topErrors || [],
-            lastSessionAt: item.lastSessionAt,
-            medianTimeToCorrectionMs: item.medianTimeToCorrectionMs,
-          };
-        })
-      : (difficultyRecommendations || []).map((rec) => ({
-          physicalId: `${rec.studentId}-${rec.exerciseType}`,
-          exerciseType: rec.exerciseType,
-          masteryLevel: rec.masteryLevel,
-          sessionsCount: rec.sessionsCount,
-          recommendedDifficulty: rec.recommendedDifficulty,
-          recommendedGoalReps: rec.recommendedGoalReps,
-          recommendationRationale: rec.rationale,
-          requiresTeacherApproval: rec.requiresTeacherApproval,
-          topErrors: rec.topErrors || [],
-          lastSessionAt: null as string | null,
-          medianTimeToCorrectionMs: null as number | null,
-        }));
 
   return (
-    <div className="space-y-4">
-      <StudentProgressSnapshotCard progressItems={progressItems} />
-      <EvaluationSummaryCard
-        evaluation={evaluation}
-        isError={evaluationError}
-        onRetry={onRetryEvaluation}
-      />
-      <FeedbackEffectivenessCard
-        evaluation={evaluation}
-        insightsSuccessRate={data.overallSuccessRate}
-      />
-      <ClassroomAblationCard
-        classroomId={classroomId}
-        classroomEvaluation={classroomEvaluation}
-        isLoading={classroomLoading}
-        isError={classroomError}
-        onRetry={onRetryClassroom}
-      />
+    <>
       <RecentInterventionsCard data={data} />
 
       <div>
@@ -965,14 +907,14 @@ function AdaptiveInsightsBody({
           </Card>
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
-              <CardDescription>Intervention success</CardDescription>
+              <CardDescription>Closed-loop success</CardDescription>
               <CardTitle className="text-lg">
                 {formatPct(data.overallSuccessRate)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
               {data.successfulInterventions}/{data.totalInterventions} successful
-              corrections
+              response pairs
             </CardContent>
           </Card>
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
@@ -999,7 +941,7 @@ function AdaptiveInsightsBody({
           <div className="min-h-[300px]">
             <BarChart
               title="Modality effectiveness"
-              description="Mean severity reduction after each feedback channel"
+              description="Mean severity reduction from closed-loop profile buckets"
               data={modalityData}
               index="modality"
               categories={['delta']}
@@ -1020,7 +962,7 @@ function AdaptiveInsightsBody({
           <div className="min-h-[300px]">
             <BarChart
               title="Recurring form errors"
-              description="Most frequent targeted corrections"
+              description="Distinct sessions where each error was coached (not raw intervention spam)"
               data={errorData}
               index="error"
               categories={['count']}
@@ -1032,18 +974,16 @@ function AdaptiveInsightsBody({
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="text-base">Recurring form errors</CardTitle>
-              <CardDescription>No recurring errors logged.</CardDescription>
+              <CardDescription>No recurring form errors recorded yet.</CardDescription>
             </CardHeader>
           </Card>
         )}
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
         {timelineData.length > 0 ? (
           <div className="min-h-[300px]">
             <LineChart
               title="Mastery timeline"
-              description="Mean mastery and consistency across profile snapshots"
+              description="Mastery and consistency over adaptive profile history"
               data={timelineData}
               index="date"
               categories={['masteryPct', 'consistencyPct']}
@@ -1066,7 +1006,7 @@ function AdaptiveInsightsBody({
           <div className="min-h-[300px]">
             <BarChart
               title="Mastery by exercise"
-              description="Current mastery level per exercise type"
+              description="Current mastery level per exercise type (newest sessions first)"
               data={masteryBars}
               index="exercise"
               categories={['masteryPct']}
@@ -1083,34 +1023,106 @@ function AdaptiveInsightsBody({
           </Card>
         )}
       </div>
+    </>
+  );
+}
 
-      <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Target className="h-4 w-4" />
-            Adaptive recommendations
-          </CardTitle>
-          <CardDescription>
-            Soft goalReps / difficulty suggestions — copy and apply manually in classroom
-            templates. Never auto-applied.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {softRecs.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              {difficultyError
-                ? 'Difficulty recommendations could not be loaded, and no mastery records exist yet.'
-                : 'No mastery or difficulty recommendations yet.'}
-            </p>
-          )}
-          {softRecs.map((item) => (
-            <MasteryRecommendationRow
-              key={item.physicalId || item.exerciseType}
-              item={item}
-            />
-          ))}
-        </CardContent>
-      </Card>
-    </div>
+function AdaptiveRecommendationsCard({
+  mastery,
+  difficultyRecommendations,
+  difficultyError,
+  insightsLoading,
+}: {
+  mastery?: AdaptiveInsightsDTO['mastery'];
+  difficultyRecommendations?: DifficultyRecommendationDTO[];
+  difficultyError?: boolean;
+  insightsLoading?: boolean;
+}) {
+  const difficultyByType = useMemo(() => {
+    const map = new Map<string, DifficultyRecommendationDTO>();
+    for (const rec of difficultyRecommendations || []) {
+      map.set(rec.exerciseType, rec);
+    }
+    return map;
+  }, [difficultyRecommendations]);
+
+  const softRecs = useMemo(() => {
+    const masteryRows = [...(mastery || [])].sort((a, b) => {
+      const ta = a.lastSessionAt ? new Date(a.lastSessionAt).getTime() : 0;
+      const tb = b.lastSessionAt ? new Date(b.lastSessionAt).getTime() : 0;
+      if (tb !== ta) return tb - ta;
+      return (b.masteryLevel || 0) - (a.masteryLevel || 0);
+    });
+
+    if (masteryRows.length > 0) {
+      return masteryRows.map((item) => {
+        const rec = difficultyByType.get(item.exerciseType);
+        return {
+          physicalId: item.physicalId,
+          exerciseType: item.exerciseType,
+          masteryLevel: item.masteryLevel,
+          sessionsCount: item.sessionsCount,
+          recommendedDifficulty:
+            item.recommendedDifficulty || rec?.recommendedDifficulty || null,
+          recommendedGoalReps:
+            item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null,
+          recommendationRationale:
+            item.recommendationRationale || rec?.rationale || null,
+          requiresTeacherApproval:
+            item.requiresTeacherApproval ?? rec?.requiresTeacherApproval ?? true,
+          topErrors: rec?.topErrors || [],
+          lastSessionAt: item.lastSessionAt,
+          medianTimeToCorrectionMs: item.medianTimeToCorrectionMs,
+        };
+      });
+    }
+
+    return (difficultyRecommendations || []).map((rec) => ({
+      physicalId: `${rec.studentId}-${rec.exerciseType}`,
+      exerciseType: rec.exerciseType,
+      masteryLevel: rec.masteryLevel,
+      sessionsCount: rec.sessionsCount,
+      recommendedDifficulty: rec.recommendedDifficulty ?? null,
+      recommendedGoalReps: rec.recommendedGoalReps ?? null,
+      recommendationRationale: rec.rationale,
+      requiresTeacherApproval: rec.requiresTeacherApproval,
+      topErrors: rec.topErrors || [],
+      lastSessionAt: null as string | null,
+      medianTimeToCorrectionMs: null as number | null,
+    }));
+  }, [mastery, difficultyRecommendations, difficultyByType]);
+
+  if (insightsLoading && softRecs.length === 0) {
+    return <Skeleton className="h-40 w-full rounded-2xl" />;
+  }
+
+  return (
+    <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Target className="h-4 w-4" />
+          Adaptive recommendations
+        </CardTitle>
+        <CardDescription>
+          Soft goalReps / difficulty suggestions — copy and apply manually in classroom
+          templates. Never auto-applied.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {softRecs.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {difficultyError
+              ? 'Difficulty recommendations could not be loaded, and no mastery records exist yet.'
+              : 'No mastery or difficulty recommendations yet.'}
+          </p>
+        )}
+        {softRecs.map((item) => (
+          <MasteryRecommendationRow
+            key={item.physicalId || item.exerciseType}
+            item={item}
+          />
+        ))}
+      </CardContent>
+    </Card>
   );
 }

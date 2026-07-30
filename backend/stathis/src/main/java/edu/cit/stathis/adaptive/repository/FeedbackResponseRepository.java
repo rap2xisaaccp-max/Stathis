@@ -13,6 +13,8 @@ public interface FeedbackResponseRepository extends JpaRepository<FeedbackRespon
 
   List<FeedbackResponse> findByStudentIdOrderByCreatedAtDesc(String studentId);
 
+  long countByStudentId(String studentId);
+
   long countByStudentIdAndSuccessTrue(String studentId);
 
   List<FeedbackResponse> findByCreatedAtBefore(java.time.OffsetDateTime cutoff);

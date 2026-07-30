@@ -209,9 +209,6 @@ export default function StudentProgressDetailPage() {
     const averageScore = scoredItems.length > 0 && totalPossible > 0
       ? Math.round(totalPoints / totalPossible * 100)
       : 0;
-    // #region agent log
-    fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'pre-fix',hypothesisId:'A,B,D',location:'studentId/page.tsx:computeStatistics',message:'overall score KPI inputs',data:{itemCount:progressItems.length,scoredCount:scoredItems.length,scoredItems:scoredItems.map(i=>({taskType:i.taskType,score:i.score,maxScore:i.maxScore,completed:i.completed})),totalPoints,totalPossible,averageScore,nullScoreCount:progressItems.filter(i=>i.score===null).length,exerciseRows:progressItems.filter(i=>i.taskType?.toUpperCase()==='EXERCISE').map(i=>({score:i.score,maxScore:i.maxScore,reps:i.reps,attempts:i.attempts,completed:i.completed}))},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     
     // Calculate recent activity
     const completedItems = progressItems.filter(item => item.completed && item.completedAt);

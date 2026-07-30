@@ -122,6 +122,46 @@ public final class RctEvaluationMetrics {
                 Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
   }
 
+  /**
+   * Classroom RCT scope: only interventions that explicitly belong to the classroom.
+   * Blank/null intervention classroomId is excluded to avoid cross-room bleed.
+   */
+  public static boolean matchesClassroom(String interventionClassroomId, String classroomId) {
+    if (classroomId == null || classroomId.isBlank()) {
+      return false;
+    }
+    if (interventionClassroomId == null || interventionClassroomId.isBlank()) {
+      return false;
+    }
+    return classroomId.equals(interventionClassroomId);
+  }
+
+  /**
+   * Count recurring form errors once per adaptive session (distinct sessionId × errorCode),
+   * not once per intervention delivery.
+   */
+  public static Map<String, Long> countDistinctSessionErrors(
+      List<String> sessionIds, List<String> errorCodes) {
+    Map<String, Long> counts = new HashMap<>();
+    if (sessionIds == null || errorCodes == null || sessionIds.size() != errorCodes.size()) {
+      return counts;
+    }
+    java.util.HashSet<String> seen = new java.util.HashSet<>();
+    for (int i = 0; i < sessionIds.size(); i++) {
+      String sessionId = sessionIds.get(i);
+      String errorCode = errorCodes.get(i);
+      if (sessionId == null || sessionId.isBlank() || errorCode == null || errorCode.isBlank()) {
+        continue;
+      }
+      String key = sessionId + '\u0000' + errorCode;
+      if (!seen.add(key)) {
+        continue;
+      }
+      counts.merge(errorCode, 1L, Long::sum);
+    }
+    return counts;
+  }
+
   public static Map<String, List<Double>> groupDeltasByBaseArm(
       Map<String, List<Double>> deltasByArm) {
     Map<String, List<Double>> grouped = new HashMap<>();

@@ -35,10 +35,17 @@ export function buildRecurringErrorsChartData(
 export function buildMasteryByExerciseChartData(
   mastery: ExerciseMasteryDTO[] | null | undefined
 ): Array<{ exercise: string; masteryPct: number }> {
-  return (mastery || []).map((item) => ({
-    exercise: formatModalityLabel(item.exerciseType || 'UNKNOWN'),
-    masteryPct: Math.round((item.masteryLevel || 0) * 100),
-  }));
+  return [...(mastery || [])]
+    .sort((a, b) => {
+      const ta = a.lastSessionAt ? new Date(a.lastSessionAt).getTime() : 0;
+      const tb = b.lastSessionAt ? new Date(b.lastSessionAt).getTime() : 0;
+      if (tb !== ta) return tb - ta;
+      return (b.masteryLevel || 0) - (a.masteryLevel || 0);
+    })
+    .map((item) => ({
+      exercise: formatModalityLabel(item.exerciseType || 'UNKNOWN'),
+      masteryPct: Math.round((item.masteryLevel || 0) * 100),
+    }));
 }
 
 function shortDate(iso: string | null | undefined): string {
@@ -51,11 +58,17 @@ function shortDate(iso: string | null | undefined): string {
 export function buildMasteryTimelineChartData(
   history: ProfileHistoryPointDTO[] | null | undefined
 ): Array<{ date: string; masteryPct: number; consistencyPct: number }> {
-  return (history || []).map((point) => ({
-    date: shortDate(point.createdAt),
-    masteryPct: Math.round((point.meanMasteryLevel ?? 0) * 100),
-    consistencyPct: Math.round((point.consistencyScore ?? 0) * 100),
-  }));
+  return [...(history || [])]
+    .sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    })
+    .map((point) => ({
+      date: shortDate(point.createdAt),
+      masteryPct: Math.round((point.meanMasteryLevel ?? 0) * 100),
+      consistencyPct: Math.round((point.consistencyScore ?? 0) * 100),
+    }));
 }
 
 export function hasChartableInsights(data: AdaptiveInsightsDTO | null | undefined): boolean {

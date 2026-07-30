@@ -53,4 +53,30 @@ public class RctEvaluationMetricsTest {
     assertEquals(2, top.size());
     assertEquals(List.of("KNEES_IN", "PIKE"), top.keySet().stream().toList());
   }
+
+  @Test
+  void matchesClassroomExcludesBlank() {
+    assertTrue(RctEvaluationMetrics.matchesClassroom("ROOM-1", "ROOM-1"));
+    assertFalse(RctEvaluationMetrics.matchesClassroom(null, "ROOM-1"));
+    assertFalse(RctEvaluationMetrics.matchesClassroom("", "ROOM-1"));
+    assertFalse(RctEvaluationMetrics.matchesClassroom("ROOM-2", "ROOM-1"));
+    assertFalse(RctEvaluationMetrics.matchesClassroom("ROOM-1", null));
+  }
+
+  @Test
+  void distinctSessionErrorsAvoidDuplicateCounting() {
+    Map<String, Long> counts =
+        RctEvaluationMetrics.countDistinctSessionErrors(
+            List.of("SES-1", "SES-1", "SES-1", "SES-2", "SES-2"),
+            List.of("SAG", "SAG", "PIKE", "SAG", "SAG"));
+    assertEquals(2L, counts.get("SAG"));
+    assertEquals(1L, counts.get("PIKE"));
+  }
+
+  @Test
+  void closedLoopSuccessRateUsesResponseDenominator() {
+    // 3 successes out of 4 closed pairs (not out of intervention spam count)
+    assertEquals(0.75, RctEvaluationMetrics.successRate(3, 4), 1e-6);
+    assertEquals(0.0, RctEvaluationMetrics.successRate(0, 0), 1e-6);
+  }
 }
