@@ -96,7 +96,16 @@ fun ExerciseScreen(
     /** Called when the full skeleton leaves the camera after identity was verified. */
     monitorSkeletonPresence: Boolean = false,
     onSkeletonLeftFrame: (() -> Unit)? = null,
-    onPoseUpdated: ((Pose?) -> Unit)? = null
+    onPoseUpdated: ((Pose?) -> Unit)? = null,
+    /** Adaptive learning visual highlight of skeleton joints/bones. */
+    adaptiveHighlight: Boolean = false,
+    /** Landmark type ids to emphasize when [adaptiveHighlight] is true. */
+    adaptiveHighlightLandmarks: Set<Int> = emptySet(),
+    adaptiveHighlightBones: List<Pair<Int, Int>> = emptyList(),
+    /** Adaptive coaching message to display (closed-loop feedback). */
+    adaptiveMessage: String? = null,
+    /** Delivery channel label: text | visual | tts */
+    adaptiveDeliveryChannel: String? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
     val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
@@ -108,6 +117,16 @@ fun ExerciseScreen(
 
     val exerciseState by exerciseViewModel.uiState.collectAsState()
     var exerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
+    val backendSignalRef = remember {
+        object {
+            @Volatile var flags: List<String> = emptyList()
+            @Volatile var ruleSeverity: Double? = null
+        }
+    }
+    androidx.compose.runtime.SideEffect {
+        backendSignalRef.flags = exerciseState.flags
+        backendSignalRef.ruleSeverity = exerciseState.ruleSeverity
+    }
 
     var latestPose by remember { mutableStateOf<Pose?>(null) }
     var frameWidth by remember { mutableStateOf(0) }
@@ -260,7 +279,11 @@ fun ExerciseScreen(
                                         }
 
                                         if (enableExerciseTracking && exerciseType != null) {
-                                            exerciseFeedback = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                            val analyzed = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                            exerciseFeedback = analyzed.copy(
+                                                backendFlags = backendSignalRef.flags,
+                                                ruleSeverity = backendSignalRef.ruleSeverity
+                                            )
                                             onExerciseFeedback?.invoke(exerciseFeedback!!)
                                         }
                                         if (enablePostureAnalysis && enableExerciseTracking) {
@@ -315,7 +338,16 @@ fun ExerciseScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx -> PoseSkeletonOverlayView(ctx) },
             update = { view ->
-                view.updatePose(latestPose, frameWidth, frameHeight, rotation, useFrontCamera)
+                view.updatePose(
+                    latestPose,
+                    frameWidth,
+                    frameHeight,
+                    rotation,
+                    useFrontCamera,
+                    highlight = adaptiveHighlight,
+                    highlightLandmarkIds = adaptiveHighlightLandmarks,
+                    highlightBones = adaptiveHighlightBones
+                )
             }
         )
 
@@ -670,6 +702,37 @@ fun ExerciseScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        if (!adaptiveMessage.isNullOrBlank()) {
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 96.dp)
+                    .navigationBarsPadding()
+                    .fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text(
+                        text = when (adaptiveDeliveryChannel) {
+                            "tts" -> "Adaptive coach (voice)"
+                            "visual" -> "Adaptive coach (form focus)"
+                            else -> "Adaptive coach"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = adaptiveMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }

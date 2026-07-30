@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { AdaptiveLearningInsights } from '@/components/adaptive/AdaptiveLearningInsights';
 import { 
   User, 
   ArrowLeft, 
@@ -50,7 +51,8 @@ import {
   GraduationCap,
   TrendingUp,
   Target,
-  Zap
+  Zap,
+  Brain
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
@@ -531,8 +533,9 @@ export default function StudentProgressDetailPage() {
 
         {/* Performance tabs */}
         <Tabs defaultValue="scores" className="mt-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[400px] h-12 rounded-xl bg-card/80 backdrop-blur-xl border border-border/30">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-[560px] h-12 rounded-xl bg-card/80 backdrop-blur-xl border border-border/30">
             <TabsTrigger value="scores" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Task Scores</TabsTrigger>
+            <TabsTrigger value="adaptive" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Adaptive</TabsTrigger>
             <TabsTrigger value="badges" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Badges</TabsTrigger>
             <TabsTrigger value="ranking" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Ranking</TabsTrigger>
           </TabsList>
@@ -770,6 +773,28 @@ export default function StudentProgressDetailPage() {
                 })()}
               </>
             )}
+          </TabsContent>
+
+          {/* Adaptive Learning Tab */}
+          <TabsContent value="adaptive" className="space-y-4 mt-6">
+            <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="text-xl flex items-center gap-2">
+                      <Brain className="h-5 w-5" />
+                      Adaptive Physical Skill Learning
+                    </CardTitle>
+                    <CardDescription>
+                      Evidence-based coaching profile: which feedback worked, recurring errors, and mastery trends.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <AdaptiveLearningInsights studentId={studentId} classroomId={classroomId} />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Badges Tab */}

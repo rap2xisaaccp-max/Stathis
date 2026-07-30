@@ -190,11 +190,39 @@ fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostCont
     val level by learnPrefs.levelFlow.collectAsState(initial = ExperienceLevel.BEGINNER)
     val template = remember(level, exerciseId) { generateTemplatesForLevel(level).find { it.physicalId == exerciseId } }
     val exerciseType = remember(template) { resolveExerciseType(template?.exerciseType) }
+    val adaptiveSessionViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel =
+        hiltViewModel()
+    val adaptiveFeedback by adaptiveSessionViewModel.feedback.collectAsState()
+    val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
+    val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
+    val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
+
+    androidx.compose.runtime.LaunchedEffect(exerciseType) {
+        adaptiveSessionViewModel.startSession(
+            exerciseType = exerciseType?.name ?: template?.exerciseType ?: "UNKNOWN",
+            staticControl = citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs.isStaticControl(context),
+            sessionContext = citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs.CONTEXT_PRACTICE
+        )
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { adaptiveSessionViewModel.flushAndEnd() }
+    }
 
     citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen(
         navController = navController,
         exerciseType = exerciseType,
-        exerciseTitle = template?.title
+        exerciseTitle = template?.title,
+        // Practice still runs posture classify + adaptive logging for research volume.
+        enablePostureAnalysis = true,
+        enableExerciseTracking = true,
+        onExerciseFeedback = { feedback ->
+            adaptiveSessionViewModel.onExerciseFeedback(feedback)
+        },
+        adaptiveHighlight = adaptiveHighlight,
+        adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
+        adaptiveHighlightBones = adaptiveHighlightBones,
+        adaptiveMessage = adaptiveFeedback?.message,
+        adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel
     )
 }
 

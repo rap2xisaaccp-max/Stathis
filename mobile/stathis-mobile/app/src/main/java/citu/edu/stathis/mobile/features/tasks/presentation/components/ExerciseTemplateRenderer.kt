@@ -49,6 +49,11 @@ import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
 import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
+import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
+import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
+import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
 import com.google.mlkit.vision.pose.Pose
 import kotlinx.coroutines.launch
 import android.net.Uri
@@ -125,9 +130,36 @@ fun ExerciseTemplateRenderer(
     var displayedAttempts by remember { mutableIntStateOf(attemptsUsed) }
     val scope = rememberCoroutineScope()
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
-    val faceIdentityViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel =
-        hiltViewModel()
+    val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
     val faceIdentityState by faceIdentityViewModel.state.collectAsState()
+    val adaptiveSessionViewModel: AdaptiveSessionViewModel = hiltViewModel()
+    val adaptiveFeedback by adaptiveSessionViewModel.feedback.collectAsState()
+    val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
+    val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
+    val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
+    val context = LocalContext.current
+    val staticControlArm = remember {
+        RctExperimentPrefs.isStaticControl(context)
+    }
+
+    LaunchedEffect(isExerciseStarted, template.exerciseType, classroomId) {
+        if (isExerciseStarted) {
+            val (classroomPhysicalId, taskPhysicalId) = parseClassroomAndTaskId(classroomId)
+            adaptiveSessionViewModel.startSession(
+                exerciseType = template.exerciseType,
+                taskId = taskPhysicalId,
+                classroomId = classroomPhysicalId,
+                staticControl = staticControlArm,
+                sessionContext = RctExperimentPrefs.CONTEXT_TASK
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            adaptiveSessionViewModel.flushAndEnd()
+        }
+    }
 
     LaunchedEffect(isExerciseStarted) {
         if (!isExerciseStarted) {
@@ -250,6 +282,7 @@ fun ExerciseTemplateRenderer(
                     // Only accept reps while the skeleton is classified as recognized
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         latestExerciseFeedback = feedback
+                        adaptiveSessionViewModel.onExerciseFeedback(feedback)
                     }
                 },
                 enableExerciseTracking = isRecognized,
@@ -273,7 +306,12 @@ fun ExerciseTemplateRenderer(
                             "You left the camera for 5 seconds. Verify your face to resume tracking."
                         faceIdentityViewModel.resetVerification()
                     }
-                }
+                },
+                adaptiveHighlight = adaptiveHighlight,
+                adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
+                adaptiveHighlightBones = adaptiveHighlightBones,
+                adaptiveMessage = adaptiveFeedback?.message,
+                adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel
             )
 
             ExerciseControlsOverlay(
@@ -301,6 +339,7 @@ fun ExerciseTemplateRenderer(
                     exercisePerformance = performance
                     isExerciseCompleted = true
                     displayedAttempts = maxOf(displayedAttempts + 1, attemptsUsed + 1)
+                    adaptiveSessionViewModel.flushAndEnd()
                     onSessionFinished(performance)
                 },
                 onCancel = {
@@ -309,6 +348,7 @@ fun ExerciseTemplateRenderer(
                     exercisePerformance = null
                     identityPhase = IdentityPhase.UNVERIFIED
                     faceIdentityViewModel.clearSessionVerification()
+                    adaptiveSessionViewModel.flushAndEnd()
                     onCancel?.invoke()
                 },
                 modifier = Modifier.fillMaxSize()

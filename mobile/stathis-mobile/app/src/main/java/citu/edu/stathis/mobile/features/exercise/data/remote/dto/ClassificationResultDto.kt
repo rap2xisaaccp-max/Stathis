@@ -7,7 +7,9 @@ data class ClassificationResultDto(
     val classNames: List<String>,
     val formConfidence: Float?, // Form quality score (0.0-1.0), null for 'rest' pose
     val flags: List<String>?,
-    val messages: List<String>?
+    val messages: List<String>?,
+    /** Rule-derived form error severity [0,1]; independent of class score / formConfidence. */
+    val ruleSeverity: Double? = null
 )
 
 
