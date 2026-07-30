@@ -172,10 +172,27 @@ class TaskRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun completeExercise(taskId: String, exerciseTemplateId: String) {
-        val response = taskService.completeExercise(taskId, exerciseTemplateId)
+    override suspend fun completeExercise(
+        taskId: String,
+        exerciseTemplateId: String,
+        result: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission?
+    ): ScoreResponse? {
+        val response = taskService.completeExercise(taskId, exerciseTemplateId, result)
         if (!response.isSuccessful) {
             throw IllegalStateException("Failed to complete exercise: ${response.code()} ${response.message()}")
+        }
+        return response.body()
+    }
+
+    override suspend fun publishExerciseProgress(
+        progress: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseProgressPayload
+    ) {
+        val response = taskService.publishExerciseProgress(progress)
+        if (!response.isSuccessful) {
+            android.util.Log.w(
+                "TaskRepositoryImpl",
+                "Failed to publish exercise progress: ${response.code()} ${response.message()}"
+            )
         }
     }
 

@@ -10,6 +10,7 @@ import {
   Activity, 
   BarChart3, 
   BookOpen, 
+  Brain,
   GraduationCap, 
   Heart, 
   Home, 
@@ -23,7 +24,7 @@ import {
   UserCircle
 } from 'lucide-react';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Logo } from '../logo';
@@ -33,7 +34,12 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
+  const focusAdaptive = searchParams.get('focus') === 'adaptive';
+  const tabAdaptive = searchParams.get('tab') === 'adaptive';
+  const adaptiveActive =
+    pathname.startsWith('/student-progress') && (focusAdaptive || tabAdaptive);
 
   type RouteItem = {
     label: string;
@@ -71,7 +77,14 @@ export function Sidebar({ className }: SidebarProps) {
           sublabel: 'Track student performance',
           icon: Award,
           href: '/student-progress',
-          active: pathname.startsWith('/student-progress')
+          active: pathname.startsWith('/student-progress') && !adaptiveActive
+        },
+        {
+          label: 'Adaptive Learning',
+          sublabel: 'APSLE coaching insights',
+          icon: Brain,
+          href: '/student-progress?focus=adaptive',
+          active: adaptiveActive
         }
       ]
     },
@@ -104,7 +117,8 @@ export function Sidebar({ className }: SidebarProps) {
   const actives = {
     dashboard: pathname === '/dashboard',
     classroom: pathname.startsWith('/classroom'),
-    studentProgress: pathname.startsWith('/student-progress'),
+    studentProgress: pathname.startsWith('/student-progress') && !adaptiveActive,
+    adaptive: adaptiveActive,
     monitoring: pathname === '/monitoring',
     profile: pathname === '/profile',
   } as const;
@@ -190,6 +204,7 @@ interface MobileSidebarProps {
     dashboard: boolean;
     classroom: boolean;
     studentProgress: boolean;
+    adaptive: boolean;
     monitoring: boolean;
     profile: boolean;
   };
@@ -241,6 +256,12 @@ function MobileSidebar({ actives, setOpen }: MobileSidebarProps) {
                 <div className="flex items-center gap-3">
                   <Award className="h-5 w-5" />
                   <div className="flex flex-col"><span className="font-medium">Student Progress</span><span className="text-xs text-muted-foreground">Track student performance</span></div>
+                </div>
+              </Link>
+              <Link href="/student-progress?focus=adaptive" onClick={() => setOpen(false)} className={cn('hover:bg-primary/10 hover:text-primary block rounded-xl border px-4 py-3 text-sm transition-all duration-200', actives.adaptive ? 'bg-primary/10 text-primary border-primary/20 shadow-sm' : 'text-muted-foreground border-transparent hover:text-foreground')}>
+                <div className="flex items-center gap-3">
+                  <Brain className="h-5 w-5" />
+                  <div className="flex flex-col"><span className="font-medium">Adaptive Learning</span><span className="text-xs text-muted-foreground">APSLE coaching insights</span></div>
                 </div>
               </Link>
             </nav>

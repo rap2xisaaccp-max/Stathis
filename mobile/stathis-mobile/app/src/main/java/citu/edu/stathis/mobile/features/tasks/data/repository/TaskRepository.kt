@@ -20,7 +20,14 @@ interface TaskRepository {
     suspend fun submitQuizScore(taskId: String, quizTemplateId: String, score: Int): Flow<ScoreResponse>
     suspend fun autoCheckQuiz(taskId: String, quizTemplateId: String, request: QuizAutoCheckRequest): Flow<ScoreResponse>
     suspend fun completeLesson(taskId: String, lessonTemplateId: String)
-    suspend fun completeExercise(taskId: String, exerciseTemplateId: String)
+    suspend fun completeExercise(
+        taskId: String,
+        exerciseTemplateId: String,
+        result: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission? = null
+    ): ScoreResponse?
+    suspend fun publishExerciseProgress(
+        progress: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseProgressPayload
+    )
     suspend fun getQuizScore(studentId: String, taskId: String, quizTemplateId: String): Flow<ScoreResponse>
     suspend fun getScoresByStudentAndTask(studentId: String, taskId: String): Flow<List<ScoreResponse>>
 } 

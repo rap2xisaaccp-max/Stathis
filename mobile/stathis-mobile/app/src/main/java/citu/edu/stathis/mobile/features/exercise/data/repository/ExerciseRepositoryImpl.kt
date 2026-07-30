@@ -8,7 +8,6 @@ import citu.edu.stathis.mobile.features.exercise.data.Exercise
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseSessionResult
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.datasource.ExerciseApi
-import citu.edu.stathis.mobile.features.exercise.data.model.AnalyzePostureRequestDto
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseDto
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseSessionResultDto
 import citu.edu.stathis.mobile.features.exercise.data.model.PerformanceSummaryDto
@@ -27,6 +26,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -229,85 +229,50 @@ class ExerciseRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun analyzePostureWithBackend(landmarks: List<List<List<Float>>>): ClientResponse<PostureResponseDto> = withContext(Dispatchers.IO) {
-        try {
-            val response = apiService.analyzePosture(AnalyzePostureRequestDto(landmarks = landmarks))
-            if (response.isSuccessful) {
-                val analysisResult = response.body()
-                if (analysisResult != null) {
-                    ClientResponse(success = true, data = analysisResult, message = "Posture analyzed successfully")
-                } else {
-                    ClientResponse(
-                        success = false,
-                        data = null,
-                        message = "Empty response from server"
-                    )
-                }
-            } else {
-                ClientResponse(
-                    success = false,
-                    data = null,
-                    message = "Failed to analyze posture: HTTP ${response.code()}"
-                )
-            }
-        } catch (e: Exception) {
-            ClientResponse(success = false, data = null, message = "Network error: ${e.message ?: "Unknown error"}")
+    override suspend fun analyzePostureWithBackend(landmarks: List<List<List<Float>>>): ClientResponse<PostureResponseDto> =
+        withContext(Dispatchers.IO) {
+            // Phase 10: /api/posture/analyze removed. Live exercise uses PostureApi.classify.
+            ClientResponse(
+                success = false,
+                data = null,
+                message = "Deprecated endpoint removed. Use PostureApi.classify / ClassifyPoseUseCase."
+            )
         }
-    }
 
-    override suspend fun saveExerciseSession(sessionResult: ExerciseSessionResult): ClientResponse<Unit> = withContext(Dispatchers.IO) {
-        try {
-            val sessionDto = sessionResult.toDto()
-            val response = apiService.saveExerciseSession(sessionDto)
-            if (response.isSuccessful) {
-                ClientResponse(success = true, data = Unit, message = "Session saved successfully")
-            } else {
-                ClientResponse(
-                    success = false,
-                    data = null,
-                    message = "Failed to save session: HTTP ${response.code()}"
-                )
-            }
-        } catch (e: Exception) {
-            ClientResponse(success = false, data = null, message = "Network error: ${e.message ?: "Unknown error"}")
+    override suspend fun saveExerciseSession(sessionResult: ExerciseSessionResult): ClientResponse<Unit> =
+        withContext(Dispatchers.IO) {
+            // Phase 10: /api/exercise/sessions does not exist. Adaptive telemetry uses AdaptiveApi.ingestBatch;
+            // graded task completion uses student task completeExercise.
+            Timber.w("saveExerciseSession ignored — use AdaptiveApi.ingestBatch / task completeExercise")
+            ClientResponse(
+                success = false,
+                data = null,
+                message = "Stale API removed. Use AdaptiveApi.ingestBatch for telemetry."
+            )
         }
-    }
 
-    override suspend fun getExerciseHistory(userId: String): ClientResponse<List<ExerciseSessionResult>> = withContext(Dispatchers.IO) {
-        try {
-            val response = apiService.getExerciseHistory(userId)
-            if (response.isSuccessful) {
-                val sessions = response.body()?.map { it.toDomain() } ?: emptyList()
-                ClientResponse(success = true, data = sessions, message = "History retrieved successfully")
-            } else {
-                ClientResponse(
-                    success = false,
-                    data = null,
-                    message = "Failed to fetch history: HTTP ${response.code()}"
-                )
-            }
-        } catch (e: Exception) {
-            ClientResponse(success = false, data = null, message = "Network error: ${e.message ?: "Unknown error"}")
+    override suspend fun getExerciseHistory(userId: String): ClientResponse<List<ExerciseSessionResult>> =
+        withContext(Dispatchers.IO) {
+            Timber.w("getExerciseHistory ignored — use adaptive insights / scores APIs")
+            ClientResponse(
+                success = true,
+                data = emptyList(),
+                message = "Stale history API removed; returning empty list."
+            )
         }
-    }
 
-    override suspend fun getPerformanceSummary(userId: String, exerciseId: String?): ClientResponse<List<PerformanceSummaryDto>> = withContext(Dispatchers.IO) {
-        try {
-            val response = apiService.getPerformanceSummary(userId, exerciseId)
-            if (response.isSuccessful) {
-                val summaries = response.body() ?: emptyList()
-                ClientResponse(success = true, data = summaries, message = "Performance summary retrieved")
-            } else {
-                ClientResponse(
-                    success = false,
-                    data = null,
-                    message = "Failed to fetch performance summary: HTTP ${response.code()}"
-                )
-            }
-        } catch (e: Exception) {
-            ClientResponse(success = false, data = null, message = "Network error: ${e.message ?: "Unknown error"}")
+    override suspend fun getPerformanceSummary(
+        userId: String,
+        exerciseId: String?
+    ): ClientResponse<List<PerformanceSummaryDto>> =
+        withContext(Dispatchers.IO) {
+            Timber.w("getPerformanceSummary ignored — use /api/v1/scores and /api/adaptive/insights")
+            ClientResponse(
+                success = true,
+                data = emptyList(),
+                message = "Stale performance API removed; returning empty list."
+            )
         }
-    }
 
     override suspend fun classify(window: Array<Array<FloatArray>>): ClassificationResultDto {
         return postureApi.classify(ClassificationRequest(window))

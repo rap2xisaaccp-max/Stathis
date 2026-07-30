@@ -19,6 +19,9 @@ class PoseSkeletonOverlayView @JvmOverloads constructor(
     private var frameHeight: Int = 0
     private var rotationDegrees: Int = 0
     private var isMirrored: Boolean = true
+    private var highlightCorrection: Boolean = false
+    private var highlightLandmarkIds: Set<Int> = emptySet()
+    private var highlightBones: List<Pair<Int, Int>> = emptyList()
 
     private val jointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GREEN
@@ -32,12 +35,36 @@ class PoseSkeletonOverlayView @JvmOverloads constructor(
         strokeWidth = 4f
     }
 
-    fun updatePose(newPose: Pose?, w: Int, h: Int, rotation: Int, mirrored: Boolean) {
+    private val highlightJointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFB300")
+        style = Paint.Style.FILL
+        strokeWidth = 8f
+    }
+
+    private val highlightBonePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FF6F00")
+        style = Paint.Style.STROKE
+        strokeWidth = 7f
+    }
+
+    fun updatePose(
+        newPose: Pose?,
+        w: Int,
+        h: Int,
+        rotation: Int,
+        mirrored: Boolean,
+        highlight: Boolean = false,
+        highlightLandmarkIds: Set<Int> = emptySet(),
+        highlightBones: List<Pair<Int, Int>> = emptyList()
+    ) {
         pose = newPose
         frameWidth = w
         frameHeight = h
         rotationDegrees = rotation
         isMirrored = mirrored
+        highlightCorrection = highlight
+        this.highlightLandmarkIds = highlightLandmarkIds
+        this.highlightBones = highlightBones
         invalidate()
     }
 
@@ -48,30 +75,57 @@ class PoseSkeletonOverlayView @JvmOverloads constructor(
         if (landmarks.isEmpty()) return
 
         val (scaleX, scaleY) = computeScale()
+        val targeted = highlightCorrection && highlightLandmarkIds.isNotEmpty()
 
-        drawConnection(canvas, p, PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_HIP, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.NOSE, PoseLandmark.LEFT_EYE, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.NOSE, PoseLandmark.RIGHT_EYE, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.LEFT_EYE, PoseLandmark.LEFT_EAR, scaleX, scaleY)
-        drawConnection(canvas, p, PoseLandmark.RIGHT_EYE, PoseLandmark.RIGHT_EAR, scaleX, scaleY)
+        val connections =
+            listOf(
+                PoseLandmark.LEFT_SHOULDER to PoseLandmark.RIGHT_SHOULDER,
+                PoseLandmark.LEFT_HIP to PoseLandmark.RIGHT_HIP,
+                PoseLandmark.LEFT_SHOULDER to PoseLandmark.LEFT_ELBOW,
+                PoseLandmark.LEFT_ELBOW to PoseLandmark.LEFT_WRIST,
+                PoseLandmark.RIGHT_SHOULDER to PoseLandmark.RIGHT_ELBOW,
+                PoseLandmark.RIGHT_ELBOW to PoseLandmark.RIGHT_WRIST,
+                PoseLandmark.LEFT_SHOULDER to PoseLandmark.LEFT_HIP,
+                PoseLandmark.RIGHT_SHOULDER to PoseLandmark.RIGHT_HIP,
+                PoseLandmark.LEFT_HIP to PoseLandmark.LEFT_KNEE,
+                PoseLandmark.LEFT_KNEE to PoseLandmark.LEFT_ANKLE,
+                PoseLandmark.RIGHT_HIP to PoseLandmark.RIGHT_KNEE,
+                PoseLandmark.RIGHT_KNEE to PoseLandmark.RIGHT_ANKLE,
+                PoseLandmark.NOSE to PoseLandmark.LEFT_EYE,
+                PoseLandmark.NOSE to PoseLandmark.RIGHT_EYE,
+                PoseLandmark.LEFT_EYE to PoseLandmark.LEFT_EAR,
+                PoseLandmark.RIGHT_EYE to PoseLandmark.RIGHT_EAR
+            )
+
+        for ((start, end) in connections) {
+            val paint =
+                if (highlightCorrection && !targeted) {
+                    highlightBonePaint
+                } else {
+                    bonePaint
+                }
+            drawConnection(canvas, p, start, end, scaleX, scaleY, paint)
+        }
+
+        if (targeted) {
+            for ((start, end) in highlightBones) {
+                drawConnection(canvas, p, start, end, scaleX, scaleY, highlightBonePaint)
+            }
+        }
 
         for (lm in landmarks) {
             val conf = lm.inFrameLikelihood
-            if (conf >= 0.3f) {
-                val (vx, vy) = mapPoint(lm.position.x, lm.position.y, scaleX, scaleY)
-                canvas.drawCircle(vx, vy, 6f, jointPaint)
-            }
+            if (conf < 0.3f) continue
+            val (vx, vy) = mapPoint(lm.position.x, lm.position.y, scaleX, scaleY)
+            val isTarget = targeted && highlightLandmarkIds.contains(lm.landmarkType)
+            val paint =
+                when {
+                    isTarget -> highlightJointPaint
+                    highlightCorrection && !targeted -> highlightJointPaint
+                    else -> jointPaint
+                }
+            val radius = if (isTarget || (highlightCorrection && !targeted)) 9f else 6f
+            canvas.drawCircle(vx, vy, radius, paint)
         }
     }
 
@@ -81,14 +135,15 @@ class PoseSkeletonOverlayView @JvmOverloads constructor(
         startType: Int,
         endType: Int,
         scaleX: Float,
-        scaleY: Float
+        scaleY: Float,
+        paint: Paint = bonePaint
     ) {
         val sLm = pose.getPoseLandmark(startType) ?: return
         val eLm = pose.getPoseLandmark(endType) ?: return
         if (sLm.inFrameLikelihood < 0.3f || eLm.inFrameLikelihood < 0.3f) return
         val (sx, sy) = mapPoint(sLm.position.x, sLm.position.y, scaleX, scaleY)
         val (ex, ey) = mapPoint(eLm.position.x, eLm.position.y, scaleX, scaleY)
-        canvas.drawLine(sx, sy, ex, ey, bonePaint)
+        canvas.drawLine(sx, sy, ex, ey, paint)
     }
 
     private fun computeScale(): Pair<Float, Float> {
@@ -119,5 +174,3 @@ class PoseSkeletonOverlayView @JvmOverloads constructor(
         return vx to vy
     }
 }
-
-

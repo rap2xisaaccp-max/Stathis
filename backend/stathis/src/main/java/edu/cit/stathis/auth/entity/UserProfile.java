@@ -39,8 +39,22 @@ public class UserProfile {
   @Column(name = "birthdate")
   private LocalDate birthdate;
 
+  /** Explicit age collected during profile setup (preferred over deriving from birthdate). */
+  @Column(name = "age")
+  private Integer age;
+
   @Column(name = "profile_picture_url")
   private String profilePictureUrl;
+
+  /**
+   * JSON array of floats representing the enrolled face embedding.
+   * Stored in Supabase-hosted Postgres for identity verification during exercises.
+   */
+  @Column(name = "face_embedding", columnDefinition = "TEXT")
+  private String faceEmbedding;
+
+  @Column(name = "face_registered")
+  private Boolean faceRegistered;
 
   @Column(name = "school")
   private String school;
@@ -72,7 +86,8 @@ public class UserProfile {
   private OffsetDateTime updatedAt;
 
   @Transient
-  public Integer getAge() {
+  public Integer resolveAge() {
+    if (age != null) return age;
     if (birthdate == null) return null;
 
     LocalDate dateNow = LocalDate.now();
@@ -80,6 +95,12 @@ public class UserProfile {
     return dateNow.getYear()
         - birthdate.getYear()
         - (dateNow.getDayOfYear() < birthdate.getDayOfYear() ? 1 : 0);
+  }
+
+  public boolean hasFaceRegistered() {
+    return Boolean.TRUE.equals(faceRegistered)
+        && faceEmbedding != null
+        && !faceEmbedding.isBlank();
   }
 
   @Transient

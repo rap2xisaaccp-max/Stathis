@@ -45,7 +45,8 @@ export async function signUp(form: SignUpFormValues) {
     // This bypasses any potential issues with our custom client
     try {
       console.log('[Auth] Trying direct fetch approach');
-      const response = await fetch('https://stathis-u8s6.onrender.com/api/auth/register', {
+      const { API_BASE_URL } = await import('@/lib/api/server-client');
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -29,6 +29,9 @@ import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.BodyTemperatureRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.RespiratoryRateRecord
+import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseGoalCompletion
+import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseRepAccumulator
+import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSubmissionGuard
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.ExercisePerformance
 import citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen
@@ -46,13 +49,78 @@ import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
+import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
+import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
+import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
+import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
+import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
+import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
+import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
+import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
 import com.google.mlkit.vision.pose.Pose
+import kotlinx.coroutines.launch
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+
+private enum class IdentityPhase {
+    /** Waiting for user to tap Verify (start of session) */
+    UNVERIFIED,
+    /** Initial FaceNet biometric scan */
+    VERIFYING,
+    /** Recognized user — skeleton trusted, reps may be counted */
+    VERIFIED,
+    /** Skeleton left frame — counting paused until face matches again */
+    REVERIFYING
+}
+
+private fun parseClassroomAndTaskId(encoded: String?): Pair<String?, String?> {
+    if (encoded.isNullOrBlank()) return null to null
+    val parts = encoded.split('|', limit = 2)
+    return if (parts.size == 2) parts[0] to parts[1] else encoded to null
+}
+
+private fun buildExercisePerformance(
+    template: ExerciseTemplate,
+    classroomIdEncoded: String?,
+    actualReps: Int,
+    actualAccuracy: Float,
+    actualTime: Int,
+    weightKg: Double? = null
+): ExercisePerformance {
+    val (classroomId, taskId) = parseClassroomAndTaskId(classroomIdEncoded)
+    val calories = ExerciseCalorieCalculator.calculate(template.exerciseType, actualReps, weightKg)
+    return ExercisePerformance(
+        taskId = taskId.orEmpty(),
+        templateId = template.physicalId,
+        actualReps = actualReps,
+        actualAccuracy = actualAccuracy,
+        actualTime = actualTime,
+        goalReps = template.goalReps,
+        goalAccuracy = template.goalAccuracy,
+        goalTime = template.goalTime,
+        isCompleted = actualReps >= template.goalReps && actualAccuracy >= template.goalAccuracy,
+        score = calculateScore(actualReps, actualAccuracy, actualTime, template),
+        caloriesBurned = calories,
+        exerciseType = template.exerciseType,
+        classroomId = classroomId
+    )
+}
 
 @Composable
 fun ExerciseTemplateRenderer(
     template: ExerciseTemplate,
     classroomId: String? = null,
-    onComplete: (ExercisePerformance) -> Unit,
+    navController: NavHostController? = null,
+    returnRouteAfterMetrics: String? = null,
+    maxAttempts: Int = 0,
+    attemptsUsed: Int = 0,
+    onSessionFinished: (ExercisePerformance) -> Unit,
+    onFinishSession: () -> Unit,
+    /** Reset submission guard when a new attempt begins (start or retry). */
+    onExerciseAttemptReady: () -> Unit = {},
     onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -60,11 +128,107 @@ fun ExerciseTemplateRenderer(
     var isExerciseCompleted by remember { mutableStateOf(false) }
     var exercisePerformance by remember { mutableStateOf<ExercisePerformance?>(null) }
     var latestExerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
+    var isCheckingBodyMetrics by remember { mutableStateOf(false) }
+    var bodyMetricsError by remember { mutableStateOf<String?>(null) }
+
+    var identityPhase by remember { mutableStateOf(IdentityPhase.UNVERIFIED) }
+    var identityMessage by remember { mutableStateOf<String?>(null) }
+
+    var displayedAttempts by remember { mutableIntStateOf(attemptsUsed) }
+    /** Survives overlay/camera remounts during face re-verify. */
+    val sessionRepAccumulator = remember { ExerciseRepAccumulator() }
+    var sessionReps by remember { mutableIntStateOf(0) }
+    var sessionInProgress by remember { mutableStateOf(false) }
+    var resumeTimerAfterReverify by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
+    val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
+    val faceIdentityState by faceIdentityViewModel.state.collectAsState()
+    val adaptiveSessionViewModel: AdaptiveSessionViewModel = hiltViewModel()
+    val adaptiveFeedback by adaptiveSessionViewModel.feedback.collectAsState()
+    val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
+    val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
+    val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
+    val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
+    val context = LocalContext.current
+    val staticControlArm = remember {
+        RctExperimentPrefs.isStaticControl(context)
+    }
+
+    LaunchedEffect(isExerciseStarted, template.exerciseType, classroomId) {
+        if (isExerciseStarted) {
+            val (classroomPhysicalId, taskPhysicalId) = parseClassroomAndTaskId(classroomId)
+            adaptiveSessionViewModel.startSession(
+                exerciseType = template.exerciseType,
+                taskId = taskPhysicalId,
+                classroomId = classroomPhysicalId,
+                staticControl = staticControlArm,
+                sessionContext = RctExperimentPrefs.CONTEXT_TASK
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            adaptiveSessionViewModel.flushAndEnd()
+        }
+    }
+
+    LaunchedEffect(isExerciseStarted) {
+        if (!isExerciseStarted) {
+            identityPhase = IdentityPhase.UNVERIFIED
+            identityMessage = null
+            faceIdentityViewModel.clearSessionVerification()
+        }
+    }
+
+    LaunchedEffect(attemptsUsed) {
+        if (attemptsUsed > displayedAttempts) {
+            displayedAttempts = attemptsUsed
+        }
+    }
 
     Box(
         modifier = modifier.fillMaxSize()
     ) {
         if (!isExerciseStarted) {
+            if (maxAttempts > 0 && attemptsUsed >= maxAttempts) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Maximum attempts reached",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You have used all $maxAttempts attempts for this exercise.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = onFinishSession,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Complete")
+                    }
+                }
+            } else {
             // Show header and instructions when exercise hasn't started
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -83,39 +247,137 @@ fun ExerciseTemplateRenderer(
                 ) {
                     ExerciseInstructions(
                         template = template,
-                        onStart = { isExerciseStarted = true },
+                        isCheckingBodyMetrics = isCheckingBodyMetrics,
+                        bodyMetricsError = bodyMetricsError,
+                        onStart = {
+                            scope.launch {
+                                isCheckingBodyMetrics = true
+                                bodyMetricsError = null
+                                val complete = ensureBodyMetrics.ensureComplete()
+                                isCheckingBodyMetrics = false
+                                if (complete) {
+                                    onExerciseAttemptReady()
+                                    isExerciseStarted = true
+                                    identityPhase = IdentityPhase.UNVERIFIED
+                                    faceIdentityViewModel.clearSessionVerification()
+                                } else {
+                                    val destination = if (!returnRouteAfterMetrics.isNullOrBlank()) {
+                                        "body_metrics_setup?returnRoute=${Uri.encode(returnRouteAfterMetrics)}"
+                                    } else {
+                                        "body_metrics_setup?returnRoute="
+                                    }
+                                    if (navController != null) {
+                                        navController.navigate(destination)
+                                    } else {
+                                        bodyMetricsError = "Please complete your height, weight, age, and face registration in Profile before starting."
+                                    }
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
             }
+            }
         } else if (!isExerciseCompleted) {
-            // Fullscreen exercise mode - no header, just camera and overlays
+            val isRecognized = identityPhase == IdentityPhase.VERIFIED
+            val needsFaceScan =
+                identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFYING
+
+            // Fullscreen exercise mode
             ExerciseScreen(
                 navController = rememberNavController(),
-                enableVitalsIndicator = false, // We'll show our own vitals indicator
-                enablePostureAnalysis = true,
+                enableVitalsIndicator = false,
+                enablePostureAnalysis = isRecognized,
                 exerciseType = resolveExerciseType(template.exerciseType),
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
-                onExerciseFeedback = { feedback -> latestExerciseFeedback = feedback }
+                onExerciseFeedback = { feedback ->
+                    // Only accept reps while the skeleton is classified as recognized
+                    if (identityPhase == IdentityPhase.VERIFIED) {
+                        latestExerciseFeedback = feedback
+                        adaptiveSessionViewModel.onExerciseFeedback(feedback)
+                    }
+                },
+                // Pose counting is gated in the overlay; tracking follows verified identity only.
+                enableExerciseTracking = isRecognized,
+                verifyFace = needsFaceScan,
+                enrolledFaceEmbedding = faceIdentityState.enrolledEmbedding,
+                onFaceVerified = {
+                    val wasReverify = identityPhase == IdentityPhase.REVERIFYING
+                    identityPhase = IdentityPhase.VERIFIED
+                    identityMessage = if (wasReverify) {
+                        "Identity confirmed. Exercise tracking resumed."
+                    } else {
+                        "You are now ready to start."
+                    }
+                },
+                monitorSkeletonPresence = isRecognized,
+                onSkeletonLeftFrame = {
+                    // Only after 5s out of frame — pause counting until face matches again
+                    if (identityPhase == IdentityPhase.VERIFIED) {
+                        identityPhase = IdentityPhase.REVERIFYING
+                        identityMessage =
+                            "You left the camera for 5 seconds. Verify your face to resume tracking."
+                        faceIdentityViewModel.resetVerification()
+                    }
+                },
+                adaptiveHighlight = adaptiveHighlight,
+                adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
+                adaptiveHighlightBones = adaptiveHighlightBones,
+                adaptiveMessage = adaptiveFeedback?.message,
+                adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel
             )
 
-            // Overlay with exercise controls
             ExerciseControlsOverlay(
                 template = template,
                 classroomId = classroomId,
                 liveExerciseFeedback = latestExerciseFeedback,
+                identityPhase = identityPhase,
+                identityMessage = when (identityPhase) {
+                    IdentityPhase.VERIFYING, IdentityPhase.REVERIFYING ->
+                        faceIdentityState.statusText.ifBlank { identityMessage }
+                    IdentityPhase.VERIFIED -> identityMessage ?: "You are now ready to start."
+                    IdentityPhase.UNVERIFIED -> identityMessage
+                },
+                onRequestVerify = {
+                    if (faceIdentityState.faceRegistered && faceIdentityState.enrolledEmbedding != null) {
+                        identityPhase = IdentityPhase.VERIFYING
+                        identityMessage = "Look at the camera to verify your identity."
+                        faceIdentityViewModel.resetVerification()
+                    } else {
+                        identityMessage = "Register your face in Profile before verifying."
+                    }
+                },
+                onTrackingActive = isRecognized,
+                sessionRepAccumulator = sessionRepAccumulator,
+                sessionReps = sessionReps,
+                onSessionRepsChange = { sessionReps = it },
+                sessionInProgress = sessionInProgress,
+                onSessionInProgressChange = { sessionInProgress = it },
+                resumeTimerAfterReverify = resumeTimerAfterReverify,
+                onResumeTimerAfterReverifyChange = { resumeTimerAfterReverify = it },
                 onComplete = { performance ->
+                    if (isExerciseCompleted) return@ExerciseControlsOverlay
                     exercisePerformance = performance
                     isExerciseCompleted = true
-                    onComplete(performance)
+                    sessionInProgress = false
+                    resumeTimerAfterReverify = false
+                    displayedAttempts = maxOf(displayedAttempts + 1, attemptsUsed + 1)
+                    adaptiveSessionViewModel.flushAndEnd()
+                    onSessionFinished(performance)
                 },
                 onCancel = {
-                    // Reset exercise state when cancelled
                     isExerciseStarted = false
                     isExerciseCompleted = false
                     exercisePerformance = null
-                    // Call the provided cancel callback
+                    sessionRepAccumulator.reset()
+                    sessionReps = 0
+                    sessionInProgress = false
+                    resumeTimerAfterReverify = false
+                    identityPhase = IdentityPhase.UNVERIFIED
+                    faceIdentityViewModel.clearSessionVerification()
+                    adaptiveSessionViewModel.flushAndEnd()
                     onCancel?.invoke()
                 },
                 modifier = Modifier.fillMaxSize()
@@ -126,11 +388,20 @@ fun ExerciseTemplateRenderer(
                 ExerciseResults(
                     template = template,
                     performance = performance,
+                    attemptsUsed = displayedAttempts,
+                    maxAttempts = maxAttempts,
+                    adaptiveSummary = adaptiveSessionSummary,
                     onRetry = {
+                        onExerciseAttemptReady()
+                        sessionRepAccumulator.reset()
+                        sessionReps = 0
+                        sessionInProgress = false
+                        resumeTimerAfterReverify = false
                         isExerciseStarted = false
                         isExerciseCompleted = false
                         exercisePerformance = null
                     },
+                    onComplete = onFinishSession,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -217,6 +488,8 @@ private fun ExerciseHeader(
 private fun ExerciseInstructions(
     template: ExerciseTemplate,
     onStart: () -> Unit,
+    isCheckingBodyMetrics: Boolean = false,
+    bodyMetricsError: String? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -301,9 +574,21 @@ private fun ExerciseInstructions(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            if (bodyMetricsError != null) {
+                Text(
+                    text = bodyMetricsError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Start Button
             Button(
                 onClick = onStart,
+                enabled = !isCheckingBodyMetrics,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -312,16 +597,29 @@ private fun ExerciseInstructions(
                     .fillMaxWidth()
                     .height(56.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Start",
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Start Exercise",
-                    style = MaterialTheme.typography.labelLarge
-                )
+                if (isCheckingBodyMetrics) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Checking profile...",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Start",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Start Exercise",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
         }
     }
@@ -388,17 +686,12 @@ private fun ExerciseInProgress(
             }
 
             // Exercise completed
-            val performance = ExercisePerformance(
-                taskId = "",
-                templateId = template.physicalId,
+            val performance = buildExercisePerformance(
+                template = template,
+                classroomIdEncoded = null,
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
-                actualTime = currentTime,
-                goalReps = template.goalReps,
-                goalAccuracy = template.goalAccuracy,
-                goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                actualTime = currentTime
             )
             onComplete(performance)
         }
@@ -610,7 +903,7 @@ private fun MinimalProgressIndicator(
     } else {
         progress
     }
-    
+
     Row(
         modifier = modifier.width(76.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -651,16 +944,37 @@ private fun ExerciseControlsOverlay(
     template: ExerciseTemplate,
     classroomId: String?,
     liveExerciseFeedback: OnDeviceFeedback?,
+    identityPhase: IdentityPhase,
+    identityMessage: String?,
+    onRequestVerify: () -> Unit,
+    onTrackingActive: Boolean,
+    sessionRepAccumulator: ExerciseRepAccumulator,
+    sessionReps: Int,
+    onSessionRepsChange: (Int) -> Unit,
+    sessionInProgress: Boolean,
+    onSessionInProgressChange: (Boolean) -> Unit,
+    resumeTimerAfterReverify: Boolean,
+    onResumeTimerAfterReverifyChange: (Boolean) -> Unit,
     onComplete: (ExercisePerformance) -> Unit,
     onCancel: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    exerciseSyncViewModel: ExerciseSyncViewModel = hiltViewModel()
 ) {
-    var currentReps by remember { mutableIntStateOf(0) }
+    var currentReps by remember { mutableIntStateOf(sessionReps) }
+    // Keep local display in sync with parent-owned session total
+    LaunchedEffect(sessionReps) {
+        if (currentReps != sessionReps) currentReps = sessionReps
+    }
     var currentTime by remember { mutableIntStateOf(0) }
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
     var isTimerRunning by remember { mutableStateOf(false) }
+    /** Idempotent completion for auto-goal, Finish, and Complete-during-reverify. */
+    var hasEmittedCompletion by remember { mutableStateOf(false) }
+    val overlayCompletionGuard = remember { ExerciseSubmissionGuard() }
     var shouldRequestPermissions by remember { mutableStateOf(false) }
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
+    val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
+    val (parsedClassroomId, parsedTaskId) = remember(classroomId) { parseClassroomAndTaskId(classroomId) }
 
     // Pose detection state
     val exerciseDetector = remember { ExerciseDetector() }
@@ -669,14 +983,60 @@ private fun ExerciseControlsOverlay(
     var exerciseFeedback by remember { mutableStateOf<List<String>>(emptyList()) }
     var latestPose by remember { mutableStateOf<Pose?>(null) }
 
-    LaunchedEffect(liveExerciseFeedback) {
-        liveExerciseFeedback?.let { feedback ->
-            currentReps = feedback.repCount
+    fun applyLiveReps(detectorReps: Int) {
+        val total = sessionRepAccumulator.applyDetectorReps(detectorReps)
+        currentReps = total
+        onSessionRepsChange(total)
+    }
+
+    // Re-apply when timer resumes after re-verify even if feedback object identity is unchanged
+    LaunchedEffect(liveExerciseFeedback, isTimerRunning, onTrackingActive, identityPhase) {
+        val feedback = liveExerciseFeedback ?: return@LaunchedEffect
+        if (onTrackingActive && isTimerRunning && identityPhase == IdentityPhase.VERIFIED) {
+            applyLiveReps(feedback.repCount)
             exerciseState = feedback.exerciseState
             exerciseConfidence = feedback.confidence
             exerciseFeedback = feedback.formIssues
             currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
         }
+    }
+
+    LaunchedEffect(identityPhase) {
+        when (identityPhase) {
+            IdentityPhase.REVERIFYING -> {
+                if (isTimerRunning) {
+                    onResumeTimerAfterReverifyChange(true)
+                    isTimerRunning = false
+                }
+            }
+            IdentityPhase.VERIFIED -> {
+                if (resumeTimerAfterReverify) {
+                    isTimerRunning = true
+                    onResumeTimerAfterReverifyChange(false)
+                }
+            }
+            IdentityPhase.UNVERIFIED, IdentityPhase.VERIFYING -> {
+                onResumeTimerAfterReverifyChange(false)
+                isTimerRunning = false
+            }
+        }
+    }
+
+    // Publish live progress to teacher dashboard every 2s while running
+    LaunchedEffect(isTimerRunning, currentReps, currentTime, currentAccuracy) {
+        if (!isTimerRunning) return@LaunchedEffect
+        kotlinx.coroutines.delay(2000)
+        exerciseSyncViewModel.publishProgress(
+            classroomId = parsedClassroomId,
+            taskId = parsedTaskId,
+            exerciseTemplateId = template.physicalId,
+            exerciseType = template.exerciseType,
+            reps = currentReps,
+            goalReps = template.goalReps,
+            accuracy = currentAccuracy.toDouble(),
+            timeTakenSeconds = currentTime,
+            completed = false
+        )
     }
 
     // Function to handle pose detection
@@ -692,7 +1052,7 @@ private fun ExerciseControlsOverlay(
             else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
         }
 
-        currentReps = result.repCount
+        applyLiveReps(result.repCount)
         exerciseState = result.state
         exerciseConfidence = result.confidence ?: 0f
         exerciseFeedback = result.feedback
@@ -774,39 +1134,75 @@ private fun ExerciseControlsOverlay(
     }
 
     LaunchedEffect(isTimerRunning, rememberedClassroomId) {
-        if (isTimerRunning) {
-            // Start vitals monitoring when exercise starts
-            if (connectionState == citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED) {
-                // Decode classroomId to extract both classroom and task physical IDs
-                val (actualClassroomId, taskPhysicalId) = if (rememberedClassroomId?.contains("|") == true) {
-                    val parts = rememberedClassroomId.split("|")
-                    Pair(parts[0], parts.getOrNull(1))
-                } else {
-                    Pair(rememberedClassroomId, null)
-                }
+        if (!isTimerRunning) {
+            // Pause / Stop: do not wipe reps; only stop vitals if attempt still open
+            if (!hasEmittedCompletion) {
+                exerciseVitalsMonitoringService.stopMonitoring()
+            }
+            return@LaunchedEffect
+        }
 
-                exerciseVitalsMonitoringService.startMonitoring(
-                    classroomId = actualClassroomId ?: "unknown_classroom", // Use decoded classroom ID
-                    taskId = taskPhysicalId ?: template.physicalId, // Use decoded task physical ID (TASK-UUID), fallback to template
-                    physicalId = currentPhysicalId ?: "unknown_user", // Use actual user physical ID
-                    studentId = currentPhysicalId ?: "unknown_user", // Use actual user physical ID as student ID
-                    vitalsProvider = { vitalSigns },
-                    scope = this
+        // Start (or resume) vitals monitoring
+        if (connectionState == citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED) {
+            val (actualClassroomId, taskPhysicalId) = if (rememberedClassroomId?.contains("|") == true) {
+                val parts = rememberedClassroomId.split("|")
+                Pair(parts[0], parts.getOrNull(1))
+            } else {
+                Pair(rememberedClassroomId, null)
+            }
+
+            exerciseVitalsMonitoringService.startMonitoring(
+                classroomId = actualClassroomId ?: "unknown_classroom",
+                taskId = taskPhysicalId ?: template.physicalId,
+                physicalId = currentPhysicalId ?: "unknown_user",
+                studentId = currentPhysicalId ?: "unknown_user",
+                vitalsProvider = { vitalSigns },
+                scope = this
+            )
+        }
+
+        // First Start of an attempt: clear only when parent has no progress.
+        // If overlay remounted mid-session, parent sessionReps/sessionInProgress survive — do not wipe.
+        if (!sessionInProgress) {
+            onSessionInProgressChange(true)
+            if (ExerciseGoalCompletion.shouldClearCountersOnStart(sessionReps)) {
+                exerciseDetector.resetExercise()
+                sessionRepAccumulator.reset()
+                currentReps = 0
+                onSessionRepsChange(0)
+                currentTime = 0
+            } else {
+                currentReps = sessionReps
+            }
+        }
+
+        while (!hasEmittedCompletion) {
+            if (ExerciseGoalCompletion.shouldAutoComplete(
+                    actualReps = currentReps,
+                    goalReps = template.goalReps,
+                    actualTimeSeconds = currentTime,
+                    goalTimeSeconds = template.goalTime
                 )
+            ) {
+                break
             }
+            kotlinx.coroutines.delay(1000)
+            currentTime++
+        }
 
-            // Reset exercise detector when starting
-            exerciseDetector.resetExercise()
-            currentReps = 0
-            currentTime = 0
+        if (!hasEmittedCompletion &&
+            ExerciseGoalCompletion.shouldAutoComplete(
+                actualReps = currentReps,
+                goalReps = template.goalReps,
+                actualTimeSeconds = currentTime,
+                goalTimeSeconds = template.goalTime
+            )
+        ) {
+            if (!overlayCompletionGuard.tryAcquire()) return@LaunchedEffect
+            hasEmittedCompletion = true
+            isTimerRunning = false
+            onSessionInProgressChange(false)
 
-            // Timer for exercise duration
-            while (currentTime < template.goalTime && currentReps < template.goalReps) {
-                kotlinx.coroutines.delay(1000)
-                currentTime++
-            }
-
-            // Stop vitals monitoring with post-activity vitals when exercise completes
             val fallbackVitals = VitalSigns(
                 userId = currentPhysicalId ?: "unknown_user",
                 systolicBP = 120,
@@ -818,29 +1214,72 @@ private fun ExerciseControlsOverlay(
             )
             exerciseVitalsMonitoringService.stopMonitoringWithPostActivity(vitalSigns ?: fallbackVitals)
 
-            // Exercise completed
-            val performance = ExercisePerformance(
-                taskId = "",
-                templateId = template.physicalId,
+            val performance = buildExercisePerformance(
+                template = template,
+                classroomIdEncoded = classroomId,
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
                 actualTime = currentTime,
+                weightKg = weightKg
+            )
+            exerciseSyncViewModel.publishProgress(
+                classroomId = parsedClassroomId,
+                taskId = parsedTaskId,
+                exerciseTemplateId = template.physicalId,
+                exerciseType = template.exerciseType,
+                reps = currentReps,
                 goalReps = template.goalReps,
-                goalAccuracy = template.goalAccuracy,
-                goalTime = template.goalTime,
-                isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                accuracy = currentAccuracy.toDouble(),
+                timeTakenSeconds = currentTime,
+                completed = true
             )
             onComplete(performance)
-        } else {
-            // Stop vitals monitoring when timer stops
-            exerciseVitalsMonitoringService.stopMonitoring()
         }
+    }
+
+    // Immediate auto-complete when counted reps hit the goal (no wait for next timer tick)
+    LaunchedEffect(currentReps, sessionInProgress, hasEmittedCompletion) {
+        if (hasEmittedCompletion || !sessionInProgress) return@LaunchedEffect
+        if (!ExerciseGoalCompletion.shouldAutoComplete(
+                actualReps = currentReps,
+                goalReps = template.goalReps,
+                actualTimeSeconds = currentTime,
+                goalTimeSeconds = template.goalTime
+            )
+        ) {
+            return@LaunchedEffect
+        }
+        if (!overlayCompletionGuard.tryAcquire()) return@LaunchedEffect
+        hasEmittedCompletion = true
+        isTimerRunning = false
+        onSessionInProgressChange(false)
+        shouldStopWithPostActivity = true
+        val performance = buildExercisePerformance(
+            template = template,
+            classroomIdEncoded = classroomId,
+            actualReps = currentReps,
+            actualAccuracy = currentAccuracy,
+            actualTime = currentTime,
+            weightKg = weightKg
+        )
+        exerciseSyncViewModel.publishProgress(
+            classroomId = parsedClassroomId,
+            taskId = parsedTaskId,
+            exerciseTemplateId = template.physicalId,
+            exerciseType = template.exerciseType,
+            reps = currentReps,
+            goalReps = template.goalReps,
+            accuracy = currentAccuracy.toDouble(),
+            timeTakenSeconds = currentTime,
+            completed = true
+        )
+        onComplete(performance)
     }
 
     Box(
         modifier = modifier.fillMaxSize()
     ) {
+        if (identityPhase == IdentityPhase.VERIFIED) {
         // Minimal progress overlay at the very top edge
         Card(
             modifier = Modifier
@@ -1014,8 +1453,77 @@ private fun ExerciseControlsOverlay(
                 }
             }
         }
+        }
 
-        // Improved control buttons at the bottom with better spacing
+        // Identity / verification status banner
+        if (
+            identityPhase == IdentityPhase.VERIFYING ||
+            identityPhase == IdentityPhase.REVERIFYING ||
+            (identityPhase == IdentityPhase.VERIFIED && !isTimerRunning) ||
+            (identityPhase == IdentityPhase.UNVERIFIED && !identityMessage.isNullOrBlank())
+        ) {
+            Card(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 24.dp)
+                    .fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = when (identityPhase) {
+                            IdentityPhase.VERIFIED -> "You are now ready to start."
+                            IdentityPhase.VERIFYING -> "Biometric facial recognition"
+                            IdentityPhase.REVERIFYING -> "Re-verification required"
+                            IdentityPhase.UNVERIFIED -> "Identity verification required"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+                    if (!identityMessage.isNullOrBlank() && identityPhase != IdentityPhase.VERIFIED) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = identityMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    if (identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFYING) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (identityPhase == IdentityPhase.REVERIFYING) {
+                                "Rep counting is paused. Only the registered student can resume."
+                            } else {
+                                "Only the registered student can pass this check."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    if (identityPhase == IdentityPhase.VERIFIED) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Tap Start when you are ready to begin the exercise.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+
+        // Controls: Verify first; after success → Cancel / Start|Stop / Complete
         Card(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -1033,13 +1541,9 @@ private fun ExerciseControlsOverlay(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Cancel Button
                 Button(
                     onClick = {
-                        // Stop vitals monitoring with post-activity vitals
-                        // We'll handle this in the LaunchedEffect below
                         shouldStopWithPostActivity = true
-                        // Call cancel callback if provided
                         onCancel?.invoke()
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -1055,72 +1559,168 @@ private fun ExerciseControlsOverlay(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Cancel",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text(text = "Cancel", style = MaterialTheme.typography.bodyMedium)
                 }
 
-                // Start/Stop Button
-                Button(
-                    onClick = {
-                        if (!isTimerRunning) {
-                            // Try to connect to Health Connect when starting exercise
-                            when (connectionState) {
-                                citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.DISCONNECTED -> {
-                                    // Try to connect first
-                                    healthConnectViewModel.connect()
-                                    // If still disconnected after a brief delay, request permissions
-                                    shouldRequestPermissions = true
-                                }
-                                citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED -> {
-                                    // Already connected, start monitoring
-                                    healthConnectViewModel.startMonitoring()
-                                }
-                                else -> {
-                                    // For other states, just try to connect
-                                    healthConnectViewModel.connect()
-                                }
+                when (identityPhase) {
+                    IdentityPhase.UNVERIFIED -> {
+                        Button(
+                            onClick = { onRequestVerify() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier
+                                .weight(1.4f)
+                                .height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Face,
+                                contentDescription = "Verify",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Verify", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    IdentityPhase.VERIFYING, IdentityPhase.REVERIFYING -> {
+                        Button(
+                            onClick = { },
+                            enabled = false,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier
+                                .weight(1.4f)
+                                .height(48.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (identityPhase == IdentityPhase.REVERIFYING) {
+                                    "Re-verifying"
+                                } else {
+                                    "Verifying"
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        // Allow Complete during re-verify so session can still be ended
+                        if (identityPhase == IdentityPhase.REVERIFYING) {
+                            Button(
+                                onClick = {
+                                    if (!overlayCompletionGuard.tryAcquire()) return@Button
+                                    hasEmittedCompletion = true
+                                    isTimerRunning = false
+                                    onSessionInProgressChange(false)
+                                    shouldStopWithPostActivity = true
+                                    val performance = buildExercisePerformance(
+                                        template = template,
+                                        classroomIdEncoded = classroomId,
+                                        actualReps = currentReps,
+                                        actualAccuracy = currentAccuracy,
+                                        actualTime = currentTime,
+                                        weightKg = weightKg
+                                    )
+                                    exerciseSyncViewModel.publishProgress(
+                                        classroomId = parsedClassroomId,
+                                        taskId = parsedTaskId,
+                                        exerciseTemplateId = template.physicalId,
+                                        exerciseType = template.exerciseType,
+                                        reps = currentReps,
+                                        goalReps = template.goalReps,
+                                        accuracy = currentAccuracy.toDouble(),
+                                        timeTakenSeconds = currentTime,
+                                        completed = true
+                                    )
+                                    onComplete(performance)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Complete",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = "Complete", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
-                        isTimerRunning = !isTimerRunning
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTimerRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isTimerRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (isTimerRunning) "Stop" else "Start",
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isTimerRunning) "Stop" else "Start",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                    }
+                    IdentityPhase.VERIFIED -> {
+                        Button(
+                            onClick = {
+                                if (!isTimerRunning) {
+                                    when (connectionState) {
+                                        citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.DISCONNECTED -> {
+                                            healthConnectViewModel.connect()
+                                            shouldRequestPermissions = true
+                                        }
+                                        citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED -> {
+                                            healthConnectViewModel.startMonitoring()
+                                        }
+                                        else -> healthConnectViewModel.connect()
+                                    }
+                                }
+                                isTimerRunning = !isTimerRunning
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isTimerRunning) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isTimerRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                contentDescription = if (isTimerRunning) "Stop" else "Start",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isTimerRunning) "Stop" else "Start",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
 
-                // Complete Button
+
+                // Finish attempt Button
                 Button(
                     onClick = {
+                        if (!overlayCompletionGuard.tryAcquire()) return@Button
+                        hasEmittedCompletion = true
+                        isTimerRunning = false
+                        onSessionInProgressChange(false)
                         // Stop vitals monitoring with post-activity vitals
                         shouldStopWithPostActivity = true
-                        // Complete exercise manually
-                        val performance = ExercisePerformance(
-                            taskId = "",
-                            templateId = template.physicalId,
+                        // End this attempt and show performance results
+                        val performance = buildExercisePerformance(
+                            template = template,
+                            classroomIdEncoded = classroomId,
                             actualReps = currentReps,
                             actualAccuracy = currentAccuracy,
                             actualTime = currentTime,
+                            weightKg = weightKg
+                        )
+                        exerciseSyncViewModel.publishProgress(
+                            classroomId = parsedClassroomId,
+                            taskId = parsedTaskId,
+                            exerciseTemplateId = template.physicalId,
+                            exerciseType = template.exerciseType,
+                            reps = currentReps,
                             goalReps = template.goalReps,
-                            goalAccuracy = template.goalAccuracy,
-                            goalTime = template.goalTime,
-                            isCompleted = currentReps >= template.goalReps && currentAccuracy >= template.goalAccuracy,
-                            score = calculateScore(currentReps, currentAccuracy, currentTime, template)
+                            accuracy = currentAccuracy.toDouble(),
+                            timeTakenSeconds = currentTime,
+                            completed = true
                         )
                         onComplete(performance)
                     },
@@ -1130,14 +1730,16 @@ private fun ExerciseControlsOverlay(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "Complete",
+                        contentDescription = "Finish",
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Complete",
+                        text = "Finish",
                         style = MaterialTheme.typography.bodyMedium
                     )
+                }}
+
                 }
             }
         }
@@ -1161,9 +1763,20 @@ private fun resolveExerciseType(rawType: String): ExerciseType? {
 private fun ExerciseResults(
     template: ExerciseTemplate,
     performance: ExercisePerformance,
+    attemptsUsed: Int,
+    maxAttempts: Int,
+    adaptiveSummary: AdaptiveSessionSummary = AdaptiveSessionSummary(),
     onRetry: () -> Unit,
+    onComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val canRetry = maxAttempts <= 0 || attemptsUsed < maxAttempts
+    val attemptsLabel = if (maxAttempts <= 0) {
+        "Attempt $attemptsUsed"
+    } else {
+        "Attempts: $attemptsUsed / $maxAttempts"
+    }
+
     Card(
         modifier = modifier
             .fillMaxSize()
@@ -1176,6 +1789,7 @@ private fun ExerciseResults(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -1204,12 +1818,37 @@ private fun ExerciseResults(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            Text(
+                text = attemptsLabel,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Score
             Text(
                 text = "Score: ${performance.score}/100",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
+            )
+
+            Text(
+                text = "Reps ${performance.actualReps}/${performance.goalReps} · ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Calories burned: ${"%.1f".format(performance.caloriesBurned)} kcal",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.tertiary
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -1255,14 +1894,37 @@ private fun ExerciseResults(
                         isGood = performance.actualTime <= performance.goalTime,
                         suffix = "s"
                     )
+
+                    Text(
+                        text = "Calories: ${"%.1f".format(performance.caloriesBurned)} kcal",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AdaptiveSessionSummaryCard(summary = adaptiveSummary)
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Retry Button
+            if (!canRetry) {
+                Text(
+                    text = "Maximum attempts reached. Tap Complete to finish.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
+            // Try Again
             Button(
                 onClick = onRetry,
+                enabled = canRetry,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -1276,6 +1938,22 @@ private fun ExerciseResults(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Try Again")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Complete — always available to exit regardless of remaining attempts
+            OutlinedButton(
+                onClick = onComplete,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Complete",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Complete")
             }
         }
     }
@@ -1344,11 +2022,9 @@ private fun calculateScore(
     actualTime: Int,
     template: ExerciseTemplate
 ): Int {
-    val repsScore = (actualReps.toFloat() / template.goalReps * 40f).coerceAtMost(40f)
-    val accuracyScore = (actualAccuracy / template.goalAccuracy * 40f).coerceAtMost(40f)
-    val timeScore = if (actualTime <= template.goalTime) 20f else {
-        (template.goalTime.toFloat() / actualTime * 20f).coerceAtLeast(0f)
-    }
-
-    return (repsScore + accuracyScore + timeScore).toInt()
+    if (template.goalReps <= 0) return 0
+    // Score = completed reps / target reps × 100 (capped at 100)
+    return ((actualReps.toFloat() / template.goalReps) * 100f)
+        .coerceIn(0f, 100f)
+        .toInt()
 }

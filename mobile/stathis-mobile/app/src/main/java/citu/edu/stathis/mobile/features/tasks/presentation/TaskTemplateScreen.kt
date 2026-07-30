@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavHostController
 import citu.edu.stathis.mobile.features.tasks.data.model.*
 import citu.edu.stathis.mobile.features.tasks.presentation.components.ExerciseTemplateRenderer
 import citu.edu.stathis.mobile.features.tasks.presentation.components.LessonTemplateRenderer
@@ -20,6 +21,7 @@ fun TaskTemplateScreen(
     taskId: String,
     templateType: String,
     templateId: String? = null,
+    navController: NavHostController? = null,
     onNavigateBack: () -> Unit = {},
     onTaskCompleted: () -> Unit = {},
     viewModel: TaskTemplateViewModel = hiltViewModel()
@@ -168,14 +170,24 @@ fun TaskTemplateScreen(
                             if (exerciseTemplate != null) {
                                 // Wait for task detail to load before rendering exercise template
                                 val currentTaskDetail = taskDetail
+                                val exerciseAttemptsUsed by viewModel.exerciseAttempts.collectAsState()
                                 if (currentTaskDetail != null) {
                                     ExerciseTemplateRenderer(
                                         template = exerciseTemplate,
                                         classroomId = "${currentTaskDetail.classroomPhysicalId}|${currentTaskDetail.physicalId}", // Encode both classroom and task IDs
-                                        onComplete = { performance ->
-                                            viewModel.submitExercise(taskId, performance)
-                                            onTaskCompleted()
+                                        navController = navController,
+                                        returnRouteAfterMetrics = if (templateId != null) {
+                                            "task_exercise/$taskId/$templateId"
+                                        } else {
+                                            null
                                         },
+                                        maxAttempts = currentTaskDetail.maxAttempts,
+                                        attemptsUsed = exerciseAttemptsUsed,
+                                        onSessionFinished = { performance ->
+                                            viewModel.submitExercise(taskId, performance)
+                                        },
+                                        onExerciseAttemptReady = { viewModel.prepareExerciseAttempt() },
+                                        onFinishSession = onTaskCompleted,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 } else {

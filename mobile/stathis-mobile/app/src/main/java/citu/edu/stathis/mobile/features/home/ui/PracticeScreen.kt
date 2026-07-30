@@ -36,15 +36,18 @@ import citu.edu.stathis.mobile.features.progress.data.model.ProgressActivity
 import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.classroom.data.model.Classroom
 import citu.edu.stathis.mobile.features.profile.ui.ProfileViewModel
+import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
+import android.net.Uri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PracticeScreen(
     navController: NavHostController,
     viewModel: DashboardViewModel = hiltViewModel(),
-    profileViewModel: ProfileViewModel = hiltViewModel()
+    profileViewModel: ProfileViewModel = hiltViewModel(),
+    bodyMetricsGate: BodyMetricsGateViewModel = hiltViewModel()
 ) {
     val progressState by viewModel.progressState.collectAsState()
     val achievementsState by viewModel.achievementsState.collectAsState()
@@ -104,7 +107,14 @@ fun PracticeScreen(
         item {
             ExercisesInlineList(
                 onStartExercise = { exerciseId ->
-                    navController.navigate("practice_session/$exerciseId")
+                    scope.launch {
+                        if (bodyMetricsGate.ensureComplete()) {
+                            navController.navigate("practice_session/$exerciseId")
+                        } else {
+                            val returnRoute = Uri.encode("practice_session/$exerciseId")
+                            navController.navigate("body_metrics_setup?returnRoute=$returnRoute")
+                        }
+                    }
                 }
             )
         }

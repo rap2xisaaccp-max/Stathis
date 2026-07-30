@@ -16,6 +16,7 @@ public class UserResponseDTO {
   private String firstName;
   private String lastName;
   private LocalDate birthdate;
+  private Integer age;
   private String profilePictureUrl;
   private UserRoleEnum role;
   private String school;
@@ -23,4 +24,7 @@ public class UserResponseDTO {
   private Integer yearLevel;
   private String department;
   private String positionTitle;
+  private Double heightInMeters;
+  private Double weightInKg;
+  private Boolean faceRegistered;
 }

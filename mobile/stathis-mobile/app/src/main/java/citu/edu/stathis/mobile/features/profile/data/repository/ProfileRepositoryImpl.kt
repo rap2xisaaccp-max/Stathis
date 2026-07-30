@@ -4,6 +4,8 @@ import citu.edu.stathis.mobile.core.data.AuthTokenManager
 import citu.edu.stathis.mobile.core.data.models.ClientResponse
 import citu.edu.stathis.mobile.features.auth.data.enums.UserRoles
 import citu.edu.stathis.mobile.features.auth.data.models.UserResponseDTO
+import citu.edu.stathis.mobile.features.profile.data.models.FaceEmbeddingRequest
+import citu.edu.stathis.mobile.features.profile.data.models.FaceEmbeddingResponse
 import citu.edu.stathis.mobile.features.profile.data.models.UpdateStudentProfileRequest
 import citu.edu.stathis.mobile.features.profile.data.models.UpdateUserProfileRequest
 import citu.edu.stathis.mobile.features.profile.domain.ProfileApiService
@@ -29,18 +31,19 @@ class ProfileRepositoryImpl @Inject constructor(
                     firstName = "Demo",
                     lastName = "User",
                     birthdate = null,
+                    age = null,
                     profilePictureUrl = null,
                     school = "Demo University",
                     course = "Computer Science",
-                    yearLevel = 3,  // Changed from String "3" to Int 3
+                    yearLevel = 3,
                     role = UserRoles.STUDENT,
-                    department = null,  // null for students - teacher-only field
-                    positionTitle = null,  // null for students - teacher-only field
-                    heightInMeters = null,  // Added missing field
-                    weightInKg = null,  // Added missing field
-                    emailVerified = true  // Added missing field
+                    department = null,
+                    positionTitle = null,
+                    heightInMeters = null,
+                    weightInKg = null,
+                    faceRegistered = false,
+                    emailVerified = true
                 )
-                // Ensure identity is stored for downstream features (e.g., task progress fallback)
                 authTokenManager.updateUserIdentity(
                     physicalId = mockProfile.physicalId,
                     role = mockProfile.role
@@ -53,7 +56,6 @@ class ProfileRepositoryImpl @Inject constructor(
             }
             
             val response = profileApiService.getStudentProfile()
-            // Store identity so other repositories (tasks, vitals, etc.) can use it immediately
             authTokenManager.updateUserIdentity(
                 physicalId = response.physicalId,
                 role = response.role
@@ -74,17 +76,21 @@ class ProfileRepositoryImpl @Inject constructor(
         firstName: String,
         lastName: String,
         birthdate: String?,
-        profilePictureUrl: String?
+        age: Int?,
+        profilePictureUrl: String?,
+        heightInMeters: Double?,
+        weightInKg: Double?
     ): ClientResponse<UserResponseDTO> {
         return try {
             val request = UpdateUserProfileRequest(
                 firstName = firstName,
                 lastName = lastName,
                 birthdate = birthdate,
-                profilePictureUrl = profilePictureUrl
+                age = age,
+                profilePictureUrl = profilePictureUrl,
+                heightInMeters = heightInMeters,
+                weightInKg = weightInKg
             )
-            // val userId = authTokenManager.getUserId()
-            //  val response = profileApiService.updateUserProfile(userId, request)
             val response = profileApiService.updateUserProfile(request)
             ClientResponse(success = true, data = response, message = "Profile updated successfully.")
         } catch (e: HttpException) {
@@ -107,14 +113,38 @@ class ProfileRepositoryImpl @Inject constructor(
                 course = course,
                 yearLevel = yearLevel
             )
-            // val userId = authTokenManager.getUserId()
-            // val response = profileApiService.updateStudentProfile(userId, request)
             val response = profileApiService.updateStudentProfile(request)
             ClientResponse(success = true, data = response, message = "Student profile updated.")
         } catch (e: HttpException) {
             ClientResponse(success = false, message = e.message() ?: "Failed to update student profile.")
         } catch (e: IOException) {
             ClientResponse(success = false, message = "Network error. Could not update student profile.")
+        } catch (e: Exception) {
+            ClientResponse(success = false, message = e.message ?: "An unknown error occurred.")
+        }
+    }
+
+    override suspend fun registerFace(embeddingJson: String): ClientResponse<FaceEmbeddingResponse> {
+        return try {
+            val response = profileApiService.registerFace(FaceEmbeddingRequest(embedding = embeddingJson))
+            ClientResponse(success = true, data = response, message = "Face registered successfully.")
+        } catch (e: HttpException) {
+            ClientResponse(success = false, message = e.message() ?: "Failed to register face.")
+        } catch (e: IOException) {
+            ClientResponse(success = false, message = "Network error. Could not register face.")
+        } catch (e: Exception) {
+            ClientResponse(success = false, message = e.message ?: "An unknown error occurred.")
+        }
+    }
+
+    override suspend fun getFaceEmbedding(): ClientResponse<FaceEmbeddingResponse> {
+        return try {
+            val response = profileApiService.getFaceEmbedding()
+            ClientResponse(success = true, data = response, message = "Face embedding fetched.")
+        } catch (e: HttpException) {
+            ClientResponse(success = false, message = e.message() ?: "Failed to fetch face embedding.")
+        } catch (e: IOException) {
+            ClientResponse(success = false, message = "Network error. Could not fetch face embedding.")
         } catch (e: Exception) {
             ClientResponse(success = false, message = e.message ?: "An unknown error occurred.")
         }

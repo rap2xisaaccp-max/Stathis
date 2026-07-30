@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { AdaptiveLearningInsights } from '@/components/adaptive/AdaptiveLearningInsights';
 import { 
   User, 
   ArrowLeft, 
@@ -50,7 +51,8 @@ import {
   GraduationCap,
   TrendingUp,
   Target,
-  Zap
+  Zap,
+  Brain
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
@@ -64,6 +66,7 @@ export default function StudentProgressDetailPage() {
   // Get the classroom ID from the URL query parameter
   const searchParams = useSearchParams();
   const classroomId = searchParams.get('classroomId') || undefined;
+  const initialTab = searchParams.get('tab') === 'adaptive' ? 'adaptive' : 'scores';
   console.log(`Got classroom ID from URL: ${classroomId || 'none'} for student ID: ${studentId}`);
     
   // Fetch student progress items using the new API endpoint with classroom context
@@ -77,7 +80,8 @@ export default function StudentProgressDetailPage() {
     queryFn: () => fetchStudentProgressItems(studentId, classroomId),
     enabled: !!studentId && !!classroomId, // Only run if we have both IDs
     retry: 2, // Retry failed requests up to 2 times
-    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    staleTime: 1000 * 30, // Prefer fresher Scores/Adaptive snapshot after student completes
+    refetchOnWindowFocus: true,
   });
 
   // Fetch student badges
@@ -530,9 +534,10 @@ export default function StudentProgressDetailPage() {
         {/* Status Messages Section has been removed as it's not part of the new API */}
 
         {/* Performance tabs */}
-        <Tabs defaultValue="scores" className="mt-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[400px] h-12 rounded-xl bg-card/80 backdrop-blur-xl border border-border/30">
+        <Tabs defaultValue={initialTab} className="mt-6">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-[560px] h-12 rounded-xl bg-card/80 backdrop-blur-xl border border-border/30">
             <TabsTrigger value="scores" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Task Scores</TabsTrigger>
+            <TabsTrigger value="adaptive" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Adaptive</TabsTrigger>
             <TabsTrigger value="badges" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Badges</TabsTrigger>
             <TabsTrigger value="ranking" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Ranking</TabsTrigger>
           </TabsList>
@@ -589,14 +594,15 @@ export default function StudentProgressDetailPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[40%]">Task Name</TableHead>
-                              <TableHead className="w-[30%]">Completed</TableHead>
-                              <TableHead className="w-[30%] text-right">Score</TableHead>
+                              <TableHead className="w-[35%]">Task Name</TableHead>
+                              <TableHead className="w-[20%]">Completed</TableHead>
+                              <TableHead className="w-[20%]">Score</TableHead>
+                              <TableHead className="w-[25%] text-right">Attempts</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {quizItems.map((item) => (
-                              <TableRow key={item.taskId}>
+                              <TableRow key={`${item.taskId}-QUIZ`}>
                                 <TableCell className="font-medium">{item.taskName}</TableCell>
                                 <TableCell>
                                   {item.completed ? (
@@ -611,7 +617,7 @@ export default function StudentProgressDetailPage() {
                                     </span>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell>
                                   <span className="font-medium">
                                     {item.score !== null ? 
                                       item.maxScore !== null ? 
@@ -622,6 +628,9 @@ export default function StudentProgressDetailPage() {
                                       )
                                     }
                                   </span>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {item.attempts != null ? item.attempts : '—'}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -659,14 +668,16 @@ export default function StudentProgressDetailPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[40%]">Task Name</TableHead>
-                              <TableHead className="w-[30%]">Completed</TableHead>
-                              <TableHead className="w-[30%] text-right">Score</TableHead>
+                              <TableHead className="w-[28%]">Task Name</TableHead>
+                              <TableHead className="w-[16%]">Completed</TableHead>
+                              <TableHead className="w-[18%]">Reps</TableHead>
+                              <TableHead className="w-[18%]">Attempts</TableHead>
+                              <TableHead className="w-[20%] text-right">Score</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {exerciseItems.map((item) => (
-                              <TableRow key={item.taskId}>
+                              <TableRow key={`${item.taskId}-EXERCISE`}>
                                 <TableCell className="font-medium">{item.taskName}</TableCell>
                                 <TableCell>
                                   {item.completed ? (
@@ -680,6 +691,14 @@ export default function StudentProgressDetailPage() {
                                       <span className="font-medium">No</span>
                                     </span>
                                   )}
+                                </TableCell>
+                                <TableCell>
+                                  {item.reps != null
+                                    ? `${item.reps}${item.goalReps != null ? ` / ${item.goalReps}` : ''} total`
+                                    : '—'}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {item.attempts != null ? item.attempts : '—'}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <span className="font-medium">
@@ -764,6 +783,32 @@ export default function StudentProgressDetailPage() {
                 })()}
               </>
             )}
+          </TabsContent>
+
+          {/* Adaptive Learning Tab */}
+          <TabsContent value="adaptive" className="space-y-4 mt-6">
+            <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="text-xl flex items-center gap-2">
+                      <Brain className="h-5 w-5" />
+                      Adaptive Physical Skill Learning
+                    </CardTitle>
+                    <CardDescription>
+                      Evidence-based coaching profile: which feedback worked, recurring errors, and mastery trends.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <AdaptiveLearningInsights
+                  studentId={studentId}
+                  classroomId={classroomId}
+                  progressItems={progressItems}
+                />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Badges Tab */}

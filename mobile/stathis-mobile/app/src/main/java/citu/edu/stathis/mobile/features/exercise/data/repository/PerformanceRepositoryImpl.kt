@@ -88,14 +88,15 @@ class PerformanceRepositoryImpl @Inject constructor(
     }
     
     override fun observeRealtimePerformance(sessionId: String): Flow<PerformanceMetrics> = flow {
-        // Simulated data for now
+        // Phase 10: no realtime performance backend. Keep a local stub so UI callers do not crash.
+        Timber.w("observeRealtimePerformance(%s) using local stub — stale PerformanceApi", sessionId)
         val metrics = PerformanceMetrics(
-            userId = "user1",
-            exerciseId = "exercise1",
-            accuracy = 85.0f,
-            repetitionCount = 5,
-            sessionDurationMs = 60000,
-            postureIssues = listOf("Shoulders too high", "Back not straight")
+            userId = "local",
+            exerciseId = "local",
+            accuracy = 0.0f,
+            repetitionCount = 0,
+            sessionDurationMs = 0,
+            postureIssues = emptyList()
         )
         emit(metrics)
     }.flowOn(Dispatchers.IO)

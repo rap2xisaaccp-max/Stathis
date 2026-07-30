@@ -40,5 +40,11 @@ abstract class ExerciseModule {
         fun providePostureApi(retrofit: Retrofit): PostureApi {
             return retrofit.create(PostureApi::class.java)
         }
+
+        @Provides
+        @Singleton
+        fun provideAdaptiveApi(retrofit: Retrofit): citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi {
+            return retrofit.create(citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi::class.java)
+        }
     }
 }

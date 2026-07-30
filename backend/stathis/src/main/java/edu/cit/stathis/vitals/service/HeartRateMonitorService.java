@@ -23,12 +23,12 @@ public class HeartRateMonitorService {
         UserProfile userProfile = userProfileRepository.findByUser_PhysicalId(vitalSignsDTO.getStudentId())
                 .orElse(null);
 
-        if (userProfile == null || userProfile.getAge() == null) {
+        if (userProfile == null || userProfile.resolveAge() == null) {
             return;
         }
 
         // Calculate max heart rate using Karvonen formula
-        int maxHeartRate = 220 - userProfile.getAge();
+        int maxHeartRate = 220 - userProfile.resolveAge();
         int thresholdHeartRate = (int) (maxHeartRate * MAX_HEART_RATE_THRESHOLD);
 
         // Check if current heart rate exceeds threshold

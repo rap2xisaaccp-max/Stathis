@@ -82,6 +82,22 @@ fun TaskListScreen(
         }
     }
 
+    // Refresh progress when a task is completed (e.g. exercise submit) without waiting for resume
+    val completionUpdates by TaskCompletionCache.completionUpdates.collectAsState()
+    LaunchedEffect(completionUpdates, tasks) {
+        if (completionUpdates > 0 && tasks.isNotEmpty()) {
+            val progressMap = mutableMapOf<String, TaskProgressResponse?>()
+            tasks.forEach { task ->
+                try {
+                    progressMap[task.physicalId] =
+                        viewModel.getTaskProgress(task.physicalId, suppressError = true)
+                } catch (_: Exception) {
+                }
+            }
+            taskProgressMap = progressMap
+        }
+    }
+
     // Ensure tasks and progress refresh when returning to this screen
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, classroomId) {

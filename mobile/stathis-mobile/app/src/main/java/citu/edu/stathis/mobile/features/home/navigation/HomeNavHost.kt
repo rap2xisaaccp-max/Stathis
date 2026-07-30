@@ -16,6 +16,8 @@ import citu.edu.stathis.mobile.features.legal.ui.TermsScreen
 import citu.edu.stathis.mobile.features.profile.ui.ProfileScreen
 import citu.edu.stathis.mobile.features.profile.ui.EditProfileScreen
 import citu.edu.stathis.mobile.features.profile.ui.CreateProfileScreen
+import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsSetupScreen
+import citu.edu.stathis.mobile.features.profile.ui.FaceRegistrationScreen
 import citu.edu.stathis.mobile.features.settings.ui.SettingsScreen
 import citu.edu.stathis.mobile.features.support.ui.HelpScreen
 import citu.edu.stathis.mobile.features.home.ui.LearnScreen
@@ -133,6 +135,40 @@ fun HomeNavHost(navController: NavHostController) {
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
             popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) }
         ) { EditProfileScreen(navController) }
+        composable(
+            route = "body_metrics_setup?returnRoute={returnRoute}",
+            arguments = listOf(
+                navArgument("returnRoute") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+            enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
+            popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) },
+            exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
+            popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) }
+        ) { backStackEntry ->
+            val returnRoute = backStackEntry.arguments?.getString("returnRoute")
+            BodyMetricsSetupScreen(navController = navController, returnRoute = returnRoute)
+        }
+        composable(
+            route = "face_registration?returnRoute={returnRoute}",
+            arguments = listOf(
+                navArgument("returnRoute") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+            enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
+            popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) },
+            exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
+            popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) }
+        ) { backStackEntry ->
+            val returnRoute = backStackEntry.arguments?.getString("returnRoute")
+            FaceRegistrationScreen(navController = navController, returnRoute = returnRoute)
+        }
         composable(
             route = "register",
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
@@ -314,6 +350,7 @@ fun HomeNavHost(navController: NavHostController) {
                 taskId = taskId,
                 templateType = "EXERCISE",
                 templateId = templateId,
+                navController = navController,
                 onNavigateBack = { navController.popBackStack() },
                 onTaskCompleted = { navController.popBackStack() }
             )

@@ -50,8 +50,9 @@ export function BarChart({
           {description && <CardDescription className="text-sm">{description}</CardDescription>}
         </CardHeader>
         <CardContent className="flex-1 flex flex-col">
-          <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          {/* Explicit height: Recharts ResponsiveContainer with height=100% often paints 0px in flex layouts */}
+          <div className="w-full" style={{ height: 240, minHeight: 240 }}>
+            <ResponsiveContainer width="100%" height={240}>
               <RechartsBarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                 <XAxis
