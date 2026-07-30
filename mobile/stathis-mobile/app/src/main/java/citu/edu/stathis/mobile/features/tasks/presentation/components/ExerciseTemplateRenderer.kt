@@ -56,12 +56,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 
 private enum class IdentityPhase {
-    /** Waiting for user to tap Verify */
+    /** Waiting for user to tap Verify (start of session) */
     UNVERIFIED,
-    /** FaceNet biometric scan in progress (once per session) */
+    /** Initial FaceNet biometric scan */
     VERIFYING,
-    /** Identity confirmed — Start/Stop/Complete unlocked */
-    VERIFIED
+    /** Recognized user — skeleton trusted, reps may be counted */
+    VERIFIED,
+    /** Skeleton left frame — counting paused until face matches again */
+    REVERIFYING
 }
 
 private fun parseClassroomAndTaskId(encoded: String?): Pair<String?, String?> {
@@ -232,26 +234,46 @@ fun ExerciseTemplateRenderer(
             }
             }
         } else if (!isExerciseCompleted) {
-            val isVerified = identityPhase == IdentityPhase.VERIFIED
+            val isRecognized = identityPhase == IdentityPhase.VERIFIED
+            val needsFaceScan =
+                identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFYING
 
             // Fullscreen exercise mode
             ExerciseScreen(
                 navController = rememberNavController(),
                 enableVitalsIndicator = false,
-                enablePostureAnalysis = isVerified,
+                enablePostureAnalysis = isRecognized,
                 exerciseType = resolveExerciseType(template.exerciseType),
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
-                onExerciseFeedback = { feedback -> latestExerciseFeedback = feedback },
-                enableExerciseTracking = isVerified,
-                verifyFace = identityPhase == IdentityPhase.VERIFYING,
+                onExerciseFeedback = { feedback ->
+                    // Only accept reps while the skeleton is classified as recognized
+                    if (identityPhase == IdentityPhase.VERIFIED) {
+                        latestExerciseFeedback = feedback
+                    }
+                },
+                enableExerciseTracking = isRecognized,
+                verifyFace = needsFaceScan,
                 enrolledFaceEmbedding = faceIdentityState.enrolledEmbedding,
                 onFaceVerified = {
+                    val wasReverify = identityPhase == IdentityPhase.REVERIFYING
                     identityPhase = IdentityPhase.VERIFIED
-                    identityMessage = "You are now ready to start."
+                    identityMessage = if (wasReverify) {
+                        "Identity confirmed. Exercise tracking resumed."
+                    } else {
+                        "You are now ready to start."
+                    }
                 },
-                monitorSkeletonPresence = false,
-                onSkeletonLeftFrame = null
+                monitorSkeletonPresence = isRecognized,
+                onSkeletonLeftFrame = {
+                    // End recognition session — pause counting until face matches again
+                    if (identityPhase == IdentityPhase.VERIFIED) {
+                        identityPhase = IdentityPhase.REVERIFYING
+                        identityMessage =
+                            "Skeleton left the camera. Verify your face to resume tracking."
+                        faceIdentityViewModel.resetVerification()
+                    }
+                }
             )
 
             ExerciseControlsOverlay(
@@ -260,7 +282,8 @@ fun ExerciseTemplateRenderer(
                 liveExerciseFeedback = latestExerciseFeedback,
                 identityPhase = identityPhase,
                 identityMessage = when (identityPhase) {
-                    IdentityPhase.VERIFYING -> faceIdentityState.statusText.ifBlank { identityMessage }
+                    IdentityPhase.VERIFYING, IdentityPhase.REVERIFYING ->
+                        faceIdentityState.statusText.ifBlank { identityMessage }
                     IdentityPhase.VERIFIED -> identityMessage ?: "You are now ready to start."
                     IdentityPhase.UNVERIFIED -> identityMessage
                 },
@@ -273,7 +296,7 @@ fun ExerciseTemplateRenderer(
                         identityMessage = "Register your face in Profile before verifying."
                     }
                 },
-                onTrackingActive = isVerified,
+                onTrackingActive = isRecognized,
                 onComplete = { performance ->
                     exercisePerformance = performance
                     isExerciseCompleted = true
@@ -859,6 +882,7 @@ private fun ExerciseControlsOverlay(
     var currentTime by remember { mutableIntStateOf(0) }
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
     var isTimerRunning by remember { mutableStateOf(false) }
+    var resumeTimerAfterReverify by remember { mutableStateOf(false) }
     var shouldRequestPermissions by remember { mutableStateOf(false) }
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
     val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
@@ -873,7 +897,8 @@ private fun ExerciseControlsOverlay(
 
     LaunchedEffect(liveExerciseFeedback) {
         liveExerciseFeedback?.let { feedback ->
-            if (onTrackingActive && isTimerRunning) {
+            // Integrity: only update reps while recognized + timer running
+            if (onTrackingActive && isTimerRunning && identityPhase == IdentityPhase.VERIFIED) {
                 currentReps = feedback.repCount
                 exerciseState = feedback.exerciseState
                 exerciseConfidence = feedback.confidence
@@ -884,8 +909,23 @@ private fun ExerciseControlsOverlay(
     }
 
     LaunchedEffect(identityPhase) {
-        if (identityPhase != IdentityPhase.VERIFIED) {
-            isTimerRunning = false
+        when (identityPhase) {
+            IdentityPhase.REVERIFYING -> {
+                if (isTimerRunning) {
+                    resumeTimerAfterReverify = true
+                    isTimerRunning = false
+                }
+            }
+            IdentityPhase.VERIFIED -> {
+                if (resumeTimerAfterReverify) {
+                    isTimerRunning = true
+                    resumeTimerAfterReverify = false
+                }
+            }
+            IdentityPhase.UNVERIFIED, IdentityPhase.VERIFYING -> {
+                resumeTimerAfterReverify = false
+                isTimerRunning = false
+            }
         }
     }
 
@@ -1254,6 +1294,7 @@ private fun ExerciseControlsOverlay(
         // Identity / verification status banner
         if (
             identityPhase == IdentityPhase.VERIFYING ||
+            identityPhase == IdentityPhase.REVERIFYING ||
             (identityPhase == IdentityPhase.VERIFIED && !isTimerRunning) ||
             (identityPhase == IdentityPhase.UNVERIFIED && !identityMessage.isNullOrBlank())
         ) {
@@ -1275,6 +1316,7 @@ private fun ExerciseControlsOverlay(
                         text = when (identityPhase) {
                             IdentityPhase.VERIFIED -> "You are now ready to start."
                             IdentityPhase.VERIFYING -> "Biometric facial recognition"
+                            IdentityPhase.REVERIFYING -> "Re-verification required"
                             IdentityPhase.UNVERIFIED -> "Identity verification required"
                         },
                         style = MaterialTheme.typography.titleMedium,
@@ -1291,10 +1333,14 @@ private fun ExerciseControlsOverlay(
                             textAlign = TextAlign.Center
                         )
                     }
-                    if (identityPhase == IdentityPhase.VERIFYING) {
+                    if (identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFYING) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Only the registered student can pass this check.",
+                            text = if (identityPhase == IdentityPhase.REVERIFYING) {
+                                "Rep counting is paused. Only the registered student can resume."
+                            } else {
+                                "Only the registered student can pass this check."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -1353,14 +1399,9 @@ private fun ExerciseControlsOverlay(
                 }
 
                 when (identityPhase) {
-                    IdentityPhase.UNVERIFIED, IdentityPhase.VERIFYING -> {
+                    IdentityPhase.UNVERIFIED -> {
                         Button(
-                            onClick = {
-                                if (identityPhase == IdentityPhase.UNVERIFIED) {
-                                    onRequestVerify()
-                                }
-                            },
-                            enabled = identityPhase == IdentityPhase.UNVERIFIED,
+                            onClick = { onRequestVerify() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary
                             ),
@@ -1368,22 +1409,78 @@ private fun ExerciseControlsOverlay(
                                 .weight(1.4f)
                                 .height(48.dp)
                         ) {
-                            if (identityPhase == IdentityPhase.VERIFYING) {
-                                CircularProgressIndicator(
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(18.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(text = "Verifying", style = MaterialTheme.typography.bodyMedium)
-                            } else {
+                            Icon(
+                                imageVector = Icons.Default.Face,
+                                contentDescription = "Verify",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Verify", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    IdentityPhase.VERIFYING, IdentityPhase.REVERIFYING -> {
+                        Button(
+                            onClick = { },
+                            enabled = false,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier
+                                .weight(1.4f)
+                                .height(48.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (identityPhase == IdentityPhase.REVERIFYING) {
+                                    "Re-verifying"
+                                } else {
+                                    "Verifying"
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        // Allow Complete during re-verify so session can still be ended
+                        if (identityPhase == IdentityPhase.REVERIFYING) {
+                            Button(
+                                onClick = {
+                                    shouldStopWithPostActivity = true
+                                    val performance = buildExercisePerformance(
+                                        template = template,
+                                        classroomIdEncoded = classroomId,
+                                        actualReps = currentReps,
+                                        actualAccuracy = currentAccuracy,
+                                        actualTime = currentTime,
+                                        weightKg = weightKg
+                                    )
+                                    exerciseSyncViewModel.publishProgress(
+                                        classroomId = parsedClassroomId,
+                                        taskId = parsedTaskId,
+                                        exerciseTemplateId = template.physicalId,
+                                        exerciseType = template.exerciseType,
+                                        reps = currentReps,
+                                        goalReps = template.goalReps,
+                                        accuracy = currentAccuracy.toDouble(),
+                                        timeTakenSeconds = currentTime,
+                                        completed = true
+                                    )
+                                    onComplete(performance)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Face,
-                                    contentDescription = "Verify",
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Complete",
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Verify", style = MaterialTheme.typography.bodyMedium)
+                                Text(text = "Complete", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }

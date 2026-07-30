@@ -18,7 +18,8 @@ object SkeletonPresenceTracker {
 
     private const val IN_FRAME_LIKELIHOOD = 0.45f
     private const val MIN_VISIBLE_TORSO_POINTS = 3
-    private const val OUT_OF_FRAME_CONFIRM_FRAMES = 8
+    /** Slightly longer debounce so brief occlusion does not end recognition. */
+    private const val OUT_OF_FRAME_CONFIRM_FRAMES = 12
 
     /**
      * Returns true when enough torso landmarks are confidently in frame.
