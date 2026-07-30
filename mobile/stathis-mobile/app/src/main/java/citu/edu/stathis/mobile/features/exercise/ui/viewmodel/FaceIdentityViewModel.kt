@@ -75,6 +75,14 @@ class FaceIdentityViewModel @Inject constructor(
         )
     }
 
+    fun onMultiPersonDetected() {
+        verifySession.reset()
+        _state.value = _state.value.copy(
+            statusText = "Multiple people detected. Only the registered student should be in frame.",
+            identityVerified = false
+        )
+    }
+
     fun clearSessionVerification() {
         verifySession.reset()
         _state.value = _state.value.copy(

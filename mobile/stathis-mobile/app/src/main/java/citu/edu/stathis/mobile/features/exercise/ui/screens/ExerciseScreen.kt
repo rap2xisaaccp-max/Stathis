@@ -67,6 +67,8 @@ import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.analysis.OnDeviceExerciseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.data.facerecognition.FaceAnalyzer
+import citu.edu.stathis.mobile.features.exercise.data.facerecognition.ContinuousIdentityMonitor
+import citu.edu.stathis.mobile.features.exercise.data.facerecognition.IntegrityFrameAnalyzer
 import citu.edu.stathis.mobile.features.exercise.data.facerecognition.SkeletonPresenceTracker
 import citu.edu.stathis.mobile.features.exercise.data.posedetection.PoseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.recording.ScreenRecordService
@@ -93,6 +95,14 @@ fun ExerciseScreen(
     verifyFace: Boolean = false,
     enrolledFaceEmbedding: FloatArray? = null,
     onFaceVerified: (() -> Unit)? = null,
+    /**
+     * Continuous face + skeletal identity monitoring during the exercise.
+     * Prefer this over [monitorSkeletonPresence] alone for assessment integrity.
+     */
+    continuousIdentityMonitoring: Boolean = false,
+    /** True while recovering after an identity pause (allows body-signature rematch). */
+    identityRecovering: Boolean = false,
+    onIdentityDecision: ((ContinuousIdentityMonitor.Decision) -> Unit)? = null,
     /** Called when the full skeleton leaves the camera after identity was verified. */
     monitorSkeletonPresence: Boolean = false,
     onSkeletonLeftFrame: (() -> Unit)? = null,
@@ -113,7 +123,12 @@ fun ExerciseScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val onDeviceExerciseAnalyzer = remember { OnDeviceExerciseAnalyzer() }
     val skeletonSession = remember { SkeletonPresenceTracker.Session() }
+    val identityMonitor = remember { ContinuousIdentityMonitor(faceIdentityViewModel.faceService()) }
     val faceVerifiedLatch = remember { AtomicBoolean(false) }
+    val enrolledFaceRef = remember { object { @Volatile var value: FloatArray? = null } }
+    androidx.compose.runtime.SideEffect { enrolledFaceRef.value = enrolledFaceEmbedding }
+    val recoveringRef = remember { object { @Volatile var value: Boolean = false } }
+    androidx.compose.runtime.SideEffect { recoveringRef.value = identityRecovering }
 
     val exerciseState by exerciseViewModel.uiState.collectAsState()
     var exerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
@@ -150,6 +165,16 @@ fun ExerciseScreen(
             faceVerifiedLatch.set(false)
             skeletonSession.reset()
             faceIdentityViewModel.resetVerification()
+        }
+    }
+
+    LaunchedEffect(continuousIdentityMonitoring, identityRecovering) {
+        if (continuousIdentityMonitoring && !identityRecovering) {
+            skeletonSession.reset()
+            // Body signature is enrolled on first trusted pose inside the monitor.
+        }
+        if (!continuousIdentityMonitoring) {
+            identityMonitor.reset()
         }
     }
 
@@ -209,7 +234,7 @@ fun ExerciseScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        key(verifyFace, useFrontCamera, monitorSkeletonPresence, enableExerciseTracking) {
+        key(verifyFace, continuousIdentityMonitoring, identityRecovering, useFrontCamera, monitorSkeletonPresence, enableExerciseTracking) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -237,77 +262,146 @@ fun ExerciseScreen(
                     .setTargetRotation(previewView.display?.rotation ?: android.view.Surface.ROTATION_0)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build().also { analysis ->
-                        if (verifyFace) {
-                            analysis.setAnalyzer(
-                                analysisExecutor,
-                                FaceAnalyzer(
-                                    executor = analysisExecutor,
-                                    faceRecognitionService = faceService,
-                                    onResult = { result ->
-                                        if (!faceVerifiedLatch.get()) {
-                                            val verified = faceIdentityViewModel.onVerificationProbe(
-                                                embedding = result.embedding,
-                                                qualityMessage = result.qualityMessage
-                                            )
-                                            if (verified && faceVerifiedLatch.compareAndSet(false, true)) {
-                                                onFaceVerified?.invoke()
-                                            }
-                                        }
-                                    }
-                                )
-                            )
-                        } else {
-                            analysis.setAnalyzer(
-                                analysisExecutor,
-                                PoseAnalyzer(
-                                    executor = analysisExecutor,
-                                    onPoseDetected = { pose, w, h, flipped, rot ->
-                                        latestPose = pose
-                                        frameWidth = w
-                                        frameHeight = h
-                                        rotation = rot
-                                        onPoseUpdated?.invoke(pose)
-
-                                        if (monitorSkeletonPresence) {
-                                            val status = skeletonSession.onPose(pose)
-                                            if (status == SkeletonPresenceTracker.SkeletonStatus.LEFT_FRAME) {
-                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                                    onSkeletonLeftFrame?.invoke()
+                        when {
+                            verifyFace && !continuousIdentityMonitoring -> {
+                                analysis.setAnalyzer(
+                                    analysisExecutor,
+                                    FaceAnalyzer(
+                                        executor = analysisExecutor,
+                                        faceRecognitionService = faceService,
+                                        onResult = { result ->
+                                            if (result.faces.size > 1) {
+                                                faceIdentityViewModel.onMultiPersonDetected()
+                                            } else if (!faceVerifiedLatch.get()) {
+                                                val verified = faceIdentityViewModel.onVerificationProbe(
+                                                    embedding = result.embedding,
+                                                    qualityMessage = result.qualityMessage
+                                                )
+                                                if (verified && faceVerifiedLatch.compareAndSet(false, true)) {
+                                                    onFaceVerified?.invoke()
+                                                    identityMonitor.onVerified(null)
                                                 }
-                                                skeletonSession.reset()
                                             }
                                         }
-
-                                        if (enableExerciseTracking && exerciseType != null) {
-                                            val analyzed = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
-                                            exerciseFeedback = analyzed.copy(
-                                                backendFlags = backendSignalRef.flags,
-                                                ruleSeverity = backendSignalRef.ruleSeverity
-                                            )
-                                            onExerciseFeedback?.invoke(exerciseFeedback!!)
-                                        }
-                                        if (enablePostureAnalysis && enableExerciseTracking) {
-                                            val poseLandmarks = (0 until 33).mapNotNull { idx ->
-                                                val lm = pose.getPoseLandmark(idx) ?: return@mapNotNull null
-                                                citu.edu.stathis.mobile.features.exercise.ui.util.Landmark(
-                                                    x = lm.position.x / w.toFloat(),
-                                                    y = lm.position.y / h.toFloat(),
-                                                    z = lm.position3D.z,
-                                                    v = lm.inFrameLikelihood
-                                                )
-                                            }
-                                            if (poseLandmarks.size == 33) {
-                                                exerciseViewModel.onFrame(
-                                                    landmarks = poseLandmarks,
-                                                    targetExerciseType = exerciseType,
-                                                    localConfidence = exerciseFeedback?.confidence
-                                                )
-                                            }
-                                        }
-                                    },
-                                    isImageFlipped = useFrontCamera
+                                    )
                                 )
-                            )
+                            }
+                            continuousIdentityMonitoring -> {
+                                analysis.setAnalyzer(
+                                    analysisExecutor,
+                                    IntegrityFrameAnalyzer(
+                                        executor = analysisExecutor,
+                                        faceRecognitionService = faceService,
+                                        isImageFlipped = useFrontCamera,
+                                        onFrame = { frame ->
+                                            latestPose = frame.pose
+                                            frameWidth = frame.frameWidth
+                                            frameHeight = frame.frameHeight
+                                            rotation = frame.rotation
+                                            onPoseUpdated?.invoke(frame.pose)
+
+                                            val decision = identityMonitor.onFrame(
+                                                pose = frame.pose,
+                                                faceEmbedding = frame.faceEmbedding,
+                                                faceCount = if (frame.ranFacePass) frame.faceCount else 0,
+                                                enrolledFace = enrolledFaceRef.value,
+                                                faceQualityRejected = frame.faceQualityRejected,
+                                                recovering = recoveringRef.value
+                                            )
+                                            onIdentityDecision?.invoke(decision)
+
+                                            val canTrack =
+                                                enableExerciseTracking &&
+                                                    decision.state != ContinuousIdentityMonitor.TrustState.LOST
+                                            if (canTrack && exerciseType != null && frame.pose != null) {
+                                                val analyzed = onDeviceExerciseAnalyzer.analyzePose(
+                                                    frame.pose,
+                                                    exerciseType
+                                                )
+                                                exerciseFeedback = analyzed.copy(
+                                                    backendFlags = backendSignalRef.flags,
+                                                    ruleSeverity = backendSignalRef.ruleSeverity
+                                                )
+                                                onExerciseFeedback?.invoke(exerciseFeedback!!)
+                                            }
+                                            if (enablePostureAnalysis && canTrack && frame.pose != null) {
+                                                val w = frame.frameWidth
+                                                val h = frame.frameHeight
+                                                val poseLandmarks = (0 until 33).mapNotNull { idx ->
+                                                    val lm = frame.pose.getPoseLandmark(idx)
+                                                        ?: return@mapNotNull null
+                                                    citu.edu.stathis.mobile.features.exercise.ui.util.Landmark(
+                                                        x = lm.position.x / w.toFloat(),
+                                                        y = lm.position.y / h.toFloat(),
+                                                        z = lm.position3D.z,
+                                                        v = lm.inFrameLikelihood
+                                                    )
+                                                }
+                                                if (poseLandmarks.size == 33) {
+                                                    exerciseViewModel.onFrame(
+                                                        landmarks = poseLandmarks,
+                                                        targetExerciseType = exerciseType,
+                                                        localConfidence = exerciseFeedback?.confidence
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+                                )
+                            }
+                            else -> {
+                                analysis.setAnalyzer(
+                                    analysisExecutor,
+                                    PoseAnalyzer(
+                                        executor = analysisExecutor,
+                                        onPoseDetected = { pose, w, h, flipped, rot ->
+                                            latestPose = pose
+                                            frameWidth = w
+                                            frameHeight = h
+                                            rotation = rot
+                                            onPoseUpdated?.invoke(pose)
+
+                                            if (monitorSkeletonPresence) {
+                                                val status = skeletonSession.onPose(pose)
+                                                if (status == SkeletonPresenceTracker.SkeletonStatus.LEFT_FRAME) {
+                                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                        onSkeletonLeftFrame?.invoke()
+                                                    }
+                                                    skeletonSession.reset()
+                                                }
+                                            }
+
+                                            if (enableExerciseTracking && exerciseType != null) {
+                                                val analyzed = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                                exerciseFeedback = analyzed.copy(
+                                                    backendFlags = backendSignalRef.flags,
+                                                    ruleSeverity = backendSignalRef.ruleSeverity
+                                                )
+                                                onExerciseFeedback?.invoke(exerciseFeedback!!)
+                                            }
+                                            if (enablePostureAnalysis && enableExerciseTracking) {
+                                                val poseLandmarks = (0 until 33).mapNotNull { idx ->
+                                                    val lm = pose.getPoseLandmark(idx) ?: return@mapNotNull null
+                                                    citu.edu.stathis.mobile.features.exercise.ui.util.Landmark(
+                                                        x = lm.position.x / w.toFloat(),
+                                                        y = lm.position.y / h.toFloat(),
+                                                        z = lm.position3D.z,
+                                                        v = lm.inFrameLikelihood
+                                                    )
+                                                }
+                                                if (poseLandmarks.size == 33) {
+                                                    exerciseViewModel.onFrame(
+                                                        landmarks = poseLandmarks,
+                                                        targetExerciseType = exerciseType,
+                                                        localConfidence = exerciseFeedback?.confidence
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        isImageFlipped = useFrontCamera
+                                    )
+                                )
+                            }
                         }
                     }
 

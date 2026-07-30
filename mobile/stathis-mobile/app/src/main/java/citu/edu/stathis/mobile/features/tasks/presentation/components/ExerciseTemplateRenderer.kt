@@ -67,9 +67,9 @@ private enum class IdentityPhase {
     UNVERIFIED,
     /** Initial FaceNet biometric scan */
     VERIFYING,
-    /** Recognized user — skeleton trusted, reps may be counted */
+    /** Recognized user — continuous face+skeleton integrity, reps may be counted */
     VERIFIED,
-    /** Skeleton left frame — counting paused until face matches again */
+    /** Identity lost (swap / multi-person / leave-frame) — pause; progress kept */
     REVERIFYING
 }
 
@@ -270,8 +270,8 @@ fun ExerciseTemplateRenderer(
             }
         } else if (!isExerciseCompleted) {
             val isRecognized = identityPhase == IdentityPhase.VERIFIED
-            val needsFaceScan =
-                identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFYING
+            val isRecovering = identityPhase == IdentityPhase.REVERIFYING
+            val needsInitialFaceScan = identityPhase == IdentityPhase.VERIFYING
 
             // Fullscreen exercise mode
             ExerciseScreen(
@@ -282,34 +282,49 @@ fun ExerciseTemplateRenderer(
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
                 onExerciseFeedback = { feedback ->
-                    // Only accept reps while the skeleton is classified as recognized
+                    // Only accept reps while identity is trusted
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         latestExerciseFeedback = feedback
                         adaptiveSessionViewModel.onExerciseFeedback(feedback)
                     }
                 },
                 enableExerciseTracking = isRecognized,
-                verifyFace = needsFaceScan,
+                verifyFace = needsInitialFaceScan,
                 enrolledFaceEmbedding = faceIdentityState.enrolledEmbedding,
                 onFaceVerified = {
-                    val wasReverify = identityPhase == IdentityPhase.REVERIFYING
                     identityPhase = IdentityPhase.VERIFIED
-                    identityMessage = if (wasReverify) {
-                        "Identity confirmed. Exercise tracking resumed."
-                    } else {
-                        "You are now ready to start."
+                    identityMessage = "You are now ready to start."
+                },
+                continuousIdentityMonitoring = isRecognized || isRecovering,
+                identityRecovering = isRecovering,
+                onIdentityDecision = { decision ->
+                    when (decision.state) {
+                        citu.edu.stathis.mobile.features.exercise.data.facerecognition.ContinuousIdentityMonitor.TrustState.LOST -> {
+                            if (identityPhase == IdentityPhase.VERIFIED) {
+                                identityPhase = IdentityPhase.REVERIFYING
+                                identityMessage = decision.reason
+                                faceIdentityViewModel.resetVerification()
+                            } else if (identityPhase == IdentityPhase.REVERIFYING) {
+                                identityMessage = decision.reason
+                            }
+                        }
+                        citu.edu.stathis.mobile.features.exercise.data.facerecognition.ContinuousIdentityMonitor.TrustState.TRUSTED -> {
+                            if (identityPhase == IdentityPhase.REVERIFYING) {
+                                identityPhase = IdentityPhase.VERIFIED
+                                identityMessage = decision.reason.ifBlank {
+                                    "Identity confirmed. Exercise tracking resumed."
+                                }
+                            }
+                        }
+                        citu.edu.stathis.mobile.features.exercise.data.facerecognition.ContinuousIdentityMonitor.TrustState.UNCERTAIN -> {
+                            if (identityPhase == IdentityPhase.VERIFIED) {
+                                identityMessage = decision.reason
+                            }
+                        }
                     }
                 },
-                monitorSkeletonPresence = isRecognized,
-                onSkeletonLeftFrame = {
-                    // Only after 5s out of frame — pause counting until face matches again
-                    if (identityPhase == IdentityPhase.VERIFIED) {
-                        identityPhase = IdentityPhase.REVERIFYING
-                        identityMessage =
-                            "You left the camera for 5 seconds. Verify your face to resume tracking."
-                        faceIdentityViewModel.resetVerification()
-                    }
-                },
+                monitorSkeletonPresence = false,
+                onSkeletonLeftFrame = null,
                 adaptiveHighlight = adaptiveHighlight,
                 adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
                 adaptiveHighlightBones = adaptiveHighlightBones,
@@ -927,6 +942,8 @@ private fun ExerciseControlsOverlay(
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
     var isTimerRunning by remember { mutableStateOf(false) }
     var resumeTimerAfterReverify by remember { mutableStateOf(false) }
+    /** True after the first Start — pause/resume must not zero reps or time. */
+    var sessionClockStarted by remember { mutableStateOf(false) }
     var shouldRequestPermissions by remember { mutableStateOf(false) }
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
     val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
@@ -1086,7 +1103,7 @@ private fun ExerciseControlsOverlay(
 
     LaunchedEffect(isTimerRunning, rememberedClassroomId) {
         if (isTimerRunning) {
-            // Start vitals monitoring when exercise starts
+            // Start vitals monitoring when exercise starts / resumes
             if (connectionState == citu.edu.stathis.mobile.features.vitals.data.HealthConnectManager.ConnectionState.CONNECTED) {
                 // Decode classroomId to extract both classroom and task physical IDs
                 val (actualClassroomId, taskPhysicalId) = if (rememberedClassroomId?.contains("|") == true) {
@@ -1106,12 +1123,15 @@ private fun ExerciseControlsOverlay(
                 )
             }
 
-            // Reset exercise detector when starting
-            exerciseDetector.resetExercise()
-            currentReps = 0
-            currentTime = 0
+            // Only reset counters on the first Start of this session — never on identity pause/resume
+            if (!sessionClockStarted) {
+                sessionClockStarted = true
+                exerciseDetector.resetExercise()
+                currentReps = 0
+                currentTime = 0
+            }
 
-            // Timer for exercise duration
+            // Timer for exercise duration (continues from saved currentTime after pause)
             while (currentTime < template.goalTime && currentReps < template.goalReps) {
                 kotlinx.coroutines.delay(1000)
                 currentTime++
@@ -1151,7 +1171,7 @@ private fun ExerciseControlsOverlay(
             )
             onComplete(performance)
         } else {
-            // Stop vitals monitoring when timer stops
+            // Pause only — keep reps/time; analyzer state is preserved in OnDeviceExerciseAnalyzer
             exerciseVitalsMonitoringService.stopMonitoring()
         }
     }
@@ -1159,8 +1179,8 @@ private fun ExerciseControlsOverlay(
     Box(
         modifier = modifier.fillMaxSize()
     ) {
-        if (identityPhase == IdentityPhase.VERIFIED) {
-        // Minimal progress overlay at the very top edge
+        if (identityPhase == IdentityPhase.VERIFIED || identityPhase == IdentityPhase.REVERIFYING) {
+        // Progress overlay — remains visible while paused so saved reps/time are clear
         Card(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -1360,7 +1380,7 @@ private fun ExerciseControlsOverlay(
                         text = when (identityPhase) {
                             IdentityPhase.VERIFIED -> "You are now ready to start."
                             IdentityPhase.VERIFYING -> "Biometric facial recognition"
-                            IdentityPhase.REVERIFYING -> "Re-verification required"
+                            IdentityPhase.REVERIFYING -> "Identity check paused"
                             IdentityPhase.UNVERIFIED -> "Identity verification required"
                         },
                         style = MaterialTheme.typography.titleMedium,
@@ -1381,7 +1401,7 @@ private fun ExerciseControlsOverlay(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = if (identityPhase == IdentityPhase.REVERIFYING) {
-                                "Rep counting is paused. Only the registered student can resume."
+                                "Session paused — your reps and time are saved. Return and verify to resume."
                             } else {
                                 "Only the registered student can pass this check."
                             },
@@ -1481,7 +1501,7 @@ private fun ExerciseControlsOverlay(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (identityPhase == IdentityPhase.REVERIFYING) {
-                                    "Re-verifying"
+                                    "Paused"
                                 } else {
                                     "Verifying"
                                 },
