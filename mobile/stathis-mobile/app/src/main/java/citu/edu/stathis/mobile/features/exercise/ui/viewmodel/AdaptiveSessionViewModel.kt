@@ -3,20 +3,26 @@ package citu.edu.stathis.mobile.features.exercise.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveFeedbackEngine
+import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.DeliveredFeedback
+import citu.edu.stathis.mobile.features.exercise.adaptive.ExerciseMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorMapper
 import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
+import citu.edu.stathis.mobile.features.exercise.adaptive.StudentLearningProfileDto
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
+import citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 @HiltViewModel
 class AdaptiveSessionViewModel @Inject constructor(
-    private val engine: AdaptiveFeedbackEngine
+    private val engine: AdaptiveFeedbackEngine,
+    private val adaptiveApi: AdaptiveApi
 ) : ViewModel() {
 
     private val _feedback = MutableStateFlow<DeliveredFeedback?>(null)
@@ -31,6 +37,21 @@ class AdaptiveSessionViewModel @Inject constructor(
     private val _highlightBones = MutableStateFlow<List<Pair<Int, Int>>>(emptyList())
     val highlightBones: StateFlow<List<Pair<Int, Int>>> = _highlightBones.asStateFlow()
 
+    private val _sessionSummary = MutableStateFlow(AdaptiveSessionSummary())
+    val sessionSummary: StateFlow<AdaptiveSessionSummary> = _sessionSummary.asStateFlow()
+
+    private val _learningProfile = MutableStateFlow<StudentLearningProfileDto?>(null)
+    val learningProfile: StateFlow<StudentLearningProfileDto?> = _learningProfile.asStateFlow()
+
+    private val _mastery = MutableStateFlow<List<ExerciseMasteryDto>>(emptyList())
+    val mastery: StateFlow<List<ExerciseMasteryDto>> = _mastery.asStateFlow()
+
+    private val _profileLoading = MutableStateFlow(false)
+    val profileLoading: StateFlow<Boolean> = _profileLoading.asStateFlow()
+
+    private val _profileError = MutableStateFlow<String?>(null)
+    val profileError: StateFlow<String?> = _profileError.asStateFlow()
+
     fun startSession(
         exerciseType: String,
         taskId: String? = null,
@@ -39,6 +60,7 @@ class AdaptiveSessionViewModel @Inject constructor(
         sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
     ) {
         engine.startSession(exerciseType, taskId, classroomId, staticControl, sessionContext)
+        _sessionSummary.value = AdaptiveSessionSummary()
     }
 
     fun onExerciseFeedback(feedback: OnDeviceFeedback) {
@@ -62,6 +84,7 @@ class AdaptiveSessionViewModel @Inject constructor(
                     }
                 )
             publishDelivery(delivered)
+            _sessionSummary.value = engine.sessionSummary()
         }
     }
 
@@ -69,7 +92,30 @@ class AdaptiveSessionViewModel @Inject constructor(
         viewModelScope.launch {
             engine.flush()
             engine.endSession()
+            _sessionSummary.value = engine.sessionSummary()
             publishDelivery(null)
+        }
+    }
+
+    fun snapshotSessionSummary(): AdaptiveSessionSummary {
+        val summary = engine.sessionSummary()
+        _sessionSummary.value = summary
+        return summary
+    }
+
+    fun loadLearningProfileAndMastery() {
+        viewModelScope.launch {
+            _profileLoading.value = true
+            _profileError.value = null
+            try {
+                _learningProfile.value = adaptiveApi.getOwnProfile()
+                _mastery.value = adaptiveApi.getOwnMastery()
+            } catch (t: Throwable) {
+                Timber.w(t, "Failed to load adaptive profile/mastery")
+                _profileError.value = t.message ?: "Could not load adaptive learning data"
+            } finally {
+                _profileLoading.value = false
+            }
         }
     }
 

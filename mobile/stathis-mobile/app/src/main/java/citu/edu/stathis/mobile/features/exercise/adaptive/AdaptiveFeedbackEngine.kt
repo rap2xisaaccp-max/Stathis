@@ -35,6 +35,9 @@ class AdaptiveFeedbackEngine @Inject constructor(
     @Volatile private var activeDelivery: DeliveredFeedback? = null
     @Volatile private var cachedRecommendation: AdaptiveRecommendation? = null
     private val interventionGate = RealtimeInterventionGate()
+    private val sessionModalities = linkedSetOf<String>()
+    private val sessionErrorCodes = linkedSetOf<String>()
+    @Volatile private var sessionInterventionCount: Int = 0
 
     /** Exposed for tests / diagnostics. */
     fun offlineQueueForTests(): AdaptiveOfflineQueue = offlineQueue
@@ -54,6 +57,9 @@ class AdaptiveFeedbackEngine @Inject constructor(
         this.sessionContext = sessionContext
         this.activeDelivery = null
         this.cooldownMs = 8000L
+        this.sessionInterventionCount = 0
+        sessionModalities.clear()
+        sessionErrorCodes.clear()
         interventionGate.reset()
         pendingResponses.clear()
         delivery.ensureInitialized()
@@ -66,6 +72,14 @@ class AdaptiveFeedbackEngine @Inject constructor(
     }
 
     fun currentSessionId(): String = sessionId
+
+    fun sessionSummary(): AdaptiveSessionSummary =
+        AdaptiveSessionSummary(
+            interventionCount = sessionInterventionCount,
+            modalitiesUsed = sessionModalities.toList(),
+            errorCodes = sessionErrorCodes.toList(),
+            syncPending = !offlineQueue.isEmpty()
+        )
 
     fun activeFeedback(): DeliveredFeedback? = activeDelivery
 
@@ -143,6 +157,9 @@ class AdaptiveFeedbackEngine @Inject constructor(
         pendingResponses.add(pending)
         offlineQueue.enqueueIntervention(pending.toRequestDto())
         interventionGate.markDelivered(now)
+        sessionInterventionCount += 1
+        sessionModalities.add(recommendation.modality.name)
+        sessionErrorCodes.add(resolvedCode.name)
 
         val delivered =
             delivery.deliver(

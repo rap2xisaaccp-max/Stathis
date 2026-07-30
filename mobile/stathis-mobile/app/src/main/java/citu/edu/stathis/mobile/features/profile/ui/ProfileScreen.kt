@@ -166,6 +166,17 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
     val lifecycleOwner = LocalLifecycleOwner.current
     var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val adaptiveSessionViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel =
+        hiltViewModel()
+    val learningProfile by adaptiveSessionViewModel.learningProfile.collectAsState()
+    val mastery by adaptiveSessionViewModel.mastery.collectAsState()
+    val profileLoading by adaptiveSessionViewModel.profileLoading.collectAsState()
+    val profileError by adaptiveSessionViewModel.profileError.collectAsState()
+    LaunchedEffect(uiState.value.profile?.physicalId) {
+        if (uiState.value.profile != null) {
+            adaptiveSessionViewModel.loadLearningProfileAndMastery()
+        }
+    }
 
     // Refresh when screen resumes to ensure latest profile after login
     DisposableEffect(lifecycleOwner) {
@@ -207,6 +218,9 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
                 scope.launch {
                     isRefreshing = true
                     viewModel.refresh()
+                    if (uiState.value.profile != null) {
+                        adaptiveSessionViewModel.loadLearningProfileAndMastery()
+                    }
                     delay(400)
                     isRefreshing = false
                 }
@@ -426,6 +440,16 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            if (uiState.value.profile != null) {
+                citu.edu.stathis.mobile.features.exercise.ui.components.StudentMasterySection(
+                    profile = learningProfile,
+                    mastery = mastery,
+                    loading = profileLoading,
+                    error = profileError
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
 
             if (uiState.value.profile != null) {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

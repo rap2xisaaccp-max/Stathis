@@ -56,11 +56,13 @@ import {
   Bell,
   Download,
   TrendingUp,
-  GraduationCap
+  GraduationCap,
+  Brain
 } from 'lucide-react';
 import { AuthNavbar } from '@/components/auth-navbar';
 import { motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
+import { ClassroomAdaptiveCard } from '@/components/adaptive/ClassroomAdaptiveCard';
 
 export default function StudentProgressPage() {
   const router = useRouter();
@@ -68,8 +70,14 @@ export default function StudentProgressPage() {
   const prefersReducedMotion = useReducedMotion();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassroom, setSelectedClassroom] = useState('');
+  const focusAdaptive = searchParams.get('focus') === 'adaptive';
+  const classroomFromUrl = searchParams.get('classroomId');
 
-  
+  React.useEffect(() => {
+    if (classroomFromUrl && classroomFromUrl !== selectedClassroom) {
+      setSelectedClassroom(classroomFromUrl);
+    }
+  }, [classroomFromUrl, selectedClassroom]); 
   // Fetch teacher's classrooms from API
   const { data: classroomsData, isLoading: isClassroomsLoading } = useQuery<ClassroomResponseDTO[]>({
     queryKey: ['teacher-classrooms'],
@@ -228,10 +236,12 @@ export default function StudentProgressPage() {
     : [];
 
   // Handle view student details
-  const handleViewStudent = (studentId: string) => {
-    // Pass the selected classroom ID as a query parameter
-    router.push(`/student-progress/${studentId}?classroomId=${selectedClassroom}`);
-    console.log(`Navigating to student ${studentId} with classroom ${selectedClassroom}`);
+  const handleViewStudent = (studentId: string, openAdaptive = false) => {
+    const params = new URLSearchParams();
+    if (selectedClassroom) params.set('classroomId', selectedClassroom);
+    if (openAdaptive || focusAdaptive) params.set('tab', 'adaptive');
+    const qs = params.toString();
+    router.push(`/student-progress/${studentId}${qs ? `?${qs}` : ''}`);
   };
   
   // Handle export report
@@ -311,9 +321,13 @@ export default function StudentProgressPage() {
                 
                 <div>
                   <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                    Student Progress
+                    {focusAdaptive ? 'Adaptive Learning' : 'Student Progress'}
                   </h1>
-                  <p className="text-muted-foreground mt-2">View and track the progress of all students</p>
+                  <p className="text-muted-foreground mt-2">
+                    {focusAdaptive
+                      ? 'Pick a classroom and student to open Adaptive coaching insights'
+                      : 'View and track the progress of all students'}
+                  </p>
                 </div>
               </div>
               
@@ -335,6 +349,8 @@ export default function StudentProgressPage() {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="grid gap-8"
             >
+              <ClassroomAdaptiveCard classroomId={selectedClassroom || undefined} />
+
               {/* Filters and search */}
               <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
                 <CardHeader>
@@ -497,14 +513,25 @@ export default function StudentProgressPage() {
                                 )}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={() => handleViewStudent(student.physicalId)}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                  <span className="sr-only">View</span>
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleViewStudent(student.physicalId, true)}
+                                    title="Open Adaptive insights"
+                                  >
+                                    <Brain className="h-4 w-4" />
+                                    <span className="sr-only">Adaptive</span>
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => handleViewStudent(student.physicalId)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    <span className="sr-only">View</span>
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           );

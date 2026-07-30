@@ -265,8 +265,8 @@ export default function ClassroomDetailPage() {
     queryFn: async () => {
       console.log('DIRECT API CALL: Fetching students for classroom:', physicalId);
       try {
-        // Make a direct fetch to the API for debugging
-        const apiUrl = `https://stathis-u8s6.onrender.com/api/classrooms/${physicalId}/students`;
+        const { API_BASE_URL } = await import('@/lib/api/server-client');
+        const apiUrl = `${API_BASE_URL}/classrooms/${physicalId}/students`;
         console.log('DIRECT API CALL: URL:', apiUrl);
         
         // Get the auth token

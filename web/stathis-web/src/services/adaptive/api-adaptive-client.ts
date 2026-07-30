@@ -76,38 +76,26 @@ export interface AdaptiveInsightsDTO {
 
 export async function fetchAdaptiveInsights(
   studentId: string
-): Promise<AdaptiveInsightsDTO | null> {
-  try {
-    const { data, error } = await serverApiClient.get<AdaptiveInsightsDTO>(
-      `/adaptive/insights/${encodeURIComponent(studentId)}`
-    );
-    if (error || !data) {
-      console.warn('Adaptive insights unavailable:', error);
-      return null;
-    }
-    return data;
-  } catch (err) {
-    console.warn('Adaptive insights fetch failed:', err);
-    return null;
+): Promise<AdaptiveInsightsDTO> {
+  const { data, error, status } = await serverApiClient.get<AdaptiveInsightsDTO>(
+    `/adaptive/insights/${encodeURIComponent(studentId)}`
+  );
+  if (error || !data) {
+    throw new Error(error || `Adaptive insights unavailable (${status})`);
   }
+  return data;
 }
 
 export async function fetchDifficultyRecommendations(
   studentId: string
 ): Promise<DifficultyRecommendationDTO[]> {
-  try {
-    const { data, error } = await serverApiClient.get<DifficultyRecommendationDTO[]>(
-      `/adaptive/difficulty-recommendations/${encodeURIComponent(studentId)}`
-    );
-    if (error || !data) {
-      console.warn('Difficulty recommendations unavailable:', error);
-      return [];
-    }
-    return data;
-  } catch (err) {
-    console.warn('Difficulty recommendations fetch failed:', err);
-    return [];
+  const { data, error, status } = await serverApiClient.get<DifficultyRecommendationDTO[]>(
+    `/adaptive/difficulty-recommendations/${encodeURIComponent(studentId)}`
+  );
+  if (error) {
+    throw new Error(error || `Difficulty recommendations unavailable (${status})`);
   }
+  return data ?? [];
 }
 
 export interface AdaptiveEvaluationSummaryDTO {
@@ -129,19 +117,14 @@ export interface AdaptiveEvaluationSummaryDTO {
 export async function fetchAdaptiveEvaluation(
   studentId: string
 ): Promise<AdaptiveEvaluationSummaryDTO | null> {
-  try {
-    const { data, error } = await serverApiClient.get<AdaptiveEvaluationSummaryDTO>(
-      `/adaptive/evaluation/${encodeURIComponent(studentId)}`
-    );
-    if (error || !data) {
-      console.warn('Adaptive evaluation unavailable:', error);
-      return null;
-    }
-    return data;
-  } catch (err) {
-    console.warn('Adaptive evaluation fetch failed:', err);
-    return null;
+  const { data, error, status } = await serverApiClient.get<AdaptiveEvaluationSummaryDTO>(
+    `/adaptive/evaluation/${encodeURIComponent(studentId)}`
+  );
+  if (status === 404) return null;
+  if (error || !data) {
+    throw new Error(error || `Adaptive evaluation unavailable (${status})`);
   }
+  return data;
 }
 
 export interface ClassroomEvaluationDTO {
@@ -167,17 +150,12 @@ export interface ClassroomEvaluationDTO {
 export async function fetchClassroomEvaluation(
   classroomId: string
 ): Promise<ClassroomEvaluationDTO | null> {
-  try {
-    const { data, error } = await serverApiClient.get<ClassroomEvaluationDTO>(
-      `/adaptive/evaluation/classroom/${encodeURIComponent(classroomId)}`
-    );
-    if (error || !data) {
-      console.warn('Classroom evaluation unavailable:', error);
-      return null;
-    }
-    return data;
-  } catch (err) {
-    console.warn('Classroom evaluation fetch failed:', err);
-    return null;
+  const { data, error, status } = await serverApiClient.get<ClassroomEvaluationDTO>(
+    `/adaptive/evaluation/classroom/${encodeURIComponent(classroomId)}`
+  );
+  if (status === 404) return null;
+  if (error || !data) {
+    throw new Error(error || `Classroom evaluation unavailable (${status})`);
   }
+  return data;
 }

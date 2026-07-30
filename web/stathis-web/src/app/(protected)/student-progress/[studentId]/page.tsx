@@ -66,6 +66,7 @@ export default function StudentProgressDetailPage() {
   // Get the classroom ID from the URL query parameter
   const searchParams = useSearchParams();
   const classroomId = searchParams.get('classroomId') || undefined;
+  const initialTab = searchParams.get('tab') === 'adaptive' ? 'adaptive' : 'scores';
   console.log(`Got classroom ID from URL: ${classroomId || 'none'} for student ID: ${studentId}`);
     
   // Fetch student progress items using the new API endpoint with classroom context
@@ -532,7 +533,7 @@ export default function StudentProgressDetailPage() {
         {/* Status Messages Section has been removed as it's not part of the new API */}
 
         {/* Performance tabs */}
-        <Tabs defaultValue="scores" className="mt-6">
+        <Tabs defaultValue={initialTab} className="mt-6">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-[560px] h-12 rounded-xl bg-card/80 backdrop-blur-xl border border-border/30">
             <TabsTrigger value="scores" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Task Scores</TabsTrigger>
             <TabsTrigger value="adaptive" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Adaptive</TabsTrigger>

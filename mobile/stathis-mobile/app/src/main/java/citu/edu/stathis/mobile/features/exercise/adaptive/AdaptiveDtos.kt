@@ -98,3 +98,38 @@ data class RecommendationResponseDto(
     val experimentArm: String? = null,
     val cooldownMs: Int? = null
 )
+
+data class StudentLearningProfileDto(
+    val physicalId: String? = null,
+    val studentId: String? = null,
+    val preferredModality: String? = null,
+    val modalityEffectivenessJson: Map<String, Any?>? = null,
+    val learningRateEstimate: Double? = null,
+    val consistencyScore: Double? = null,
+    val fatigueSensitivity: Double? = null,
+    val totalInterventions: Int? = null,
+    val totalSuccessfulInterventions: Int? = null,
+    val updatedAt: String? = null
+)
+
+data class ExerciseMasteryDto(
+    val physicalId: String? = null,
+    val studentId: String? = null,
+    val exerciseType: String = "UNKNOWN",
+    val masteryLevel: Double = 0.0,
+    val commonErrorsJson: Map<String, Any?>? = null,
+    val sessionsCount: Int? = null,
+    val medianTimeToCorrectionMs: Long? = null,
+    val recommendedDifficulty: String? = null,
+    val recommendedGoalReps: Int? = null,
+    val recommendationRationale: String? = null,
+    val requiresTeacherApproval: Boolean = true,
+    val lastSessionAt: String? = null
+)
+
+data class AdaptiveSessionSummary(
+    val interventionCount: Int = 0,
+    val modalitiesUsed: List<String> = emptyList(),
+    val errorCodes: List<String> = emptyList(),
+    val syncPending: Boolean = false
+)

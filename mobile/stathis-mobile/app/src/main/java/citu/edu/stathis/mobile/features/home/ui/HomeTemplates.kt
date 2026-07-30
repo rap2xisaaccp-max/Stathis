@@ -3,6 +3,7 @@ package citu.edu.stathis.mobile.features.home.ui
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,8 +23,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -196,6 +199,8 @@ fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostCont
     val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
     val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
     val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
+    val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
+    var showAdaptiveSummary by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(exerciseType) {
         adaptiveSessionViewModel.startSession(
@@ -205,7 +210,47 @@ fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostCont
         )
     }
     androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { adaptiveSessionViewModel.flushAndEnd() }
+        onDispose {
+            if (!showAdaptiveSummary) {
+                adaptiveSessionViewModel.flushAndEnd()
+            }
+        }
+    }
+
+    androidx.activity.compose.BackHandler(enabled = !showAdaptiveSummary) {
+        adaptiveSessionViewModel.flushAndEnd()
+        showAdaptiveSummary = true
+    }
+
+    if (showAdaptiveSummary) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Practice complete",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard(
+                    summary = adaptiveSessionSummary
+                )
+                Button(
+                    onClick = { navController.popBackStack() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Done")
+                }
+            }
+        }
+        return
     }
 
     citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen(

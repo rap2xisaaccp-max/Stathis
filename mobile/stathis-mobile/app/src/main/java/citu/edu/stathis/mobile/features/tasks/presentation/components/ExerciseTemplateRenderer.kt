@@ -51,7 +51,9 @@ import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculato
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
+import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
+import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import com.google.mlkit.vision.pose.Pose
@@ -137,6 +139,7 @@ fun ExerciseTemplateRenderer(
     val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
     val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
     val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
+    val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
     val context = LocalContext.current
     val staticControlArm = remember {
         RctExperimentPrefs.isStaticControl(context)
@@ -361,6 +364,7 @@ fun ExerciseTemplateRenderer(
                     performance = performance,
                     attemptsUsed = displayedAttempts,
                     maxAttempts = maxAttempts,
+                    adaptiveSummary = adaptiveSessionSummary,
                     onRetry = {
                         isExerciseStarted = false
                         isExerciseCompleted = false
@@ -1633,6 +1637,7 @@ private fun ExerciseResults(
     performance: ExercisePerformance,
     attemptsUsed: Int,
     maxAttempts: Int,
+    adaptiveSummary: AdaptiveSessionSummary = AdaptiveSessionSummary(),
     onRetry: () -> Unit,
     onComplete: () -> Unit,
     modifier: Modifier = Modifier
@@ -1771,6 +1776,10 @@ private fun ExerciseResults(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AdaptiveSessionSummaryCard(summary = adaptiveSummary)
 
             Spacer(modifier = Modifier.height(24.dp))
 
