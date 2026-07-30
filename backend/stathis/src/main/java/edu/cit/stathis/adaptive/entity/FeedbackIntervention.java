@@ -20,7 +20,10 @@ import org.hibernate.annotations.CreationTimestamp;
     indexes = {
       @Index(name = "idx_fi_student", columnList = "student_id"),
       @Index(name = "idx_fi_session", columnList = "session_id"),
-      @Index(name = "idx_fi_student_exercise_error", columnList = "student_id,exercise_type,error_code")
+      @Index(name = "idx_fi_student_exercise_error", columnList = "student_id,exercise_type,error_code"),
+      @Index(name = "idx_fi_student_delivered", columnList = "student_id,delivered_at"),
+      @Index(name = "idx_fi_experiment_arm", columnList = "experiment_arm"),
+      @Index(name = "idx_fi_classroom", columnList = "classroom_id")
     })
 public class FeedbackIntervention {
   @Id

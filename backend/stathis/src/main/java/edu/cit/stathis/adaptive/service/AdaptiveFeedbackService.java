@@ -29,6 +29,7 @@ public class AdaptiveFeedbackService {
   @Autowired private ExerciseMasteryService masteryService;
   @Autowired private AdaptivePolicyService policyService;
   @Autowired private ClassroomRepository classroomRepository;
+  @Autowired private AdaptiveArmRollupService armRollupService;
 
   @Transactional
   public AdaptiveBatchIngestResultDTO ingestBatch(String studentId, AdaptiveBatchIngestDTO batch) {
@@ -155,6 +156,7 @@ public class AdaptiveFeedbackService {
     FeedbackResponse saved = responseRepository.save(entity);
     profileService.applyResponse(intervention, saved);
     masteryService.applyResponse(intervention, saved);
+    armRollupService.recordResponse(intervention, saved);
     return saved;
   }
 

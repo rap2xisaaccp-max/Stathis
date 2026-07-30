@@ -71,6 +71,30 @@ Student export:
 - Consent for research use of adaptive logs; do not use low mastery punitively
 - Face embeddings remain identity-only; never feed into pedagogy profiles
 
+## Data lifecycle (volume control)
+
+Raw closed-loop events live in `feedback_intervention` / `feedback_response` (1 delivered coaching cue → 1 FI + 1 FR on session flush). This is **expected research-grain logging**, not per-frame spam (mobile gate: confirm ticks, cooldown, max 4/min, one open response window).
+
+**Permanent / long-lived**
+
+- `student_learning_profile`, `exercise_mastery`, `learning_profile_history`
+- `adaptive_arm_session_rollup` — per `(student, session, baseArm)` with `n`, `sum_delta`, `sum_delta_sq`, `successes` so **Cohen's d** remains computable if raw rows are later purged
+
+**Raw retention (optional, off by default)**
+
+```properties
+apsle.retention.enabled=false
+apsle.retention.dry-run=true
+apsle.retention.raw-days=180
+```
+
+When enabled (and dry-run false), only raw FI/FR older than `raw-days` **with an existing rollup** are deleted. Profile/mastery/rollups are never purged by this job.
+
+**Idempotency**
+
+- Client `FI-` / `FR-` physical IDs + server lookup-before-insert
+- DB unique on `feedback_response.intervention_physical_id` (one response per intervention)
+
 ## Instrumentation checklist
 
 - [ ] Arms assigned and verified on a sample of `FeedbackIntervention.experimentArm` rows
@@ -78,3 +102,4 @@ Student export:
 - [ ] Teacher can open Adaptive tab + classroom evaluation endpoint
 - [ ] Static cohort only receives `VERBAL_TEXT` recommendations
 - [ ] Retention session scheduled and labeled in analysis notes
+- [ ] V4/V5 SQL applied on prod (indexes + rollup table) before enabling retention

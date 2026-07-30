@@ -18,4 +18,6 @@ public interface FeedbackInterventionRepository extends JpaRepository<FeedbackIn
   List<FeedbackIntervention> findBySessionId(String sessionId);
 
   long countByStudentId(String studentId);
+
+  List<FeedbackIntervention> findByCreatedAtBefore(java.time.OffsetDateTime cutoff);
 }

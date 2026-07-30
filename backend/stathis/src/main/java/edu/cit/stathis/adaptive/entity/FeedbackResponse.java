@@ -19,7 +19,8 @@ import io.hypersistence.utils.hibernate.type.json.JsonType;
     name = "feedback_response",
     indexes = {
       @Index(name = "idx_fr_intervention", columnList = "intervention_physical_id"),
-      @Index(name = "idx_fr_student", columnList = "student_id")
+      @Index(name = "idx_fr_student", columnList = "student_id"),
+      @Index(name = "idx_fr_student_created", columnList = "student_id,created_at")
     })
 public class FeedbackResponse {
   @Id
@@ -37,7 +38,8 @@ public class FeedbackResponse {
   @Column(name = "student_id", nullable = false)
   private String studentId;
 
-  @Column(name = "intervention_physical_id", nullable = false)
+  /** Unique: one measured response per intervention (idempotent ingest). */
+  @Column(name = "intervention_physical_id", nullable = false, unique = true)
   private String interventionPhysicalId;
 
   @Column(name = "window_end_at", nullable = false)
