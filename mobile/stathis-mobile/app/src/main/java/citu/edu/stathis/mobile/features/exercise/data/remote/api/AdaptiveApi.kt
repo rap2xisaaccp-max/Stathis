@@ -11,7 +11,7 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 
 /**
- * Retrofit client for `/api/adaptive/*`.
+ * Retrofit client for the adaptive API under api/adaptive/.
  *
  * Backend parity (student self):
  * - POST batch / recommend / mastery/{type}/session — live closed-loop write path
@@ -30,11 +30,11 @@ interface AdaptiveApi {
     @POST("api/adaptive/mastery/{exerciseType}/session")
     suspend fun recordSession(@retrofit2.http.Path("exerciseType") exerciseType: String): Map<String, Any?>
 
-    /** Student self: learning profile from closed-loop evidence (`GET /api/adaptive/profile`). */
+    /** Student self: learning profile from closed-loop evidence (GET api/adaptive/profile). */
     @GET("api/adaptive/profile")
     suspend fun getOwnProfile(): StudentLearningProfileDto
 
-    /** Student self: exercise mastery list (`GET /api/adaptive/mastery`). */
+    /** Student self: exercise mastery list (GET api/adaptive/mastery). */
     @GET("api/adaptive/mastery")
     suspend fun getOwnMastery(): List<ExerciseMasteryDto>
 }
