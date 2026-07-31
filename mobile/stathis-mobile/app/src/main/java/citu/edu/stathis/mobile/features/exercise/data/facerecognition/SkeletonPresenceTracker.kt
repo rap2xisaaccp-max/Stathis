@@ -30,7 +30,8 @@ object SkeletonPresenceTracker {
      * Short frame debounce so a few missed detections do not start the grace timer.
      * At ~30 fps this is roughly 0.4s of noise rejection before the 5s clock starts.
      */
-    private const val OUT_OF_FRAME_CONFIRM_FRAMES = 12
+    /** Debounce frames before the out-of-frame grace timer starts. */
+    const val OUT_OF_FRAME_CONFIRM_FRAMES = 12
 
     /**
      * Returns true when enough torso landmarks are confidently in frame.
@@ -55,7 +56,9 @@ object SkeletonPresenceTracker {
      * 4. Still missing after 5s → [SkeletonStatus.LEFT_FRAME] (re-verify)
      * 5. Skeleton returns during grace → timer resets; stay recognized
      */
-    class Session {
+    class Session(
+        private val nowMs: () -> Long = { SystemClock.elapsedRealtime() }
+    ) {
         private var consecutiveMissing = 0
         private var outOfFrameSinceMs: Long? = null
 
@@ -70,7 +73,7 @@ object SkeletonPresenceTracker {
                     return SkeletonStatus.UNSTABLE
                 }
 
-                val now = SystemClock.elapsedRealtime()
+                val now = nowMs()
                 val startedAt = outOfFrameSinceMs ?: now.also { outOfFrameSinceMs = it }
                 val elapsed = now - startedAt
 
@@ -85,7 +88,7 @@ object SkeletonPresenceTracker {
         /** Milliseconds remaining in the grace window, or 0 if not timing out. */
         fun graceRemainingMs(): Long {
             val startedAt = outOfFrameSinceMs ?: return 0L
-            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            val elapsed = nowMs() - startedAt
             return (OUT_OF_FRAME_GRACE_MS - elapsed).coerceAtLeast(0L)
         }
 

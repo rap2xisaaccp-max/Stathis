@@ -57,6 +57,7 @@ import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewMo
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
+import citu.edu.stathis.mobile.features.exercise.data.facerecognition.ContinuousIdentityMonitor
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import com.google.mlkit.vision.pose.Pose
@@ -70,9 +71,12 @@ private enum class IdentityPhase {
     UNVERIFIED,
     /** Initial FaceNet biometric scan */
     VERIFYING,
-    /** Recognized user — skeleton trusted, reps may be counted */
+    /** Recognized user — continuous face+skeletal integrity active; reps may be counted */
     VERIFIED,
-    /** Skeleton left frame — counting paused until face matches again */
+    /**
+     * Identity trust lost (swap / multi-person / leave-frame / low confidence).
+     * Counting paused; [sessionReps] preserved until face and/or skeletal rematch.
+     */
     REVERIFYING
 }
 
@@ -133,6 +137,9 @@ fun ExerciseTemplateRenderer(
 
     var identityPhase by remember { mutableStateOf(IdentityPhase.UNVERIFIED) }
     var identityMessage by remember { mutableStateOf<String?>(null) }
+    /** When true, hard REVERIFYING uses dedicated FaceAnalyzer; otherwise integrity recovery. */
+    var requireHardFaceScan by remember { mutableStateOf(false) }
+    var latestPoseForIdentity by remember { mutableStateOf<Pose?>(null) }
 
     var displayedAttempts by remember { mutableIntStateOf(attemptsUsed) }
     /** Survives overlay/camera remounts during face re-verify. */
@@ -144,6 +151,9 @@ fun ExerciseTemplateRenderer(
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
     val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
     val faceIdentityState by faceIdentityViewModel.state.collectAsState()
+    val identityMonitor = remember {
+        ContinuousIdentityMonitor(faceIdentityViewModel.faceService())
+    }
     val adaptiveSessionViewModel: AdaptiveSessionViewModel = hiltViewModel()
     val adaptiveFeedback by adaptiveSessionViewModel.feedback.collectAsState()
     val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
@@ -178,6 +188,9 @@ fun ExerciseTemplateRenderer(
         if (!isExerciseStarted) {
             identityPhase = IdentityPhase.UNVERIFIED
             identityMessage = null
+            requireHardFaceScan = false
+            latestPoseForIdentity = null
+            identityMonitor.reset()
             faceIdentityViewModel.clearSessionVerification()
         }
     }
@@ -281,30 +294,39 @@ fun ExerciseTemplateRenderer(
             }
         } else if (!isExerciseCompleted) {
             val isRecognized = identityPhase == IdentityPhase.VERIFIED
+            // Dedicated FaceAnalyzer only for initial verify or hard re-verify face scan.
             val needsFaceScan =
-                identityPhase == IdentityPhase.VERIFYING || identityPhase == IdentityPhase.REVERIFYING
+                identityPhase == IdentityPhase.VERIFYING ||
+                    (identityPhase == IdentityPhase.REVERIFYING && requireHardFaceScan)
+            // Combined pose + opportunistic face while trusted, or soft recovery (body rematch).
+            val continuousIdentityActive =
+                identityPhase == IdentityPhase.VERIFIED ||
+                    (identityPhase == IdentityPhase.REVERIFYING && !requireHardFaceScan)
 
             // Fullscreen exercise mode
             ExerciseScreen(
                 navController = rememberNavController(),
                 enableVitalsIndicator = false,
-                enablePostureAnalysis = isRecognized,
+                // Keep posture/rep pipeline warm during soft recovery so body rematch works.
+                enablePostureAnalysis = isRecognized || continuousIdentityActive,
                 exerciseType = resolveExerciseType(template.exerciseType),
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
                 onExerciseFeedback = { feedback ->
-                    // Only accept reps while the skeleton is classified as recognized
+                    // Only accept reps while identity is trusted
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         latestExerciseFeedback = feedback
                         adaptiveSessionViewModel.onExerciseFeedback(feedback)
                     }
                 },
                 // Pose counting is gated in the overlay; tracking follows verified identity only.
-                enableExerciseTracking = isRecognized,
+                enableExerciseTracking = isRecognized || continuousIdentityActive,
                 verifyFace = needsFaceScan,
                 enrolledFaceEmbedding = faceIdentityState.enrolledEmbedding,
                 onFaceVerified = {
                     val wasReverify = identityPhase == IdentityPhase.REVERIFYING
+                    identityMonitor.onVerified(latestPoseForIdentity)
+                    requireHardFaceScan = false
                     identityPhase = IdentityPhase.VERIFIED
                     identityMessage = if (wasReverify) {
                         "Identity confirmed. Exercise tracking resumed."
@@ -312,16 +334,69 @@ fun ExerciseTemplateRenderer(
                         "You are now ready to start."
                     }
                 },
-                monitorSkeletonPresence = isRecognized,
-                onSkeletonLeftFrame = {
-                    // Only after 5s out of frame — pause counting until face matches again
-                    if (identityPhase == IdentityPhase.VERIFIED) {
-                        identityPhase = IdentityPhase.REVERIFYING
-                        identityMessage =
-                            "You left the camera for 5 seconds. Verify your face to resume tracking."
-                        faceIdentityViewModel.resetVerification()
+                continuousIdentityActive = continuousIdentityActive,
+                onIntegrityFrame = integrity@{ frame ->
+                    if (frame.pose != null) {
+                        latestPoseForIdentity = frame.pose
+                    }
+                    val recovering = identityPhase == IdentityPhase.REVERIFYING
+                    if (identityPhase != IdentityPhase.VERIFIED && !recovering) return@integrity
+                    val decision = identityMonitor.onFrame(
+                        pose = frame.pose,
+                        faceEmbedding = if (frame.ranFacePass) frame.faceEmbedding else null,
+                        faceCount = if (frame.ranFacePass) frame.faceCount else 0,
+                        enrolledFace = faceIdentityState.enrolledEmbedding,
+                        faceQualityRejected = frame.faceQualityRejected,
+                        recovering = recovering
+                    )
+                    when (decision.state) {
+                        ContinuousIdentityMonitor.TrustState.LOST -> {
+                            if (identityPhase != IdentityPhase.REVERIFYING) {
+                                identityPhase = IdentityPhase.REVERIFYING
+                                identityMessage = decision.reason
+                                // Multi-person / clear face mismatch → dedicated FaceAnalyzer.
+                                // Leave-frame / body swap → soft integrity recovery so skeletal
+                                // rematch can restore trust without resetting reps.
+                                val hardFace =
+                                    decision.multipleFaces ||
+                                        (decision.faceSimilarity != null &&
+                                            decision.reason.contains(
+                                                "Face does not match",
+                                                ignoreCase = true
+                                            ))
+                                requireHardFaceScan = hardFace
+                                if (hardFace) {
+                                    faceIdentityViewModel.resetVerification()
+                                }
+                            } else {
+                                identityMessage = decision.reason
+                                if (decision.multipleFaces && !requireHardFaceScan) {
+                                    requireHardFaceScan = true
+                                    faceIdentityViewModel.resetVerification()
+                                }
+                            }
+                        }
+                        ContinuousIdentityMonitor.TrustState.TRUSTED -> {
+                            if (recovering) {
+                                identityMonitor.onVerified(frame.pose)
+                                requireHardFaceScan = false
+                                identityPhase = IdentityPhase.VERIFIED
+                                identityMessage = decision.reason.ifBlank {
+                                    "Identity confirmed. Exercise tracking resumed."
+                                }
+                            }
+                        }
+                        ContinuousIdentityMonitor.TrustState.UNCERTAIN -> {
+                            if (identityPhase == IdentityPhase.VERIFIED) {
+                                identityMessage = decision.reason
+                            }
+                        }
                     }
                 },
+                // Leave-frame is owned by ContinuousIdentityMonitor while integrity is active.
+                monitorSkeletonPresence = false,
+                onSkeletonLeftFrame = null,
+                onPoseUpdated = { pose -> latestPoseForIdentity = pose },
                 adaptiveHighlight = adaptiveHighlight,
                 adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
                 adaptiveHighlightBones = adaptiveHighlightBones,
@@ -341,13 +416,22 @@ fun ExerciseTemplateRenderer(
                     IdentityPhase.UNVERIFIED -> identityMessage
                 },
                 onRequestVerify = {
-                    if (faceIdentityState.faceRegistered && faceIdentityState.enrolledEmbedding != null) {
-                        identityPhase = IdentityPhase.VERIFYING
+                    if (!faceIdentityState.faceRegistered || faceIdentityState.enrolledEmbedding == null) {
+                        identityMessage = "Register your face in Profile before verifying."
+                        return@ExerciseControlsOverlay
+                    }
+                    // Escalate soft recovery to dedicated face scan without clearing reps.
+                    if (identityPhase == IdentityPhase.REVERIFYING) {
+                        requireHardFaceScan = true
                         identityMessage = "Look at the camera to verify your identity."
                         faceIdentityViewModel.resetVerification()
-                    } else {
-                        identityMessage = "Register your face in Profile before verifying."
+                        return@ExerciseControlsOverlay
                     }
+                    identityPhase = IdentityPhase.VERIFYING
+                    requireHardFaceScan = false
+                    identityMessage = "Look at the camera to verify your identity."
+                    identityMonitor.reset()
+                    faceIdentityViewModel.resetVerification()
                 },
                 onTrackingActive = isRecognized,
                 sessionRepAccumulator = sessionRepAccumulator,
@@ -376,6 +460,9 @@ fun ExerciseTemplateRenderer(
                     sessionInProgress = false
                     resumeTimerAfterReverify = false
                     identityPhase = IdentityPhase.UNVERIFIED
+                    requireHardFaceScan = false
+                    latestPoseForIdentity = null
+                    identityMonitor.reset()
                     faceIdentityViewModel.clearSessionVerification()
                     adaptiveSessionViewModel.flushAndEnd()
                     onCancel?.invoke()
@@ -1480,7 +1567,7 @@ private fun ExerciseControlsOverlay(
                         text = when (identityPhase) {
                             IdentityPhase.VERIFIED -> "You are now ready to start."
                             IdentityPhase.VERIFYING -> "Biometric facial recognition"
-                            IdentityPhase.REVERIFYING -> "Re-verification required"
+                            IdentityPhase.REVERIFYING -> "Identity check paused"
                             IdentityPhase.UNVERIFIED -> "Identity verification required"
                         },
                         style = MaterialTheme.typography.titleMedium,
@@ -1501,7 +1588,7 @@ private fun ExerciseControlsOverlay(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = if (identityPhase == IdentityPhase.REVERIFYING) {
-                                "Rep counting is paused. Only the registered student can resume."
+                                "Reps and time are saved. Resume via face scan or skeletal rematch — only the verified student can continue."
                             } else {
                                 "Only the registered student can pass this check."
                             },
@@ -1583,30 +1670,46 @@ private fun ExerciseControlsOverlay(
                         }
                     }
                     IdentityPhase.VERIFYING, IdentityPhase.REVERIFYING -> {
-                        Button(
-                            onClick = { },
-                            enabled = false,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier
-                                .weight(1.4f)
-                                .height(48.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(18.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (identityPhase == IdentityPhase.REVERIFYING) {
-                                    "Re-verifying"
-                                } else {
-                                    "Verifying"
-                                },
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                        if (identityPhase == IdentityPhase.REVERIFYING) {
+                            Button(
+                                onClick = { onRequestVerify() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .height(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Face,
+                                    contentDescription = "Scan face",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = "Scan face", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        } else {
+                            Button(
+                                onClick = { },
+                                enabled = false,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                modifier = Modifier
+                                    .weight(1.4f)
+                                    .height(48.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Verifying",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                         // Allow Complete during re-verify so session can still be ended
                         if (identityPhase == IdentityPhase.REVERIFYING) {

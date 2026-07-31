@@ -145,7 +145,7 @@ class FaceRecognitionService @Inject constructor(
         }
         val box = face.boundingBox
         val areaRatio = (box.width().toFloat() * box.height()) /
-            (imageWidth.toFloat() * imageHeight.toFloat()).coerceAtLeast(1f)
+                (imageWidth.toFloat() * imageHeight.toFloat()).coerceAtLeast(1f)
         if (areaRatio < MIN_FACE_AREA_RATIO) {
             return QualityResult(false, "Move closer so your face fills the frame.")
         }
