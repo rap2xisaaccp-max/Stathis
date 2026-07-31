@@ -265,8 +265,8 @@ export default function ClassroomDetailPage() {
     queryFn: async () => {
       console.log('DIRECT API CALL: Fetching students for classroom:', physicalId);
       try {
-        // Make a direct fetch to the API for debugging
-        const apiUrl = `https://stathis-u8s6.onrender.com/api/classrooms/${physicalId}/students`;
+        const { API_BASE_URL } = await import('@/lib/api/server-client');
+        const apiUrl = `${API_BASE_URL}/classrooms/${physicalId}/students`;
         console.log('DIRECT API CALL: URL:', apiUrl);
         
         // Get the auth token
@@ -388,8 +388,8 @@ export default function ClassroomDetailPage() {
 
         if (!latestScore) return;
 
-        if (latestScore.maxScore > 0) {
-          scorePercentages.push((latestScore.score / latestScore.maxScore) * 100);
+        if (latestScore.maxScore > 0 && (latestScore.status === 'COMPLETED' || latestScore.status === 'GRADED' || (latestScore.attempts || 0) > 0)) {
+          scorePercentages.push(((latestScore.score || 0) / latestScore.maxScore) * 100);
         }
 
         switch (latestScore.status) {
@@ -403,7 +403,11 @@ export default function ClassroomDetailPage() {
             gradedTasks++;
             break;
           default:
-            pendingTasks++;
+            if ((latestScore.attempts || 0) > 0 || latestScore.isCompleted) {
+              completedTasks++;
+            } else {
+              pendingTasks++;
+            }
         }
       });
 
@@ -1109,7 +1113,8 @@ export default function ClassroomDetailPage() {
                         {tasks.map((task: TaskResponseDTO) => (
                           <TabsContent key={task.physicalId} value={task.physicalId}>
                             <TaskScoresTab 
-                              taskId={task.physicalId} 
+                              taskId={task.physicalId}
+                              classroomId={physicalId}
                               taskType={
                                 task.exerciseTemplateId ? 'EXERCISE' : 
                                 task.quizTemplateId ? 'QUIZ' : 

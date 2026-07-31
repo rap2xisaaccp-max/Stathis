@@ -56,7 +56,8 @@ class ExerciseViewModel @Inject constructor(
                                 classNames = merged.classNames,
                                 formConfidence = r.formConfidence,
                                 flags = r.flags ?: emptyList(),
-                                messages = r.messages ?: emptyList()
+                                messages = r.messages ?: emptyList(),
+                                ruleSeverity = r.ruleSeverity
                             )
                         }
                     }
@@ -151,7 +152,8 @@ class ExerciseViewModel @Inject constructor(
         val classNames: List<String> = emptyList(),
         val formConfidence: Float? = null, // Form quality: 0.0-0.4 (poor), 0.5-0.7 (moderate), 0.8-1.0 (good)
         val flags: List<String> = emptyList(),
-        val messages: List<String> = emptyList()
+        val messages: List<String> = emptyList(),
+        val ruleSeverity: Double? = null
     )
 }
 

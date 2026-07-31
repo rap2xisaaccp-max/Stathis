@@ -1,6 +1,7 @@
 package edu.cit.stathis.task.controller;
 
 import edu.cit.stathis.task.dto.ScoreDTO;
+import edu.cit.stathis.task.dto.ScoreResponseDTO;
 import edu.cit.stathis.task.entity.Score;
 import edu.cit.stathis.task.service.ScoreService;
 import jakarta.validation.Valid;
@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/scores")
+@RequestMapping({"/api/v1/scores", "/api/scores"})
 @RequiredArgsConstructor
 public class ScoreController {
 
@@ -33,7 +34,7 @@ public class ScoreController {
     @PutMapping("/{physicalId}")
     @PreAuthorize("hasRole('STUDENT')")
     @Operation(summary = "Update a score", description = "Update a score")
-    public ResponseEntity<Score> updateScore(
+    public ResponseEntity<ScoreResponseDTO> updateScore(
             @PathVariable String physicalId,
             @Valid @RequestBody ScoreDTO scoreDTO) {
         return ResponseEntity.ok(scoreService.updateScore(physicalId, scoreDTO));
@@ -42,7 +43,7 @@ public class ScoreController {
     @GetMapping("/{physicalId}")
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     @Operation(summary = "Get a score by its physical ID", description = "Get a score by its physical ID")
-    public ResponseEntity<Score> getScore(@PathVariable String physicalId) {
+    public ResponseEntity<ScoreResponseDTO> getScore(@PathVariable String physicalId) {
         return scoreService.getScoreByPhysicalId(physicalId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -51,21 +52,21 @@ public class ScoreController {
     @GetMapping("/student/{studentId}")
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     @Operation(summary = "Get scores by student ID", description = "Get scores by student ID")
-    public ResponseEntity<List<Score>> getScoresByStudent(@PathVariable String studentId) {
+    public ResponseEntity<List<ScoreResponseDTO>> getScoresByStudent(@PathVariable String studentId) {
         return ResponseEntity.ok(scoreService.getScoresByStudent(studentId));
     }
 
     @GetMapping("/task/{taskId}")
     @PreAuthorize("hasRole('TEACHER')")
     @Operation(summary = "Get scores by task ID", description = "Get scores by task ID")
-    public ResponseEntity<List<Score>> getScoresByTask(@PathVariable String taskId) {
+    public ResponseEntity<List<ScoreResponseDTO>> getScoresByTask(@PathVariable String taskId) {
         return ResponseEntity.ok(scoreService.getScoresByTask(taskId));
     }
 
     @GetMapping("/student/{studentId}/task/{taskId}")
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     @Operation(summary = "Get scores by student and task ID", description = "Get scores by student and task ID")
-    public ResponseEntity<List<Score>> getScoresByStudentAndTask(
+    public ResponseEntity<List<ScoreResponseDTO>> getScoresByStudentAndTask(
             @PathVariable String studentId,
             @PathVariable String taskId) {
         return ResponseEntity.ok(scoreService.getScoresByStudentAndTask(studentId, taskId));
@@ -74,7 +75,7 @@ public class ScoreController {
     @GetMapping("/quiz")
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     @Operation(summary = "Get a quiz score by student ID, task ID, and quiz template ID", description = "Get a quiz score by student ID, task ID, and quiz template ID")
-    public ResponseEntity<Score> getQuizScore(
+    public ResponseEntity<ScoreResponseDTO> getQuizScore(
             @RequestParam String studentId,
             @RequestParam String taskId,
             @RequestParam String quizTemplateId) {
@@ -86,7 +87,7 @@ public class ScoreController {
     @GetMapping("/exercise")
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     @Operation(summary = "Get an exercise score by student ID, task ID, and exercise template ID", description = "Get an exercise score by student ID, task ID, and exercise template ID")
-    public ResponseEntity<Score> getExerciseScore(
+    public ResponseEntity<ScoreResponseDTO> getExerciseScore(
             @RequestParam String studentId,
             @RequestParam String taskId,
             @RequestParam String exerciseTemplateId) {
@@ -97,7 +98,7 @@ public class ScoreController {
 
     @GetMapping("/quiz/average")
     @PreAuthorize("hasRole('TEACHER')")
-    @Operation(summary = "Get the average quiz score by task ID and quiz template ID", description = "Get the average quiz score by task ID and quiz template ID")
+    @Operation(summary = "Get the average quiz score percentage by task ID and quiz template ID")
     public ResponseEntity<Double> getAverageQuizScore(
             @RequestParam String taskId,
             @RequestParam String quizTemplateId) {
@@ -106,7 +107,7 @@ public class ScoreController {
 
     @GetMapping("/exercise/average")
     @PreAuthorize("hasRole('TEACHER')")
-    @Operation(summary = "Get the average exercise score by task ID and exercise template ID", description = "Get the average exercise score by task ID and exercise template ID")
+    @Operation(summary = "Get the average exercise score percentage by task ID and exercise template ID")
     public ResponseEntity<Double> getAverageExerciseScore(
             @RequestParam String taskId,
             @RequestParam String exerciseTemplateId) {
@@ -116,11 +117,10 @@ public class ScoreController {
     @PutMapping("/{physicalId}/manual-grade")
     @PreAuthorize("hasRole('TEACHER')")
     @Operation(summary = "Update a manual score", description = "Update a manual score")
-    public ResponseEntity<Void> updateManualScore(
+    public ResponseEntity<ScoreResponseDTO> updateManualScore(
             @PathVariable String physicalId,
             @RequestParam Integer manualScore,
             @RequestParam(required = false) String teacherFeedback) {
-        scoreService.updateManualScore(physicalId, manualScore, teacherFeedback);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(scoreService.updateManualScore(physicalId, manualScore, teacherFeedback));
     }
-} 
+}

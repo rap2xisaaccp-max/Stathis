@@ -72,4 +72,14 @@ public class Score {
 
     @Column(name = "manual_score")
     private Integer manualScore;
+
+    @Column(name = "reps")
+    private Integer reps;
+
+    @Column(name = "goal_reps")
+    private Integer goalReps;
+
+    /** Cumulative calories burned across all attempts for this exercise score. */
+    @Column(name = "calories_burned")
+    private Double caloriesBurned;
 } 

@@ -11,17 +11,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +33,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,7 +62,10 @@ fun EditProfileScreen(
                     Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Edit profile", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    text = "Edit profile",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                )
             }
         }
     ) { innerPadding ->
@@ -82,72 +90,146 @@ fun EditProfileScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(text = "Basic information", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = state.firstName,
-                        onValueChange = viewModel::onFirstNameChange,
-                        label = { Text("First name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = "Basic information",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
-                    OutlinedTextField(
-                        value = state.lastName,
-                        onValueChange = viewModel::onLastNameChange,
-                        label = { Text("Last name") },
-                        singleLine = true,
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = state.birthdate,
-                        onValueChange = viewModel::onBirthdateChange,
-                        label = { Text("Birthdate (YYYY-MM-DD)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = state.firstName,
+                                onValueChange = viewModel::onFirstNameChange,
+                                label = { Text("First name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.lastName,
+                                onValueChange = viewModel::onLastNameChange,
+                                label = { Text("Last name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Body metrics", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = state.heightCm,
-                        onValueChange = viewModel::onHeightCmChange,
-                        label = { Text("Height (cm)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = "Body metrics",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
-                    OutlinedTextField(
-                        value = state.weightKg,
-                        onValueChange = viewModel::onWeightKgChange,
-                        label = { Text("Weight (kg)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = state.age,
+                                onValueChange = viewModel::onAgeChange,
+                                label = { Text("Age") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.heightCm,
+                                onValueChange = viewModel::onHeightCmChange,
+                                label = { Text("Height (cm)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.weightKg,
+                                onValueChange = viewModel::onWeightKgChange,
+                                label = { Text("Weight (kg)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Student details", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = state.school,
-                        onValueChange = viewModel::onSchoolChange,
-                        label = { Text("School") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = "Facial recognition",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
-                    OutlinedTextField(
-                        value = state.course,
-                        onValueChange = viewModel::onCourseChange,
-                        label = { Text("Course") },
-                        singleLine = true,
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = if (state.faceRegistered) {
+                                    "Face registered — used to verify you during exercises."
+                                } else {
+                                    "No face registered yet. Register before starting exercises."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(
+                                onClick = { navController.navigate("face_registration?returnRoute=edit_profile") },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Face, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (state.faceRegistered) "Update face registration" else "Register face")
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Student details",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
-                    OutlinedTextField(
-                        value = state.yearLevel,
-                        onValueChange = viewModel::onYearLevelChange,
-                        label = { Text("Year level") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = state.school,
+                                onValueChange = viewModel::onSchoolChange,
+                                label = { Text("School") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.course,
+                                onValueChange = viewModel::onCourseChange,
+                                label = { Text("Course") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.yearLevel,
+                                onValueChange = viewModel::onYearLevelChange,
+                                label = { Text("Year level") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
 
                     if (state.errorMessage != null) {
                         Text(text = state.errorMessage ?: "", color = MaterialTheme.colorScheme.error)
@@ -159,7 +241,8 @@ fun EditProfileScreen(
                         enabled = !state.isSaving,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         if (state.isSaving) {
                             CircularProgressIndicator(
@@ -169,8 +252,9 @@ fun EditProfileScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text("Save changes")
+                        Text("Save changes", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
                     }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }

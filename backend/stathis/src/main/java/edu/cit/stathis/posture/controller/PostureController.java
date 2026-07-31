@@ -42,6 +42,7 @@ public class PostureController {
       PostureRulesService.RulesResult rules = rulesService.evaluate(result.getPredictedClass(), lastFrame);
       result.setFlags(rules.flags);
       result.setMessages(rules.messages);
+      result.setRuleSeverity(rules.severity);
       return ResponseEntity.ok(result);
     } catch (IllegalArgumentException e) {
       return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

@@ -1,5 +1,6 @@
 package citu.edu.stathis.mobile.features.profile.ui
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,8 +46,15 @@ fun BodyMetricsSetupScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(state.success) {
-        if (state.success) {
+    LaunchedEffect(state.success, state.needsFaceRegistration) {
+        if (!state.success) return@LaunchedEffect
+        if (state.needsFaceRegistration) {
+            val encodedReturn = Uri.encode(returnRoute.orEmpty())
+            navController.navigate("face_registration?returnRoute=$encodedReturn") {
+                popUpTo("body_metrics_setup?returnRoute={returnRoute}") { inclusive = true }
+                launchSingleTop = true
+            }
+        } else {
             val destination = returnRoute?.takeIf { it.isNotBlank() } ?: "profile"
             navController.navigate(destination) {
                 popUpTo(navController.graph.startDestinationId) { inclusive = false }
@@ -71,7 +81,7 @@ fun BodyMetricsSetupScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(
-                    text = "Body metrics",
+                    text = "Complete your profile",
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -100,41 +110,53 @@ fun BodyMetricsSetupScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Tell us about your body",
+                        text = "Body metrics",
                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "We need your date of birth, height, and weight before you start exercises. You can update height and weight later in your profile.",
+                        text = "Enter your age, height, and weight for BMI tracking. Next, you'll register your face for exercise identity checks.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = state.birthdate,
-                        onValueChange = viewModel::onBirthdateChange,
-                        label = { Text("Date of birth (YYYY-MM-DD)") },
-                        singleLine = true,
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = state.heightCm,
-                        onValueChange = viewModel::onHeightCmChange,
-                        label = { Text("Height (cm)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = state.weightKg,
-                        onValueChange = viewModel::onWeightKgChange,
-                        label = { Text("Weight (kg)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = state.age,
+                                onValueChange = viewModel::onAgeChange,
+                                label = { Text("Age") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.heightCm,
+                                onValueChange = viewModel::onHeightCmChange,
+                                label = { Text("Height (cm)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = state.weightKg,
+                                onValueChange = viewModel::onWeightKgChange,
+                                label = { Text("Weight (kg)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
 
                     if (state.errorMessage != null) {
                         Text(
@@ -151,7 +173,8 @@ fun BodyMetricsSetupScreen(
                         enabled = !state.isSaving,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         if (state.isSaving) {
                             CircularProgressIndicator(
@@ -161,8 +184,12 @@ fun BodyMetricsSetupScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text("Save and continue")
+                        Text(
+                            text = if (state.faceRegistered) "Save and continue" else "Save and register face",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                        )
                     }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }

@@ -1,10 +1,13 @@
 'use client';
 
 /**
- * Base API client for making requests to the backend
+ * Base API client for making requests to the backend.
+ * Prefer NEXT_PUBLIC_API_BASE_URL so local/dev/prod stay aligned with server-client.
  */
-// Using string literal as fallback for local development
-export const API_BASE_URL = 'https://stathis-u8s6.onrender.com/api';
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.API_BASE_URL ||
+  'https://stathis-u8s6.onrender.com/api';
 
 export interface ApiResponse<T = any> {
   data?: T;

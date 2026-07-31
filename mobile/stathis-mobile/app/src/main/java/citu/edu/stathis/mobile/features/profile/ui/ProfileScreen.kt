@@ -1,30 +1,40 @@
 package citu.edu.stathis.mobile.features.profile.ui
 
+import android.graphics.ImageDecoder
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,19 +43,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,22 +61,15 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.runtime.collectAsState
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.graphics.ImageDecoder
-import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
-import androidx.compose.material3.ExperimentalMaterial3Api
-import cit.edu.stathis.mobile.R
 import androidx.core.graphics.createBitmap
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.runtime.DisposableEffect
+import androidx.navigation.NavHostController
+import cit.edu.stathis.mobile.R
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 private fun StatCard(label: String, value: String, icon: @Composable () -> Unit, modifier: Modifier = Modifier) {
@@ -165,6 +166,17 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
     val lifecycleOwner = LocalLifecycleOwner.current
     var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val adaptiveSessionViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel =
+        hiltViewModel()
+    val learningProfile by adaptiveSessionViewModel.learningProfile.collectAsState()
+    val mastery by adaptiveSessionViewModel.mastery.collectAsState()
+    val profileLoading by adaptiveSessionViewModel.profileLoading.collectAsState()
+    val profileError by adaptiveSessionViewModel.profileError.collectAsState()
+    LaunchedEffect(uiState.value.profile?.physicalId) {
+        if (uiState.value.profile != null) {
+            adaptiveSessionViewModel.loadLearningProfileAndMastery()
+        }
+    }
 
     // Refresh when screen resumes to ensure latest profile after login
     DisposableEffect(lifecycleOwner) {
@@ -206,6 +218,9 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
                 scope.launch {
                     isRefreshing = true
                     viewModel.refresh()
+                    if (uiState.value.profile != null) {
+                        adaptiveSessionViewModel.loadLearningProfileAndMastery()
+                    }
                     delay(400)
                     isRefreshing = false
                 }
@@ -318,28 +333,123 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
             )
 
             val profile = uiState.value.profile
-            if (profile != null && (profile.heightInMeters != null || profile.weightInKg != null || !profile.birthdate.isNullOrBlank())) {
-                Spacer(modifier = Modifier.height(12.dp))
-                val heightLabel = profile.heightInMeters?.let { meters ->
-                    val cm = meters * 100.0
-                    if (cm % 1.0 == 0.0) "${cm.toInt()} cm" else "%.1f cm".format(cm)
-                }
-                val weightLabel = profile.weightInKg?.let { kg ->
-                    if (kg % 1.0 == 0.0) "${kg.toInt()} kg" else "%.1f kg".format(kg)
-                }
+            if (profile != null) {
+                Spacer(modifier = Modifier.height(20.dp))
                 Text(
-                    text = listOfNotNull(
-                        profile.birthdate?.let { "DOB $it" },
-                        heightLabel,
-                        weightLabel
-                    ).joinToString(" • "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    text = "Body metrics",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val heightLabel = profile.heightInMeters?.let { meters ->
+                        val cm = meters * 100.0
+                        if (cm % 1.0 == 0.0) "${cm.toInt()}" else "%.1f".format(cm)
+                    } ?: "--"
+                    val weightLabel = profile.weightInKg?.let { kg ->
+                        if (kg % 1.0 == 0.0) "${kg.toInt()}" else "%.1f".format(kg)
+                    } ?: "--"
+                    val ageLabel = profile.age?.toString() ?: "--"
+                    StatCard(
+                        label = "AGE",
+                        value = ageLabel,
+                        modifier = Modifier.weight(1f),
+                        icon = {
+                            Icon(
+                                Icons.Filled.MilitaryTech,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    StatCard(
+                        label = "HEIGHT",
+                        value = if (heightLabel == "--") "--" else "$heightLabel",
+                        modifier = Modifier.weight(1f),
+                        icon = {
+                            Text(
+                                text = "cm",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    )
+                    StatCard(
+                        label = "WEIGHT",
+                        value = if (weightLabel == "--") "--" else "$weightLabel",
+                        modifier = Modifier.weight(1f),
+                        icon = {
+                            Text(
+                                text = "kg",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Facial recognition",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (profile.faceRegistered) {
+                                    "Registered for exercise identity checks"
+                                } else {
+                                    "Required before starting exercises"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                navController.navigate("face_registration?returnRoute=profile")
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = if (profile.faceRegistered) "Update" else "Register",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            if (uiState.value.profile != null) {
+                citu.edu.stathis.mobile.features.exercise.ui.components.StudentMasterySection(
+                    profile = learningProfile,
+                    mastery = mastery,
+                    loading = profileLoading,
+                    error = profileError
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
 
             if (uiState.value.profile != null) {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
