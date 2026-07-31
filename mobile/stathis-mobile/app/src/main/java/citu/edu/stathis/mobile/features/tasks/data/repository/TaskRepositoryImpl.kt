@@ -10,6 +10,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizAutoCheckRequest
 import citu.edu.stathis.mobile.core.data.AuthTokenManager
+import citu.edu.stathis.mobile.core.debug.AgentDebugLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -130,6 +131,23 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun getExerciseTemplate(exerciseTemplateId: String): Flow<ExerciseTemplate> = flow {
         val response = taskService.getExerciseTemplate(exerciseTemplateId)
+        // #region agent log
+        AgentDebugLog.log(
+            hypothesisId = "H1",
+            location = "TaskRepositoryImpl.getExerciseTemplate",
+            message = "template fetch result",
+            data = mapOf(
+                "exerciseTemplateId" to exerciseTemplateId,
+                "code" to response.code(),
+                "ok" to response.isSuccessful,
+                "looksMockOrPlaceholder" to (
+                    exerciseTemplateId.contains("MOCK", ignoreCase = true) ||
+                        exerciseTemplateId.contains("BEG-", ignoreCase = true) ||
+                        exerciseTemplateId.contains("INT-", ignoreCase = true)
+                    )
+            )
+        )
+        // #endregion
         if (response.isSuccessful) {
             response.body()?.let { emit(it) } ?: throw IllegalStateException("Empty body for exercise template")
         } else {
@@ -177,7 +195,45 @@ class TaskRepositoryImpl @Inject constructor(
         exerciseTemplateId: String,
         result: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission?
     ): ScoreResponse? {
+        // #region agent log
+        AgentDebugLog.log(
+            hypothesisId = "H1-H2",
+            location = "TaskRepositoryImpl.completeExercise:before",
+            message = "complete exercise request",
+            data = mapOf(
+                "taskId" to taskId,
+                "exerciseTemplateId" to exerciseTemplateId,
+                "reps" to (result?.reps ?: -1),
+                "exerciseType" to (result?.exerciseType ?: "null"),
+                "classroomId" to (result?.classroomId ?: "null"),
+                "looksMockOrPlaceholder" to (
+                    exerciseTemplateId.contains("MOCK", ignoreCase = true) ||
+                        exerciseTemplateId.contains("BEG-", ignoreCase = true) ||
+                        exerciseTemplateId.contains("INT-", ignoreCase = true)
+                    )
+            )
+        )
+        // #endregion
         val response = taskService.completeExercise(taskId, exerciseTemplateId, result)
+        val errBody = if (!response.isSuccessful) {
+            runCatching { response.errorBody()?.string() }.getOrNull()
+        } else null
+        // #region agent log
+        AgentDebugLog.log(
+            hypothesisId = "H1-H2-H5",
+            location = "TaskRepositoryImpl.completeExercise:after",
+            message = "complete exercise response",
+            data = mapOf(
+                "taskId" to taskId,
+                "exerciseTemplateId" to exerciseTemplateId,
+                "code" to response.code(),
+                "ok" to response.isSuccessful,
+                "message" to response.message(),
+                "errorBody" to (errBody?.take(500) ?: "null"),
+                "attempts" to (response.body()?.attempts ?: -1)
+            )
+        )
+        // #endregion
         if (!response.isSuccessful) {
             throw IllegalStateException("Failed to complete exercise: ${response.code()} ${response.message()}")
         }
@@ -188,6 +244,21 @@ class TaskRepositoryImpl @Inject constructor(
         progress: citu.edu.stathis.mobile.features.tasks.data.model.ExerciseProgressPayload
     ) {
         val response = taskService.publishExerciseProgress(progress)
+        // #region agent log
+        AgentDebugLog.log(
+            hypothesisId = "H2",
+            location = "TaskRepositoryImpl.publishExerciseProgress",
+            message = "live progress publish",
+            data = mapOf(
+                "code" to response.code(),
+                "ok" to response.isSuccessful,
+                "taskId" to (progress.taskId ?: "null"),
+                "exerciseTemplateId" to progress.exerciseTemplateId,
+                "exerciseType" to (progress.exerciseType ?: "null"),
+                "completed" to progress.completed
+            )
+        )
+        // #endregion
         if (!response.isSuccessful) {
             android.util.Log.w(
                 "TaskRepositoryImpl",

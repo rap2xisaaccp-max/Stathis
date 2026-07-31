@@ -281,6 +281,9 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
             : `EXERCISE-${exerciseId}`;
         }
         taskData.exerciseTemplateId = exerciseId.toUpperCase();
+        // #region agent log
+        fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'pre-fix',hypothesisId:'H1-H3',location:'create-task-form.tsx:submit',message:'creating exercise task',data:{exerciseTemplateId:taskData.exerciseTemplateId,rawTemplatePhysicalId:data.templatePhysicalId,isMockLike:/MOCK|BEG-|INT-/i.test(String(taskData.exerciseTemplateId))},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       } else if (data.templateType === 'LESSON') {
         // Pattern must be: ^LESSON-[A-Z0-9-]+$
         // Ensure it starts with LESSON- prefix
