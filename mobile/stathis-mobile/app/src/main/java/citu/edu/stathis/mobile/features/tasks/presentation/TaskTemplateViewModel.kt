@@ -83,10 +83,19 @@ class TaskTemplateViewModel @Inject constructor(
                         }
                     }
                     "EXERCISE" -> {
-                        if (!templateId.isNullOrBlank()) {
-                            taskRepository.getExerciseTemplate(templateId).first()
-                        } else {
-                            createMockExerciseTemplate()
+                        val embedded = _taskDetail.value?.exerciseTemplate
+                        when {
+                            !templateId.isNullOrBlank() -> {
+                                runCatching { taskRepository.getExerciseTemplate(templateId).first() }
+                                    .getOrElse { err ->
+                                        // Same path as lesson: prefer embedded task template over mock UI.
+                                        embedded ?: throw err
+                                    }
+                            }
+                            embedded != null -> embedded
+                            else -> throw IllegalStateException(
+                                "No exercise template available for this task"
+                            )
                         }
                     }
                     else -> throw IllegalArgumentException("Unknown template type: $templateType")
@@ -180,26 +189,6 @@ class TaskTemplateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
-                // #region agent log
-                citu.edu.stathis.mobile.core.debug.AgentDebugLog.log(
-                    hypothesisId = "H3-H4",
-                    location = "TaskTemplateViewModel.submitExercise",
-                    message = "submit path (classroom task)",
-                    data = mapOf(
-                        "taskId" to taskId,
-                        "templateId" to performance.templateId,
-                        "exerciseType" to (performance.exerciseType ?: "null"),
-                        "classroomId" to (performance.classroomId ?: "null"),
-                        "actualReps" to performance.actualReps,
-                        "taskExerciseTemplateId" to (_taskDetail.value?.exerciseTemplateId ?: "null"),
-                        "taskEmbeddedExerciseId" to (_taskDetail.value?.exerciseTemplate?.physicalId ?: "null"),
-                        "idsMatchTask" to (
-                            performance.templateId == _taskDetail.value?.exerciseTemplateId ||
-                                performance.templateId == _taskDetail.value?.exerciseTemplate?.physicalId
-                            )
-                    )
-                )
-                // #endregion
 
                 val submission = citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission(
                     reps = performance.actualReps,
@@ -339,19 +328,6 @@ class TaskTemplateViewModel @Inject constructor(
                     )
                 )
             )
-        )
-    }
-
-    private fun createMockExerciseTemplate(): ExerciseTemplate {
-        return ExerciseTemplate(
-            physicalId = "exercise_001",
-            title = "Push-Up Challenge",
-            description = "Complete a set of push-ups with proper form to improve upper body strength.",
-            exerciseType = "PUSH_UP",
-            exerciseDifficulty = "BEGINNER",
-            goalReps = 10,
-            goalAccuracy = 80,
-            goalTime = 60
         )
     }
 }

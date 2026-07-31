@@ -32,9 +32,11 @@ public class ExerciseTemplate {
     private OffsetDateTime createdAt;
 
     @Column(name = "exercise_type")
+    @Enumerated(EnumType.STRING)
     private ExerciseType exerciseType;
 
     @Column(name = "exercise_difficulty")
+    @Enumerated(EnumType.STRING)
     private ExerciseDifficulty exerciseDifficulty;
 
     @Column(name = "goal_reps")

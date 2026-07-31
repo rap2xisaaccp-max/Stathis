@@ -42,7 +42,6 @@ import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
 import citu.edu.stathis.mobile.features.tasks.presentation.components.LessonTemplateRenderer
 import citu.edu.stathis.mobile.features.tasks.presentation.components.QuizTemplateRenderer
-import citu.edu.stathis.mobile.features.tasks.presentation.components.ExerciseTemplateRenderer
 import coil3.compose.AsyncImage
 import kotlin.math.abs
 

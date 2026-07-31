@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import citu.edu.stathis.mobile.core.learn.LearnPreferences
-import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.templates.ExerciseTemplate
 import citu.edu.stathis.mobile.features.exercise.data.templates.generateTemplatesForLevel
 import citu.edu.stathis.mobile.features.onboarding.domain.model.ExperienceLevel
@@ -191,95 +190,58 @@ fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostCont
     val context = LocalContext.current
     val learnPrefs = remember { LearnPreferences(context) }
     val level by learnPrefs.levelFlow.collectAsState(initial = ExperienceLevel.BEGINNER)
-    val template = remember(level, exerciseId) { generateTemplatesForLevel(level).find { it.physicalId == exerciseId } }
-    val exerciseType = remember(template) { resolveExerciseType(template?.exerciseType) }
-    val adaptiveSessionViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel =
-        hiltViewModel()
-    val adaptiveFeedback by adaptiveSessionViewModel.feedback.collectAsState()
-    val adaptiveHighlight by adaptiveSessionViewModel.highlight.collectAsState()
-    val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
-    val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
-    val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
-    var showAdaptiveSummary by remember { mutableStateOf(false) }
-
-    androidx.compose.runtime.LaunchedEffect(exerciseType) {
-        adaptiveSessionViewModel.startSession(
-            exerciseType = exerciseType?.name ?: template?.exerciseType ?: "UNKNOWN",
-            staticControl = citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs.isStaticControl(context),
-            sessionContext = citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs.CONTEXT_PRACTICE
-        )
-    }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose {
-            if (!showAdaptiveSummary) {
-                adaptiveSessionViewModel.flushAndEnd()
-            }
-        }
+    val practiceTemplate = remember(level, exerciseId) {
+        generateTemplatesForLevel(level).find { it.physicalId == exerciseId }
     }
 
-    androidx.activity.compose.BackHandler(enabled = !showAdaptiveSummary) {
-        adaptiveSessionViewModel.flushAndEnd()
-        showAdaptiveSummary = true
-    }
-
-    if (showAdaptiveSummary) {
-        androidx.compose.foundation.layout.Box(
+    if (practiceTemplate == null) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "Practice complete",
+                    text = "Exercise not found",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
-                citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard(
-                    summary = adaptiveSessionSummary
-                )
-                Button(
-                    onClick = { navController.popBackStack() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Done")
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Back")
                 }
             }
         }
         return
     }
 
-    citu.edu.stathis.mobile.features.exercise.ui.screens.ExerciseScreen(
-        navController = navController,
-        exerciseType = exerciseType,
-        exerciseTitle = template?.title,
-        // Practice still runs posture classify + adaptive logging for research volume.
-        enablePostureAnalysis = true,
-        enableExerciseTracking = true,
-        onExerciseFeedback = { feedback ->
-            adaptiveSessionViewModel.onExerciseFeedback(feedback)
-        },
-        adaptiveHighlight = adaptiveHighlight,
-        adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
-        adaptiveHighlightBones = adaptiveHighlightBones,
-        adaptiveMessage = adaptiveFeedback?.message,
-        adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel
-    )
-}
-
-private fun resolveExerciseType(rawType: String?): ExerciseType? {
-    val normalized = rawType?.trim()?.lowercase()?.replace(' ', '_') ?: return null
-    return when (normalized) {
-        "squat", "squats" -> ExerciseType.SQUAT
-        "sit_up", "sit_ups", "situp", "situps", "crunch", "crunches" -> ExerciseType.SIT_UP
-        "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
-        "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
-        "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE
-        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises" -> ExerciseType.LYING_LEG_RAISE
-        else -> null
+    // Reuse the same attempt/completion UI as classroom Push-up/Squat tasks.
+    val taskTemplate = remember(practiceTemplate) {
+        citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate(
+            physicalId = practiceTemplate.physicalId,
+            title = practiceTemplate.title,
+            description = practiceTemplate.description,
+            exerciseType = practiceTemplate.exerciseType,
+            exerciseDifficulty = practiceTemplate.exerciseDifficulty.name,
+            goalReps = practiceTemplate.goalReps ?: 10,
+            goalAccuracy = practiceTemplate.goalAccuracy ?: 80,
+            goalTime = practiceTemplate.goalTime ?: 60
+        )
     }
+
+    citu.edu.stathis.mobile.features.tasks.presentation.components.ExerciseTemplateRenderer(
+        template = taskTemplate,
+        classroomId = null,
+        navController = navController,
+        returnRouteAfterMetrics = "practice_session/$exerciseId",
+        maxAttempts = 0,
+        attemptsUsed = 0,
+        // Practice is ungraded: keep adaptive flush inside the renderer, skip Complete API.
+        onSessionFinished = { },
+        onFinishSession = { navController.popBackStack() },
+        onCancel = { navController.popBackStack() },
+        modifier = Modifier.fillMaxSize()
+    )
 }

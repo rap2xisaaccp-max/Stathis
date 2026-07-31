@@ -13,6 +13,10 @@ data class ExerciseTemplate(
     val goalAccuracy: Int?
 )
 
+/**
+ * Local practice catalog. exerciseType values match backend [edu.cit.stathis.task.enums.ExerciseType]
+ * so pose detection and scoring aliases resolve the same way as classroom Push-up/Squat tasks.
+ */
 fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
     return when (level) {
         ExperienceLevel.BEGINNER -> listOf(
@@ -27,17 +31,17 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
                 goalAccuracy = 90
             ),
             ExerciseTemplate(
-                physicalId = "EXERCISE-BEG-002",
+                physicalId = "EXERCISE-PRACTICE-PUSHUP",
                 title = "Wall Push-ups",
                 description = "Build pushing strength with safe wall push-ups.",
-                exerciseType = "PUSH_UPS",
+                exerciseType = "PUSH_UP",
                 exerciseDifficulty = ExperienceLevel.BEGINNER,
                 goalReps = 8,
                 goalTime = 90,
                 goalAccuracy = 85
             ),
             ExerciseTemplate(
-                physicalId = "EXERCISE-BEG-003",
+                physicalId = "EXERCISE-PRACTICE-GLUTE-BRIDGE",
                 title = "Glute Bridge",
                 description = "Strengthen your glutes and core with controlled bridges.",
                 exerciseType = "GLUTE_BRIDGE",
@@ -47,20 +51,20 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
                 goalAccuracy = 85
             ),
             ExerciseTemplate(
-                physicalId = "EXERCISE-BEG-004",
+                physicalId = "EXERCISE-PRACTICE-STATIC-LUNGES",
                 title = "Static Lunges",
                 description = "Build balance and leg strength with split stance lunges.",
-                exerciseType = "STATIC_LUNGE",
+                exerciseType = "STATIC_LUNGES",
                 exerciseDifficulty = ExperienceLevel.BEGINNER,
                 goalReps = 10,
                 goalTime = 90,
                 goalAccuracy = 85
             ),
             ExerciseTemplate(
-                physicalId = "EXERCISE-BEG-005",
+                physicalId = "EXERCISE-PRACTICE-LEG-RAISES",
                 title = "Lying Leg Raises",
                 description = "Train your lower abs with slow, controlled leg raises.",
-                exerciseType = "LYING_LEG_RAISE",
+                exerciseType = "LYING_LEG_RAISES",
                 exerciseDifficulty = ExperienceLevel.BEGINNER,
                 goalReps = 10,
                 goalTime = 90,
@@ -69,20 +73,20 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
         )
         ExperienceLevel.INTERMEDIATE -> listOf(
             ExerciseTemplate(
-                physicalId = "EXERCISE-INT-001",
+                physicalId = "EXERCISE-PRACTICE-LUNGES-INT",
                 title = "Alternating Lunges",
                 description = "Improve balance and strength with lunges.",
-                exerciseType = "LUNGES",
+                exerciseType = "STATIC_LUNGES",
                 exerciseDifficulty = ExperienceLevel.INTERMEDIATE,
                 goalReps = 12,
                 goalTime = 120,
                 goalAccuracy = 90
             ),
             ExerciseTemplate(
-                physicalId = "EXERCISE-INT-002",
+                physicalId = "EXERCISE-PRACTICE-PUSHUP-INT",
                 title = "Knee Push-ups",
                 description = "Scaled push-ups focusing on controlled reps.",
-                exerciseType = "PUSH_UPS",
+                exerciseType = "PUSH_UP",
                 exerciseDifficulty = ExperienceLevel.INTERMEDIATE,
                 goalReps = 10,
                 goalTime = 120,
@@ -91,17 +95,17 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
         )
         ExperienceLevel.ADVANCED -> listOf(
             ExerciseTemplate(
-                physicalId = "EXERCISE-ADV-001",
+                physicalId = "EXERCISE-PRACTICE-PUSHUP-ADV",
                 title = "Full Push-ups",
                 description = "Standard push-ups emphasizing full ROM.",
-                exerciseType = "PUSH_UPS",
+                exerciseType = "PUSH_UP",
                 exerciseDifficulty = ExperienceLevel.ADVANCED,
                 goalReps = 15,
                 goalTime = 120,
                 goalAccuracy = 92
             ),
             ExerciseTemplate(
-                physicalId = "EXERCISE-ADV-002",
+                physicalId = "EXERCISE-PRACTICE-SQUAT-ADV",
                 title = "Jump Squats",
                 description = "Power variation to challenge explosiveness.",
                 exerciseType = "SQUATS",
@@ -113,5 +117,3 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
         )
     }
 }
-
-

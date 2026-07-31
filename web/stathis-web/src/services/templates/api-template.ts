@@ -448,26 +448,12 @@ export async function getAllExerciseTemplates() {
     
     if (error) {
       console.error('[Exercise Templates Get All Error]', { error, status });
-      
-      // If we get a 403 error, return mock data for development
-      if (status === 403) {
-        console.warn('Using mock data for exercise templates due to 403 error');
-        return getMockExerciseTemplates();
-      }
-      
       throw new Error(error);
     }
     
     return data as ExerciseTemplateResponseDTO[];
   } catch (error) {
     console.error('Error getting all exercise templates:', error);
-    
-    // Return mock data for any error during development
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Using mock data for exercise templates due to error');
-      return getMockExerciseTemplates();
-    }
-    
     throw error;
   }
 }
@@ -483,33 +469,12 @@ export async function getTeacherExerciseTemplates() {
     
     if (error) {
       console.error('[Teacher Exercise Templates Get Error]', { error, status });
-      // #region agent log
-      fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'pre-fix',hypothesisId:'H1-H3',location:'api-template.ts:getTeacherExerciseTemplates',message:'teacher templates error; may fall back to mocks',data:{status,error:String(error),nodeEnv:process.env.NODE_ENV},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      // If we get an error, return mock data for development
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('Using mock data for teacher exercise templates due to error');
-        return getMockExerciseTemplates();
-      }
       throw new Error(error);
     }
-
-    // #region agent log
-    const list = data as ExerciseTemplateResponseDTO[];
-    fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'pre-fix',hypothesisId:'H1-H3',location:'api-template.ts:getTeacherExerciseTemplates',message:'teacher templates loaded',data:{count:list?.length??0,ids:(list||[]).slice(0,8).map(t=>t.physicalId),types:(list||[]).slice(0,8).map(t=>t.exerciseType)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     
     return data as ExerciseTemplateResponseDTO[];
   } catch (error) {
     console.error('Error getting teacher exercise templates:', error);
-    // #region agent log
-    fetch('http://127.0.0.1:7316/ingest/495f4aba-74a7-432b-b062-a71e4ed7ed12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b7147e'},body:JSON.stringify({sessionId:'b7147e',runId:'pre-fix',hypothesisId:'H1-H3',location:'api-template.ts:getTeacherExerciseTemplates:catch',message:'catch returning mocks in non-prod',data:{error:String(error),nodeEnv:process.env.NODE_ENV},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    // Return mock data for any error during development
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Using mock data for teacher exercise templates due to error');
-      return getMockExerciseTemplates();
-    }
     throw error;
   }
 }
@@ -570,32 +535,4 @@ export async function deleteExerciseTemplate(physicalId: string) {
     console.error('Error deleting exercise template:', error);
     throw error;
   }
-}
-
-/**
- * Generate mock exercise templates for development
- */
-function getMockExerciseTemplates(): ExerciseTemplateResponseDTO[] {
-  return [
-    {
-      physicalId: 'EXERCISE-MOCK-1',
-      title: 'Basic Push-ups',
-      description: 'Standard push-up exercise for beginners',
-      exerciseType: 'PUSH_UP',
-      exerciseDifficulty: 'BEGINNER',
-      goalReps: 10,
-      goalAccuracy: 80,
-      goalTime: 60
-    },
-    {
-      physicalId: 'EXERCISE-MOCK-2',
-      title: 'Advanced Squats',
-      description: 'Deep squats for experienced students',
-      exerciseType: 'SQUATS',
-      exerciseDifficulty: 'EXPERT',
-      goalReps: 20,
-      goalAccuracy: 90,
-      goalTime: 120
-    }
-  ];
 }

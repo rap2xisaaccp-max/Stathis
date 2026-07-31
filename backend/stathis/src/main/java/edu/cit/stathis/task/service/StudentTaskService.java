@@ -475,6 +475,10 @@ public class StudentTaskService {
             .closingDate(task.getClosingDate().toString())
             .imageUrl(task.getImageUrl())
             .classroomPhysicalId(task.getClassroomPhysicalId())
+            .exerciseTemplateId(task.getExerciseTemplateId())
+            .lessonTemplateId(task.getLessonTemplateId())
+            .quizTemplateId(task.getQuizTemplateId())
+            .maxAttempts(task.getMaxAttempts())
             .lessonTemplate(task.getLessonTemplateId() != null ? 
                 buildLessonTemplateDTO(task.getLessonTemplateId()) : null)
             .quizTemplate(task.getQuizTemplateId() != null ? 

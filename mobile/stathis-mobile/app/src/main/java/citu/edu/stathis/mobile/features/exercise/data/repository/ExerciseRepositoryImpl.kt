@@ -107,7 +107,7 @@ class ExerciseRepositoryImpl @Inject constructor(
     private fun getStaticExercises(): ClientResponse<List<Exercise>> {
         val exercises = listOf(
             Exercise(
-                id = "EXERCISE-23-0001-001",
+                id = "EXERCISE-PRACTICE-PUSHUP",
                 name = "Push-ups",
                 description = "A classic upper body exercise that targets chest, shoulders, and triceps",
                 instructions = listOf(
@@ -121,7 +121,7 @@ class ExerciseRepositoryImpl @Inject constructor(
                 difficulty = "BEGINNER"
             ),
             Exercise(
-                id = "EXERCISE-23-0001-002",
+                id = "EXERCISE-PRACTICE-SQUAT",
                 name = "Squats",
                 description = "A fundamental lower body exercise that targets quadriceps, hamstrings, and glutes",
                 instructions = listOf(
@@ -135,7 +135,7 @@ class ExerciseRepositoryImpl @Inject constructor(
                 difficulty = "BEGINNER"
             ),
             Exercise(
-                id = "EXERCISE-BEG-003",
+                id = "EXERCISE-PRACTICE-GLUTE-BRIDGE",
                 name = "Glute Bridge",
                 description = "A floor exercise that strengthens your glutes, hamstrings, and core",
                 instructions = listOf(
@@ -149,7 +149,7 @@ class ExerciseRepositoryImpl @Inject constructor(
                 difficulty = "BEGINNER"
             ),
             Exercise(
-                id = "EXERCISE-BEG-004",
+                id = "EXERCISE-PRACTICE-STATIC-LUNGES",
                 name = "Static Lunges",
                 description = "A split-stance lower body exercise for strength and balance",
                 instructions = listOf(
@@ -163,7 +163,7 @@ class ExerciseRepositoryImpl @Inject constructor(
                 difficulty = "BEGINNER"
             ),
             Exercise(
-                id = "EXERCISE-BEG-005",
+                id = "EXERCISE-PRACTICE-LEG-RAISES",
                 name = "Lying Leg Raises",
                 description = "A core exercise that targets the lower abdominal muscles",
                 instructions = listOf(
