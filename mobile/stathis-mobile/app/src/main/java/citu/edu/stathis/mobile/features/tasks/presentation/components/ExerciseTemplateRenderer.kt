@@ -1572,14 +1572,15 @@ private fun ExerciseControlsOverlay(
 }
 
 private fun resolveExerciseType(rawType: String): ExerciseType? {
-    val normalized = rawType.trim().lowercase().replace(' ', '_')
+    val normalized = rawType.trim().lowercase().replace(' ', '_').replace('-', '_')
     return when (normalized) {
         "squat", "squats" -> ExerciseType.SQUAT
         "sit_up", "sit_ups", "situp", "situps", "crunch", "crunches" -> ExerciseType.SIT_UP
-        "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
+        "pushup", "pushups", "push_up", "push_ups", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
         "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
         "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE
-        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises" -> ExerciseType.LYING_LEG_RAISE
+        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises",
+        "lyinglegraise", "lyinglegraises" -> ExerciseType.LYING_LEG_RAISE
         else -> null
     }
 }

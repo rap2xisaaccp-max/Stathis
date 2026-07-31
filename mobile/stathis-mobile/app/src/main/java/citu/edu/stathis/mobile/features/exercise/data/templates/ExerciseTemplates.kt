@@ -13,6 +13,26 @@ data class ExerciseTemplate(
     val goalAccuracy: Int?
 )
 
+/** Legacy practice IDs that still appear in bookmarks / older builds. */
+private val PRACTICE_TEMPLATE_ID_ALIASES = mapOf(
+    "EXERCISE-BEG-002" to "EXERCISE-PRACTICE-PUSHUP",
+    "EXERCISE-BEG-003" to "EXERCISE-PRACTICE-GLUTE-BRIDGE",
+    "EXERCISE-BEG-004" to "EXERCISE-PRACTICE-STATIC-LUNGES",
+    "EXERCISE-BEG-005" to "EXERCISE-PRACTICE-LEG-RAISES"
+)
+
+/**
+ * Resolve a practice catalog template by physical id across all levels,
+ * including legacy BEG-* aliases (especially Lying Leg Raises).
+ */
+fun findPracticeTemplate(exerciseId: String): ExerciseTemplate? {
+    val resolvedId = PRACTICE_TEMPLATE_ID_ALIASES[exerciseId] ?: exerciseId
+    return ExperienceLevel.entries
+        .asSequence()
+        .flatMap { generateTemplatesForLevel(it).asSequence() }
+        .firstOrNull { it.physicalId == resolvedId || it.physicalId == exerciseId }
+}
+
 /**
  * Local practice catalog. exerciseType values match backend [edu.cit.stathis.task.enums.ExerciseType]
  * so pose detection and scoring aliases resolve the same way as classroom Push-up/Squat tasks.

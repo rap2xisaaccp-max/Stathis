@@ -84,7 +84,7 @@ class TaskTemplateViewModel @Inject constructor(
                     }
                     "EXERCISE" -> {
                         val embedded = _taskDetail.value?.exerciseTemplate
-                        when {
+                        val loaded = when {
                             !templateId.isNullOrBlank() -> {
                                 runCatching { taskRepository.getExerciseTemplate(templateId).first() }
                                     .getOrElse { err ->
@@ -97,6 +97,7 @@ class TaskTemplateViewModel @Inject constructor(
                                 "No exercise template available for this task"
                             )
                         }
+                        normalizeLyingLegRaiseType(loaded)
                     }
                     else -> throw IllegalArgumentException("Unknown template type: $templateType")
                 }
@@ -241,6 +242,35 @@ class TaskTemplateViewModel @Inject constructor(
 
     fun clearError() {
         _error.value = null
+    }
+
+    /**
+     * Lying Leg Raises sometimes arrives with legacy/alias type strings that break pose routing.
+     * Canonicalize to backend [LYING_LEG_RAISES] without touching other exercise types.
+     */
+    private fun normalizeLyingLegRaiseType(template: ExerciseTemplate): ExerciseTemplate {
+        val known = template.exerciseType.trim().uppercase().replace('-', '_').replace(' ', '_')
+        val isLegRaiseAlias = known in setOf(
+            "LYING_LEG_RAISE",
+            "LYING_LEG_RAISES",
+            "LEG_RAISE",
+            "LEG_RAISES",
+            "LYINGLEGRAISE",
+            "LYINGLEGRAISES"
+        )
+        val isLegRaiseTitle = template.title.contains("leg raise", ignoreCase = true)
+        val recognized = known in setOf(
+            "PUSH_UP", "PUSH_UPS", "PUSHUP", "PUSHUPS",
+            "SQUAT", "SQUATS",
+            "GLUTE_BRIDGE", "GLUTE_BRIDGES",
+            "STATIC_LUNGE", "STATIC_LUNGES", "LUNGE", "LUNGES",
+            "LYING_LEG_RAISE", "LYING_LEG_RAISES", "LEG_RAISE", "LEG_RAISES"
+        )
+        return when {
+            isLegRaiseAlias -> template.copy(exerciseType = "LYING_LEG_RAISES")
+            isLegRaiseTitle && !recognized -> template.copy(exerciseType = "LYING_LEG_RAISES")
+            else -> template
+        }
     }
 
     private fun createMockLessonTemplate(): LessonTemplate {
