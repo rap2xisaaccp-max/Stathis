@@ -798,7 +798,7 @@ function StudentProgressSnapshotCard({
 }
 
 function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
-  const recent = (data.recentInterventions || []).slice(0, 8);
+  const recent = data.recentInterventions || [];
   if (recent.length === 0) {
     return (
       <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
@@ -816,9 +816,11 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
     <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
       <CardHeader>
         <CardTitle className="text-base">Recent coaching events</CardTitle>
-        <CardDescription>Latest closed-loop interventions for this student</CardDescription>
+        <CardDescription>
+          Closed-loop interventions for this student ({recent.length})
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="max-h-80 space-y-2 overflow-y-auto pr-1">
         {recent.map((item) => {
           const when = item.deliveredAt
             ? new Date(item.deliveredAt).toLocaleString(undefined, {
