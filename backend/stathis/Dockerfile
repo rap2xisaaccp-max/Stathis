@@ -3,6 +3,9 @@ FROM maven:3.9.6-eclipse-temurin-17 AS build
 
 WORKDIR /app
 
+# Copy the rest of the source code
+COPY . .
+
 # Copy the Maven wrapper and pom.xml first for dependency caching
 COPY .mvn/ .mvn
 COPY mvnw mvnw
@@ -13,9 +16,6 @@ RUN chmod +x mvnw
 
 # Download dependencies (leverages Docker cache)
 RUN ./mvnw dependency:go-offline
-
-# Copy the rest of the source code
-COPY . .
 
 # Build the application (skip tests)
 RUN ./mvnw clean install -DskipTests
