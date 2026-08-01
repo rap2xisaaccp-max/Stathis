@@ -31,10 +31,18 @@ class AdaptiveOfflineQueue(
     val pendingResponseCount: Int get() = responses.size
 
     fun enqueueIntervention(payload: InterventionRequestDto) {
+        val id = payload.physicalId
+        if (!id.isNullOrBlank() && interventions.any { it.payload.physicalId == id }) {
+            return // idempotent: retries reuse the same FI physicalId
+        }
         interventions.add(QueuedIntervention(payload))
     }
 
     fun enqueueResponse(payload: ResponseRequestDto) {
+        val fi = payload.interventionPhysicalId
+        if (fi.isNotBlank() && responses.any { it.payload.interventionPhysicalId == fi }) {
+            return // one FR per FI
+        }
         responses.add(QueuedResponse(payload))
     }
 

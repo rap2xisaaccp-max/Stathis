@@ -9,13 +9,16 @@ import javax.inject.Singleton
 import kotlin.math.max
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
  * On-device closed-loop session logger + orchestrator.
  *
- * Phase 4 focus: map errors → log interventions → measure response windows → offline queue with retry.
+ * One meaningful intervention = confirmed error → one modality → one delivery → one response
+ * window → one FR → cooldown. Form signals are serialized; lifecycle claims before async work.
  */
 @Singleton
 class AdaptiveFeedbackEngine @Inject constructor(
@@ -24,6 +27,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
 ) {
     private val pendingResponses = ConcurrentLinkedQueue<PendingIntervention>()
     private val offlineQueue = AdaptiveOfflineQueue(maxRetries = 5)
+    private val signalMutex = Mutex()
 
     @Volatile private var sessionId: String = ""
     @Volatile private var taskId: String? = null
@@ -118,72 +122,134 @@ class AdaptiveFeedbackEngine @Inject constructor(
         severity: Double,
         currentReps: Int,
         visibilityOk: Boolean = true
-    ): DeliveredFeedback? {
-        val now = System.currentTimeMillis()
-        clearActiveFeedbackIfExpired(now)
-        closeExpiredWindows(now, severity, currentReps, visibilityOk)
+    ): DeliveredFeedback? =
+        signalMutex.withLock {
+            val now = System.currentTimeMillis()
+            clearActiveFeedbackIfExpired(now)
+            closeExpiredWindows(now, severity, currentReps, visibilityOk)
 
-        if (!visibilityOk) {
-            return activeDelivery
-        }
+            if (!visibilityOk) {
+                return@withLock activeDelivery
+            }
 
-        val errorCode = FormErrorMapper.resolve(flags, formIssues)
-        // Lifecycle advances RESPONSE_OBSERVATION even while a pending window is open.
-        if (!interventionLifecycle.shouldDeliver(errorCode, severity, now, cooldownMs, currentReps)) {
-            return activeDelivery
-        }
-        // Wait out the open response window so deltas stay attributable.
-        if (pendingResponses.isNotEmpty()) {
-            return activeDelivery
-        }
-        val resolvedCode = errorCode ?: return activeDelivery
-        val intensity = interventionLifecycle.intensityFor(resolvedCode)
+            val errorCode = FormErrorMapper.resolve(flags, formIssues)
 
-        val recommendation = resolveRecommendation(resolvedCode, severity, intensity)
-        cooldownMs = recommendation.cooldownMs.toLong().coerceAtLeast(5000L)
+            // Technical camera/detection quality: UI guidance only — no coaching FI/FR cycle.
+            if (FormErrorClassifier.isTechnical(errorCode)) {
+                val guidance =
+                    CoachingInstructionCatalog.messageText(
+                        exerciseType,
+                        errorCode!!,
+                        InstructionIntensity.REMINDER
+                    )
+                val techUi =
+                    DeliveredFeedback(
+                        interventionId = "",
+                        modality = FeedbackModality.VERBAL_TEXT,
+                        errorCode = errorCode,
+                        message = guidance,
+                        highlightJoints = false,
+                        speak = false,
+                        showTextBanner = true,
+                        deliveryChannel = "technical",
+                        exerciseType = exerciseType
+                    )
+                activeDelivery = techUi
+                return@withLock techUi
+            }
 
-        val interventionId = "FI-${UUID.randomUUID().toString().uppercase()}"
-        val pending =
-            PendingIntervention(
-                physicalId = interventionId,
-                sessionId = sessionId.ifBlank { "SES-LOCAL" },
-                taskId = taskId,
-                classroomId = classroomId,
-                exerciseType = exerciseType,
-                errorCode = resolvedCode,
-                modality = recommendation.modality,
-                messageCode = recommendation.messageCode,
-                messageText = recommendation.messageText,
-                deliveredAtEpochMs = now,
-                baselineSeverity = severity.coerceIn(0.0, 1.0),
-                policySource = recommendation.policySource,
-                experimentArm = resolveExperimentArm(recommendation.experimentArm),
-                baselineReps = currentReps
-            )
+            if (!FormErrorClassifier.isCoachable(errorCode)) {
+                return@withLock activeDelivery
+            }
 
-        pendingResponses.add(pending)
-        offlineQueue.enqueueIntervention(pending.toRequestDto())
-        interventionLifecycle.markDelivered(resolvedCode, now, currentReps)
-        sessionInterventionCount += 1
-        sessionModalities.add(recommendation.modality.name)
-        sessionErrorCodes.add(resolvedCode.name)
+            if (pendingResponses.isNotEmpty()) {
+                return@withLock activeDelivery
+            }
 
-        val delivered =
-            delivery.deliver(
-                DeliveredFeedback(
-                    interventionId = interventionId,
-                    modality = recommendation.modality,
+            val cycle =
+                interventionLifecycle.tryClaimDelivery(
+                    errorCode,
+                    severity,
+                    now,
+                    cooldownMs,
+                    currentReps
+                )
+            if (cycle == null) {
+                return@withLock activeDelivery
+            }
+
+            val resolvedCode = errorCode!!
+            val intensity = interventionLifecycle.intensityFor(resolvedCode)
+            val interventionId =
+                stableInterventionId(
+                    sessionId = sessionId.ifBlank { "SES-LOCAL" },
+                    exerciseType = exerciseType,
                     errorCode = resolvedCode,
-                    message = recommendation.messageText,
-                    highlightJoints = false,
-                    speak = false,
-                    exerciseType = exerciseType
-                ),
-                now = now
-            )
-        activeDelivery = delivered
+                    cycle = cycle
+                )
 
-        return delivered
+            val recommendation =
+                try {
+                    resolveRecommendation(resolvedCode, severity, intensity)
+                } catch (t: Throwable) {
+                    Timber.w(t, "Recommend failed after claim; aborting cycle")
+                    interventionLifecycle.abortClaim(System.currentTimeMillis())
+                    return@withLock activeDelivery
+                }
+            cooldownMs = recommendation.cooldownMs.toLong().coerceAtLeast(8_000L)
+
+            val pending =
+                PendingIntervention(
+                    physicalId = interventionId,
+                    sessionId = sessionId.ifBlank { "SES-LOCAL" },
+                    taskId = taskId,
+                    classroomId = classroomId,
+                    exerciseType = exerciseType,
+                    errorCode = resolvedCode,
+                    modality = recommendation.modality,
+                    messageCode = recommendation.messageCode,
+                    messageText = recommendation.messageText,
+                    deliveredAtEpochMs = now,
+                    baselineSeverity = severity.coerceIn(0.0, 1.0),
+                    policySource = recommendation.policySource,
+                    experimentArm = resolveExperimentArm(recommendation.experimentArm),
+                    baselineReps = currentReps
+                )
+
+            pendingResponses.add(pending)
+            offlineQueue.enqueueIntervention(pending.toRequestDto())
+            interventionLifecycle.markDelivered(resolvedCode, now, currentReps)
+            sessionInterventionCount += 1
+            sessionModalities.add(recommendation.modality.name)
+            sessionErrorCodes.add(resolvedCode.name)
+
+            val delivered =
+                delivery.deliver(
+                    DeliveredFeedback(
+                        interventionId = interventionId,
+                        modality = recommendation.modality,
+                        errorCode = resolvedCode,
+                        message = recommendation.messageText,
+                        highlightJoints = false,
+                        speak = false,
+                        exerciseType = exerciseType
+                    ),
+                    now = now
+                )
+            activeDelivery = delivered
+            delivered
+        }
+
+    /** Deterministic FI id for a coaching cycle — retries reuse the same key. */
+    internal fun stableInterventionId(
+        sessionId: String,
+        exerciseType: String,
+        errorCode: FormErrorCode,
+        cycle: Int
+    ): String {
+        val material = "$sessionId|$exerciseType|${errorCode.name}|C$cycle"
+        val uuid = UUID.nameUUIDFromBytes(material.toByteArray(Charsets.UTF_8)).toString().uppercase()
+        return "FI-$uuid"
     }
 
     private fun resolveExperimentArm(recommendedArm: String?): String {

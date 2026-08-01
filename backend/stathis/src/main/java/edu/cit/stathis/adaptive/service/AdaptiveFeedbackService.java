@@ -196,8 +196,11 @@ public class AdaptiveFeedbackService {
             .build();
 
     FeedbackResponse saved = responseRepository.save(entity);
-    profileService.applyResponse(intervention, saved);
-    masteryService.applyResponse(intervention, saved);
+    // Technical camera/detection signals must not drive preferred-modality learning.
+    if (intervention.getErrorCode() == null || !intervention.getErrorCode().isTechnical()) {
+      profileService.applyResponse(intervention, saved);
+      masteryService.applyResponse(intervention, saved);
+    }
     armRollupService.recordResponse(intervention, saved);
     return saved;
   }
