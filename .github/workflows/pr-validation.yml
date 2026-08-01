@@ -1,0 +1,161 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  # Check if any files in the project have changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.changes.outputs.web }}
+      mobile: ${{ steps.changes.outputs.mobile }}
+      backend: ${{ steps.changes.outputs.backend }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            web:
+              - 'web/**'
+            mobile:
+              - 'mobile/**'
+            backend:
+              - 'backend/**'
+
+  # Web Dashboard Validation
+  web-validation:
+    name: Validate Web Dashboard
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    defaults:
+      run:
+        working-directory: web/stathis-web
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # No npm cache because no lockfile exists in web/stathis-web
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build application
+        run: npm run build
+      - name: Upload build output (web)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: web/stathis-web/.next
+
+  # Mobile App Validation
+  mobile-validation:
+    name: Validate Mobile App
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    defaults:
+      run:
+        working-directory: mobile/stathis-mobile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK (with Gradle cache)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 30
+          build-tools: 34.0.0
+
+      - name: Setup Gradle build action
+        uses: gradle/gradle-build-action@v3
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Run linting
+        run: ./gradlew lint
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Run unit tests (debug)
+        run: ./gradlew testDebugUnitTest
+
+      - name: Upload APK artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: mobile/stathis-mobile/app/build/outputs/apk/debug/*.apk
+
+  # Backend API Validation
+  backend-validation:
+    name: Validate Backend API
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    defaults:
+      run:
+        working-directory: backend/stathis
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Enable Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Build and test
+        run: mvn -B -ntp verify
+
+  # Summary
+  validation-summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [changes, web-validation, mobile-validation, backend-validation]
+    if: always()
+    steps:
+      - name: Check validation results
+        run: |
+          echo "Validation Summary:"
+          echo "Web changes: ${{ needs.changes.outputs.web }}"
+          echo "Mobile changes: ${{ needs.changes.outputs.mobile }}"
+          echo "Backend changes: ${{ needs.changes.outputs.backend }}"
+          echo ""
+          echo "Validation results:"
+          echo "Web validation: ${{ needs.web-validation.result }}"
+          echo "Mobile validation: ${{ needs.mobile-validation.result }}"
+          echo "Backend validation: ${{ needs.backend-validation.result }}"
