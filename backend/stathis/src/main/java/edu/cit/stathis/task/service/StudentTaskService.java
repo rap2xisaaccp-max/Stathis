@@ -31,6 +31,8 @@ import edu.cit.stathis.classroom.service.ClassroomService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import edu.cit.stathis.common.debug.AgentDebugLog;
+import java.util.Map;
 
 @Service
 public class StudentTaskService {
@@ -84,8 +86,14 @@ public class StudentTaskService {
     public TaskProgressDTO getTaskProgress(String taskId, String studentId) {
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
-        TaskCompletion completion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
-            .orElseThrow(() -> new EntityNotFoundException("Task completion not found for student ID: " + studentId + " and task ID: " + taskId));
+        java.util.List<TaskCompletion> completionRows =
+                taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
+        // #region agent log
+        AgentDebugLog.log("B", "StudentTaskService.getTaskProgress", "progress lookup",
+                Map.of("taskId", taskId, "studentId", studentId, "completionRowCount", completionRows.size(),
+                        "taskExerciseTemplateId", String.valueOf(task.getExerciseTemplateId())));
+        // #endregion
+        TaskCompletion completion = completionRows.isEmpty() ? null : completionRows.get(0);
         Score quizScore = task.getQuizTemplateId() != null
             ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
             : null;
@@ -101,11 +109,11 @@ public class StudentTaskService {
                 .quizScore(0)
                 .maxQuizScore(0)
                 .quizAttempts(0)
-                .exerciseAttempts(0)
-                .exerciseScore(0)
-                .maxExerciseScore(100)
-                .exerciseReps(0)
-                .exerciseGoalReps(null)
+                .exerciseAttempts(exerciseScore != null ? exerciseScore.getAttempts() : 0)
+                .exerciseScore(exerciseScore != null ? exerciseScore.getScore() : 0)
+                .maxExerciseScore(exerciseScore != null ? exerciseScore.getMaxScore() : 100)
+                .exerciseReps(exerciseScore != null ? exerciseScore.getReps() : 0)
+                .exerciseGoalReps(exerciseScore != null ? exerciseScore.getGoalReps() : null)
                 .totalTimeTaken(0L)
                 .build();
         }
@@ -301,9 +309,30 @@ public class StudentTaskService {
             String taskId,
             String exerciseTemplateId,
             ExerciseResultSubmissionDTO result) {
-        ExerciseTemplate template = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
-                .orElseThrow(() -> new EntityNotFoundException(
-                        "Exercise template not found with ID: " + exerciseTemplateId));
+        // #region agent log
+        AgentDebugLog.log("A", "StudentTaskService.completeExercise:entry", "completeExercise called",
+                Map.of("studentId", studentId, "taskId", taskId, "exerciseTemplateId", exerciseTemplateId,
+                        "hasBody", result != null));
+        // #endregion
+        ExerciseTemplate template;
+        try {
+            template = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "Exercise template not found with ID: " + exerciseTemplateId));
+            // #region agent log
+            AgentDebugLog.log("A", "StudentTaskService.completeExercise:template", "template hydrated",
+                    Map.of("exerciseTemplateId", exerciseTemplateId,
+                            "exerciseType", template.getExerciseType() != null ? template.getExerciseType().name() : "null",
+                            "difficulty", template.getExerciseDifficulty() != null ? template.getExerciseDifficulty().name() : "null"));
+            // #endregion
+        } catch (RuntimeException ex) {
+            // #region agent log
+            AgentDebugLog.log("A", "StudentTaskService.completeExercise:templateFail", "template load failed",
+                    Map.of("exerciseTemplateId", exerciseTemplateId, "error", ex.getClass().getSimpleName(),
+                            "message", String.valueOf(ex.getMessage())));
+            // #endregion
+            throw ex;
+        }
 
         int reps = result != null ? Math.max(0, result.getReps()) : 0;
         double accuracy = result != null ? result.getAccuracy() : 0.0;
@@ -321,6 +350,13 @@ public class StudentTaskService {
 
         Task task = taskRepository.findByPhysicalId(taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        // #region agent log
+        AgentDebugLog.log("C", "StudentTaskService.completeExercise:taskMatch", "task vs path template",
+                Map.of("taskId", taskId,
+                        "taskExerciseTemplateId", String.valueOf(task.getExerciseTemplateId()),
+                        "pathExerciseTemplateId", exerciseTemplateId,
+                        "idsMatch", exerciseTemplateId != null && exerciseTemplateId.equals(task.getExerciseTemplateId())));
+        // #endregion
 
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
@@ -369,6 +405,15 @@ public class StudentTaskService {
 
         Score savedScore = scoreRepository.save(existingScore);
         updateTaskCompletion(studentId, taskId, "exercise", true);
+        // #region agent log
+        AgentDebugLog.log("D", "StudentTaskService.completeExercise:saved", "score and task_completions updated",
+                Map.of("scorePhysicalId", String.valueOf(savedScore.getPhysicalId()),
+                        "attempts", savedScore.getAttempts(),
+                        "scoreValue", savedScore.getScore(),
+                        "reps", savedScore.getReps() != null ? savedScore.getReps() : 0,
+                        "exerciseTemplateId", String.valueOf(savedScore.getExerciseTemplateId()),
+                        "taskId", taskId));
+        // #endregion
 
         String classroomId = result != null ? result.getClassroomId() : null;
         if (classroomId == null || classroomId.isBlank()) {
@@ -405,15 +450,39 @@ public class StudentTaskService {
 
     @Transactional
     private void updateTaskCompletion(String studentId, String taskId, String componentType, boolean completed) {
-        TaskCompletion completion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
-            .orElse(null);
-        if (completion == null) {
+        // Collapse duplicate (student, task) rows that break Optional single-result lookups
+        // and roll back completeExercise transactions.
+        java.util.List<TaskCompletion> rows =
+                taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
+        // #region agent log
+        AgentDebugLog.log("B", "StudentTaskService.updateTaskCompletion", "resolve completion rows",
+                Map.of("studentId", studentId, "taskId", taskId, "rowCount", rows.size(),
+                        "componentType", componentType));
+        // #endregion
+        TaskCompletion completion;
+        if (rows.isEmpty()) {
             completion = TaskCompletion.builder()
                 .physicalId(provideUniquePhysicalId())
                 .studentId(studentId)
                 .taskId(taskId)
+                .lessonCompleted(false)
+                .quizCompleted(false)
+                .exerciseCompleted(false)
+                .isFullyCompleted(false)
+                .submittedForReview(false)
                 .startedAt(OffsetDateTime.now())
                 .build();
+        } else {
+            completion = rows.get(0);
+            for (int i = 1; i < rows.size(); i++) {
+                TaskCompletion dup = rows.get(i);
+                if (dup.isLessonCompleted()) completion.setLessonCompleted(true);
+                if (dup.isQuizCompleted()) completion.setQuizCompleted(true);
+                if (dup.isExerciseCompleted()) completion.setExerciseCompleted(true);
+                if (dup.isFullyCompleted()) completion.setFullyCompleted(true);
+                if (dup.isSubmittedForReview()) completion.setSubmittedForReview(true);
+                taskCompletionRepository.delete(dup);
+            }
         }
 
         switch (componentType.toLowerCase()) {
@@ -475,6 +544,10 @@ public class StudentTaskService {
             .closingDate(task.getClosingDate().toString())
             .imageUrl(task.getImageUrl())
             .classroomPhysicalId(task.getClassroomPhysicalId())
+            .exerciseTemplateId(task.getExerciseTemplateId())
+            .lessonTemplateId(task.getLessonTemplateId())
+            .quizTemplateId(task.getQuizTemplateId())
+            .maxAttempts(task.getMaxAttempts())
             .lessonTemplate(task.getLessonTemplateId() != null ? 
                 buildLessonTemplateDTO(task.getLessonTemplateId()) : null)
             .quizTemplate(task.getQuizTemplateId() != null ? 

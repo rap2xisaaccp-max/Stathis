@@ -11,8 +11,23 @@ import java.util.Optional;
 
 @Repository
 public interface TaskCompletionRepository extends JpaRepository<TaskCompletion, String> {
-    
-    Optional<TaskCompletion> findByStudentIdAndTaskId(String studentId, String taskId);
+
+    /**
+     * Prefer {@link #findAllByStudentIdAndTaskId} — duplicate rows exist in prod and
+     * a single-result Optional query throws NonUniqueResultException.
+     */
+    @Query("SELECT tc FROM TaskCompletion tc WHERE tc.studentId = :studentId AND tc.taskId = :taskId ORDER BY tc.startedAt ASC")
+    List<TaskCompletion> findAllByStudentIdAndTaskId(
+            @Param("studentId") String studentId,
+            @Param("taskId") String taskId);
+
+    default Optional<TaskCompletion> findByStudentIdAndTaskId(String studentId, String taskId) {
+        List<TaskCompletion> rows = findAllByStudentIdAndTaskId(studentId, taskId);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(rows.get(0));
+    }
     
     List<TaskCompletion> findByStudentId(String studentId);
     
@@ -31,4 +46,4 @@ public interface TaskCompletionRepository extends JpaRepository<TaskCompletion, 
     long countSubmittedForReviewByTaskId(@Param("taskId") String taskId);
     
     boolean existsByStudentIdAndTaskId(String studentId, String taskId);
-} 
+}

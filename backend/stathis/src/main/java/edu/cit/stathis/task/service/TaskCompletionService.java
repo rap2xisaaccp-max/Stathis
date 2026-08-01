@@ -20,6 +20,17 @@ public class TaskCompletionService {
 
     @Transactional
     public TaskCompletion createTaskCompletion(String studentId, String taskId) {
+        // Idempotent: duplicate creates were producing multiple rows per student/task,
+        // which broke findByStudentIdAndTaskId and rolled back completeExercise.
+        java.util.List<TaskCompletion> existing =
+                taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
+        if (!existing.isEmpty()) {
+            TaskCompletion keeper = existing.get(0);
+            for (int i = 1; i < existing.size(); i++) {
+                taskCompletionRepository.delete(existing.get(i));
+            }
+            return keeper;
+        }
         TaskCompletion taskCompletion = TaskCompletion.builder()
                 .physicalId(generatePhysicalId())
                 .studentId(studentId)

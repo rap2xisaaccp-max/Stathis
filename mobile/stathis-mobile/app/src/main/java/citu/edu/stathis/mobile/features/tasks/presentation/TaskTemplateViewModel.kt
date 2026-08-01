@@ -44,14 +44,12 @@ class TaskTemplateViewModel @Inject constructor(
                 _templateState.value = TemplateState.Loading
                 _error.value = null
 
-                // Fetch task details for deadline/isActive context (used for auto-submit and guards)
+                // Fetch task details for deadline/isActive / classroom encoding.
+                // Failure is non-fatal for EXERCISE: graded UI still opens with route taskId.
                 runCatching {
                     taskRepository.getStudentTask(taskId).first()
                 }.onSuccess { task ->
                     _taskDetail.value = task
-                }.onFailure { e ->
-                    // Non-fatal; proceed without task detail
-                    _error.value = _error.value
                 }
 
                 if (templateType == "EXERCISE") {
@@ -83,11 +81,24 @@ class TaskTemplateViewModel @Inject constructor(
                         }
                     }
                     "EXERCISE" -> {
-                        if (!templateId.isNullOrBlank()) {
-                            taskRepository.getExerciseTemplate(templateId).first()
-                        } else {
-                            createMockExerciseTemplate()
+                        // Single graded path for Squat / Push-up / Glute Bridge / Static Lunges /
+                        // Lying Leg Raises — never fall back to practice catalog or mock UI.
+                        val embedded = _taskDetail.value?.exerciseTemplate
+                        val loaded = when {
+                            !templateId.isNullOrBlank() -> {
+                                runCatching { taskRepository.getExerciseTemplate(templateId).first() }
+                                    .getOrElse { err ->
+                                        embedded?.takeIf {
+                                            it.physicalId == templateId || templateId == "embedded"
+                                        } ?: throw err
+                                    }
+                            }
+                            embedded != null -> embedded
+                            else -> throw IllegalStateException(
+                                "No exercise template available for this task"
+                            )
                         }
+                        normalizeExerciseTypeAliases(loaded)
                     }
                     else -> throw IllegalArgumentException("Unknown template type: $templateType")
                 }
@@ -234,6 +245,32 @@ class TaskTemplateViewModel @Inject constructor(
         _error.value = null
     }
 
+    /**
+     * Canonicalize teacher/API exercise type aliases to backend enum names so pose routing
+     * matches for every supported classroom exercise.
+     */
+    private fun normalizeExerciseTypeAliases(template: ExerciseTemplate): ExerciseTemplate {
+        val known = template.exerciseType.trim().uppercase().replace('-', '_').replace(' ', '_')
+        val canonical = when (known) {
+            "PUSH_UP", "PUSH_UPS", "PUSHUP", "PUSHUPS" -> "PUSH_UP"
+            "SQUAT", "SQUATS" -> "SQUATS"
+            "GLUTE_BRIDGE", "GLUTE_BRIDGES" -> "GLUTE_BRIDGE"
+            "STATIC_LUNGE", "STATIC_LUNGES", "LUNGE", "LUNGES" -> "STATIC_LUNGES"
+            "LYING_LEG_RAISE", "LYING_LEG_RAISES", "LEG_RAISE", "LEG_RAISES",
+            "LYINGLEGRAISE", "LYINGLEGRAISES" -> "LYING_LEG_RAISES"
+            else -> null
+        }
+        if (canonical != null) {
+            return if (canonical == template.exerciseType) template
+            else template.copy(exerciseType = canonical)
+        }
+        // Title-based rescue for legacy Leg Raise rows with unknown type strings.
+        if (template.title.contains("leg raise", ignoreCase = true)) {
+            return template.copy(exerciseType = "LYING_LEG_RAISES")
+        }
+        return template
+    }
+
     private fun createMockLessonTemplate(): LessonTemplate {
         return LessonTemplate(
             physicalId = "lesson_001",
@@ -319,19 +356,6 @@ class TaskTemplateViewModel @Inject constructor(
                     )
                 )
             )
-        )
-    }
-
-    private fun createMockExerciseTemplate(): ExerciseTemplate {
-        return ExerciseTemplate(
-            physicalId = "exercise_001",
-            title = "Push-Up Challenge",
-            description = "Complete a set of push-ups with proper form to improve upper body strength.",
-            exerciseType = "PUSH_UP",
-            exerciseDifficulty = "BEGINNER",
-            goalReps = 10,
-            goalAccuracy = 80,
-            goalTime = 60
         )
     }
 }

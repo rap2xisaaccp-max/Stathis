@@ -448,26 +448,12 @@ export async function getAllExerciseTemplates() {
     
     if (error) {
       console.error('[Exercise Templates Get All Error]', { error, status });
-      
-      // If we get a 403 error, return mock data for development
-      if (status === 403) {
-        console.warn('Using mock data for exercise templates due to 403 error');
-        return getMockExerciseTemplates();
-      }
-      
       throw new Error(error);
     }
     
     return data as ExerciseTemplateResponseDTO[];
   } catch (error) {
     console.error('Error getting all exercise templates:', error);
-    
-    // Return mock data for any error during development
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Using mock data for exercise templates due to error');
-      return getMockExerciseTemplates();
-    }
-    
     throw error;
   }
 }
@@ -483,22 +469,12 @@ export async function getTeacherExerciseTemplates() {
     
     if (error) {
       console.error('[Teacher Exercise Templates Get Error]', { error, status });
-      // If we get an error, return mock data for development
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('Using mock data for teacher exercise templates due to error');
-        return getMockExerciseTemplates();
-      }
       throw new Error(error);
     }
     
     return data as ExerciseTemplateResponseDTO[];
   } catch (error) {
     console.error('Error getting teacher exercise templates:', error);
-    // Return mock data for any error during development
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Using mock data for teacher exercise templates due to error');
-      return getMockExerciseTemplates();
-    }
     throw error;
   }
 }
@@ -559,32 +535,4 @@ export async function deleteExerciseTemplate(physicalId: string) {
     console.error('Error deleting exercise template:', error);
     throw error;
   }
-}
-
-/**
- * Generate mock exercise templates for development
- */
-function getMockExerciseTemplates(): ExerciseTemplateResponseDTO[] {
-  return [
-    {
-      physicalId: 'EXERCISE-MOCK-1',
-      title: 'Basic Push-ups',
-      description: 'Standard push-up exercise for beginners',
-      exerciseType: 'PUSH_UP',
-      exerciseDifficulty: 'BEGINNER',
-      goalReps: 10,
-      goalAccuracy: 80,
-      goalTime: 60
-    },
-    {
-      physicalId: 'EXERCISE-MOCK-2',
-      title: 'Advanced Squats',
-      description: 'Deep squats for experienced students',
-      exerciseType: 'SQUATS',
-      exerciseDifficulty: 'EXPERT',
-      goalReps: 20,
-      goalAccuracy: 90,
-      goalTime: 120
-    }
-  ];
 }

@@ -1,4 +1,4 @@
-package citu.edu.stathis.mobile.features.tasks.presentation.components
+﻿package citu.edu.stathis.mobile.features.tasks.presentation.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -70,9 +70,9 @@ private enum class IdentityPhase {
     UNVERIFIED,
     /** Initial FaceNet biometric scan */
     VERIFYING,
-    /** Recognized user — skeleton trusted, reps may be counted */
+    /** Recognized user â€” skeleton trusted, reps may be counted */
     VERIFIED,
-    /** Skeleton left frame — counting paused until face matches again */
+    /** Skeleton left frame â€” counting paused until face matches again */
     REVERIFYING
 }
 
@@ -314,7 +314,7 @@ fun ExerciseTemplateRenderer(
                 },
                 monitorSkeletonPresence = isRecognized,
                 onSkeletonLeftFrame = {
-                    // Only after 5s out of frame — pause counting until face matches again
+                    // Only after 5s out of frame â€” pause counting until face matches again
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         identityPhase = IdentityPhase.REVERIFYING
                         identityMessage =
@@ -510,9 +510,9 @@ private fun ExerciseInstructions(
         ) {
             // Exercise Icon
             Icon(
-                imageVector = when (template.exerciseType) {
-                    "PUSH_UP" -> Icons.Default.FitnessCenter
-                    "SQUATS" -> Icons.Default.DirectionsRun
+                imageVector = when (template.exerciseType.uppercase().replace('-', '_')) {
+                    "PUSH_UP", "PUSH_UPS", "PUSHUP", "PUSHUPS" -> Icons.Default.FitnessCenter
+                    "SQUAT", "SQUATS" -> Icons.Default.DirectionsRun
                     else -> Icons.Default.Sports
                 },
                 contentDescription = "Exercise",
@@ -658,181 +658,6 @@ private fun GoalItem(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
-        )
-    }
-}
-
-@Composable
-private fun ExerciseInProgress(
-    template: ExerciseTemplate,
-    onComplete: (ExercisePerformance) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var currentReps by remember { mutableIntStateOf(0) }
-    var currentTime by remember { mutableIntStateOf(0) }
-    var currentAccuracy by remember { mutableFloatStateOf(0f) }
-    var isTimerRunning by remember { mutableStateOf(false) }
-
-    // Simulate exercise progress (in real app, this would come from pose detection)
-    LaunchedEffect(isTimerRunning) {
-        if (isTimerRunning) {
-            while (currentTime < template.goalTime && currentReps < template.goalReps) {
-                kotlinx.coroutines.delay(1000)
-                currentTime++
-                if (currentTime % 3 == 0) { // Simulate rep every 3 seconds
-                    currentReps++
-                    currentAccuracy = (70f + (currentReps * 2f)).coerceAtMost(95f) // Simulate improving accuracy
-                }
-            }
-
-            // Exercise completed
-            val performance = buildExercisePerformance(
-                template = template,
-                classroomIdEncoded = null,
-                actualReps = currentReps,
-                actualAccuracy = currentAccuracy,
-                actualTime = currentTime
-            )
-            onComplete(performance)
-        }
-    }
-
-    Card(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Exercise Status
-            Text(
-                text = "Exercise in Progress",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Progress Indicators
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                ProgressIndicator(
-                    label = "Reps",
-                    current = currentReps,
-                    goal = template.goalReps,
-                    icon = Icons.Default.Repeat
-                )
-
-                ProgressIndicator(
-                    label = "Time",
-                    current = currentTime,
-                    goal = template.goalTime,
-                    icon = Icons.Default.Timer
-                )
-
-                ProgressIndicator(
-                    label = "Accuracy",
-                    current = currentAccuracy.toInt(),
-                    goal = template.goalAccuracy,
-                    icon = Icons.Default.GpsFixed
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Start/Stop Button
-            Button(
-                onClick = { isTimerRunning = !isTimerRunning },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isTimerRunning) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                Icon(
-                    imageVector = if (isTimerRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = if (isTimerRunning) "Stop" else "Start",
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isTimerRunning) "Stop Exercise" else "Start Exercise",
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProgressIndicator(
-    label: String,
-    current: Int,
-    goal: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector
-) {
-    val progress = if (goal > 0) (current.toFloat() / goal).coerceAtMost(1f) else 0f
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(300),
-        label = "progress"
-    )
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            modifier = Modifier.size(32.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "$current/$goal",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LinearProgressIndicator(
-            progress = animatedProgress,
-            modifier = Modifier
-                .width(60.dp)
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp)),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
         )
     }
 }
@@ -1162,7 +987,7 @@ private fun ExerciseControlsOverlay(
         }
 
         // First Start of an attempt: clear only when parent has no progress.
-        // If overlay remounted mid-session, parent sessionReps/sessionInProgress survive — do not wipe.
+        // If overlay remounted mid-session, parent sessionReps/sessionInProgress survive â€” do not wipe.
         if (!sessionInProgress) {
             onSessionInProgressChange(true)
             if (ExerciseGoalCompletion.shouldClearCountersOnStart(sessionReps)) {
@@ -1523,7 +1348,7 @@ private fun ExerciseControlsOverlay(
             }
         }
 
-        // Controls: Verify first; after success → Cancel / Start|Stop / Complete
+        // Controls: Verify first; after success â†’ Cancel / Start|Stop / Complete
         Card(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -1747,14 +1572,15 @@ private fun ExerciseControlsOverlay(
 }
 
 private fun resolveExerciseType(rawType: String): ExerciseType? {
-    val normalized = rawType.trim().lowercase().replace(' ', '_')
+    val normalized = rawType.trim().lowercase().replace(' ', '_').replace('-', '_')
     return when (normalized) {
         "squat", "squats" -> ExerciseType.SQUAT
         "sit_up", "sit_ups", "situp", "situps", "crunch", "crunches" -> ExerciseType.SIT_UP
-        "pushup", "pushups", "push_up", "push_ups", "push-up", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
+        "pushup", "pushups", "push_up", "push_ups", "wall_pushup", "wall_pushups" -> ExerciseType.PUSHUP
         "glute_bridge", "glute_bridges" -> ExerciseType.GLUTE_BRIDGE
         "static_lunge", "static_lunges", "lunge", "lunges" -> ExerciseType.STATIC_LUNGE
-        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises" -> ExerciseType.LYING_LEG_RAISE
+        "lying_leg_raise", "lying_leg_raises", "leg_raise", "leg_raises",
+        "lyinglegraise", "lyinglegraises" -> ExerciseType.LYING_LEG_RAISE
         else -> null
     }
 }
@@ -1836,7 +1662,7 @@ private fun ExerciseResults(
             )
 
             Text(
-                text = "Reps ${performance.actualReps}/${performance.goalReps} · ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
+                text = "Reps ${performance.actualReps}/${performance.goalReps} Â· ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -1942,7 +1768,7 @@ private fun ExerciseResults(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Complete — always available to exit regardless of remaining attempts
+            // Complete â€” always available to exit regardless of remaining attempts
             OutlinedButton(
                 onClick = onComplete,
                 modifier = Modifier.fillMaxWidth()
@@ -2023,7 +1849,7 @@ private fun calculateScore(
     template: ExerciseTemplate
 ): Int {
     if (template.goalReps <= 0) return 0
-    // Score = completed reps / target reps × 100 (capped at 100)
+    // Score = completed reps / target reps Ã— 100 (capped at 100)
     return ((actualReps.toFloat() / template.goalReps) * 100f)
         .coerceIn(0f, 100f)
         .toInt()
