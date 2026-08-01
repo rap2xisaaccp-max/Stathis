@@ -122,6 +122,8 @@ fun ExerciseTemplateRenderer(
     /** Reset submission guard when a new attempt begins (start or retry). */
     onExerciseAttemptReady: () -> Unit = {},
     onCancel: (() -> Unit)? = null,
+    /** Use [RctExperimentPrefs.CONTEXT_PRACTICE] for ungraded practice sessions. */
+    sessionContext: String = RctExperimentPrefs.CONTEXT_TASK,
     modifier: Modifier = Modifier
 ) {
     var isExerciseStarted by remember { mutableStateOf(false) }
@@ -155,7 +157,7 @@ fun ExerciseTemplateRenderer(
         RctExperimentPrefs.isStaticControl(context)
     }
 
-    LaunchedEffect(isExerciseStarted, template.exerciseType, classroomId) {
+    LaunchedEffect(isExerciseStarted, template.exerciseType, classroomId, sessionContext) {
         if (isExerciseStarted) {
             val (classroomPhysicalId, taskPhysicalId) = parseClassroomAndTaskId(classroomId)
             adaptiveSessionViewModel.startSession(
@@ -163,7 +165,7 @@ fun ExerciseTemplateRenderer(
                 taskId = taskPhysicalId,
                 classroomId = classroomPhysicalId,
                 staticControl = staticControlArm,
-                sessionContext = RctExperimentPrefs.CONTEXT_TASK
+                sessionContext = sessionContext
             )
         }
     }

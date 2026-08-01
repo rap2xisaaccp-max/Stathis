@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchAdaptiveInsights,
@@ -42,9 +43,15 @@ import {
   buildRecurringErrorsChartData,
 } from '@/components/adaptive/adaptive-insights-charts';
 
-function formatPct(value: number | null | undefined): string {
+function formatPct(value: number | null | undefined, n?: number): string {
+  if (n === 0) return 'Insufficient data';
   if (value == null || Number.isNaN(value)) return '—';
   return `${Math.round(value * 100)}%`;
+}
+
+function showApsleResearchUi(searchParams: URLSearchParams | null): boolean {
+  if (process.env.NEXT_PUBLIC_APSLE_SHOW_RCT === 'true') return true;
+  return searchParams?.get('research') === '1';
 }
 
 function formatDelta(value: number | null | undefined): string {
@@ -243,6 +250,9 @@ export function AdaptiveLearningInsights({
     goalReps?: number | null;
   }>;
 }) {
+  const searchParams = useSearchParams();
+  const showResearch = showApsleResearchUi(searchParams);
+
   const insightsQuery = useQuery({
     queryKey: ['adaptive-insights', studentId],
     queryFn: () => fetchAdaptiveInsights(studentId),
@@ -254,7 +264,7 @@ export function AdaptiveLearningInsights({
   const evaluationQuery = useQuery({
     queryKey: ['adaptive-evaluation', studentId],
     queryFn: () => fetchAdaptiveEvaluation(studentId),
-    enabled: !!studentId,
+    enabled: !!studentId && showResearch,
     staleTime: 1000 * 30,
     refetchOnWindowFocus: true,
     retry: 1,
@@ -262,7 +272,7 @@ export function AdaptiveLearningInsights({
   const classroomQuery = useQuery({
     queryKey: ['adaptive-classroom-evaluation', classroomId],
     queryFn: () => fetchClassroomEvaluation(classroomId!),
-    enabled: !!classroomId,
+    enabled: !!classroomId && showResearch,
     staleTime: 1000 * 30,
     refetchOnWindowFocus: true,
     retry: 1,
@@ -280,27 +290,31 @@ export function AdaptiveLearningInsights({
     <div className="space-y-4">
       <StudentProgressSnapshotCard progressItems={progressItems} />
 
-      <EvaluationSummaryCard
-        evaluation={evaluationQuery.data}
-        isError={evaluationQuery.isError}
-        isLoading={evaluationQuery.isLoading}
-        onRetry={() => evaluationQuery.refetch()}
-      />
+      {showResearch && (
+        <>
+          <EvaluationSummaryCard
+            evaluation={evaluationQuery.data}
+            isError={evaluationQuery.isError}
+            isLoading={evaluationQuery.isLoading}
+            onRetry={() => evaluationQuery.refetch()}
+          />
 
-      <FeedbackEffectivenessCard
-        evaluation={evaluationQuery.data}
-        isLoading={evaluationQuery.isLoading}
-        isError={evaluationQuery.isError}
-        onRetry={() => evaluationQuery.refetch()}
-      />
+          <FeedbackEffectivenessCard
+            evaluation={evaluationQuery.data}
+            isLoading={evaluationQuery.isLoading}
+            isError={evaluationQuery.isError}
+            onRetry={() => evaluationQuery.refetch()}
+          />
 
-      <ClassroomAblationCard
-        classroomId={classroomId}
-        classroomEvaluation={classroomQuery.data}
-        isLoading={classroomQuery.isLoading}
-        isError={classroomQuery.isError}
-        onRetry={() => classroomQuery.refetch()}
-      />
+          <ClassroomAblationCard
+            classroomId={classroomId}
+            classroomEvaluation={classroomQuery.data}
+            isLoading={classroomQuery.isLoading}
+            isError={classroomQuery.isError}
+            onRetry={() => classroomQuery.refetch()}
+          />
+        </>
+      )}
 
       {insightsQuery.isLoading && (
         <>
@@ -711,7 +725,7 @@ function FeedbackEffectivenessCard({
               data={modalityData}
               index="modality"
               categories={['delta']}
-              colors={['hsl(var(--chart-3, var(--primary)))']}
+              colors={['var(--chart-3)']}
               className="h-full"
             />
           </div>
@@ -797,13 +811,59 @@ function StudentProgressSnapshotCard({
   );
 }
 
+function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }) {
+  const byExercise =
+    data.preferredModalityByExercise ||
+    data.profile?.preferredModalityByExercise ||
+    {};
+  const entries = Object.entries(byExercise);
+  return (
+    <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+      <CardHeader>
+        <CardTitle className="text-base">Preferred Modality by Exercise</CardTitle>
+        <CardDescription>
+          Statistical preference from closed-loop responses (LEARNED requires n≥5).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Insufficient data</p>
+        ) : (
+          entries.map(([exercise, row]) => {
+            const source = (row?.source || 'DEFAULT').toUpperCase();
+            const modality = row?.modality?.replaceAll('_', ' ') || '—';
+            const label =
+              source === 'LEARNED'
+                ? modality
+                : source === 'EXPLORING'
+                  ? `Learning (${modality})`
+                  : 'Insufficient data';
+            return (
+              <div
+                key={exercise}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
+              >
+                <span className="font-medium">{exercise.replaceAll('_', ' ')}</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  <Badge variant="secondary">{label}</Badge>
+                  <Badge variant="outline">n={row?.n ?? 0}</Badge>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
   const recent = data.recentInterventions || [];
   if (recent.length === 0) {
     return (
       <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
         <CardHeader>
-          <CardTitle className="text-base">Recent coaching events</CardTitle>
+          <CardTitle className="text-base">Recent Adaptive Interventions</CardTitle>
           <CardDescription>
             No closed-loop interventions logged for this student yet.
           </CardDescription>
@@ -815,7 +875,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
   return (
     <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
       <CardHeader>
-        <CardTitle className="text-base">Recent coaching events</CardTitle>
+        <CardTitle className="text-base">Recent Adaptive Interventions</CardTitle>
         <CardDescription>
           Closed-loop interventions for this student ({recent.length})
         </CardDescription>
@@ -830,6 +890,12 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
                 minute: '2-digit',
               })
             : null;
+          const improved =
+            item.responseSuccess == null
+              ? 'Pending'
+              : item.responseSuccess
+                ? 'Improved'
+                : 'No change';
           return (
             <div
               key={item.physicalId}
@@ -841,16 +907,16 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
                   {item.errorCode.replaceAll('_', ' ')}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {item.messageText || 'Coaching cue delivered'}
+                  {item.messageText || item.correctionDelivered || 'Coaching cue delivered'}
                   {when ? ` · ${when}` : ''}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1">
                 <Badge variant="secondary">{item.modality.replaceAll('_', ' ')}</Badge>
-                {item.policySource && (
-                  <Badge variant="outline">{item.policySource.replaceAll('_', ' ')}</Badge>
+                <Badge variant="outline">{improved}</Badge>
+                {item.responseDelta != null && (
+                  <Badge variant="outline">{formatDelta(item.responseDelta)}</Badge>
                 )}
-                {item.experimentArm && <Badge variant="outline">{item.experimentArm}</Badge>}
               </div>
             </div>
           );
@@ -880,6 +946,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
 
   return (
     <>
+      <PreferredModalityByExerciseCard data={data} />
       <RecentInterventionsCard data={data} />
 
       <div>
@@ -889,9 +956,11 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
-              <CardDescription>Preferred modality</CardDescription>
+              <CardDescription>Preferred modality (overall)</CardDescription>
               <CardTitle className="text-lg">
-                {data.profile?.preferredModality?.replaceAll('_', ' ') || 'Building…'}
+                {(data.profile?.totalInterventions ?? 0) < 1
+                  ? 'Insufficient data'
+                  : data.profile?.preferredModality?.replaceAll('_', ' ') || 'Learning'}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
@@ -911,7 +980,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
             <CardHeader className="pb-2">
               <CardDescription>Closed-loop success</CardDescription>
               <CardTitle className="text-lg">
-                {formatPct(data.overallSuccessRate)}
+                {formatPct(data.overallSuccessRate, data.totalInterventions)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
@@ -947,7 +1016,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
               data={modalityData}
               index="modality"
               categories={['delta']}
-              colors={['hsl(var(--primary))']}
+              colors={['var(--primary)']}
               className="h-full"
             />
           </div>
@@ -972,7 +1041,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
               data={errorData}
               index="error"
               categories={['count']}
-              colors={['hsl(var(--destructive))']}
+              colors={['var(--destructive)']}
               className="h-full"
             />
           </div>
@@ -997,7 +1066,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
               data={timelineData}
               index="date"
               categories={['masteryPct', 'consistencyPct']}
-              colors={['hsl(var(--primary))', 'hsl(var(--secondary))']}
+              colors={['var(--primary)', 'var(--secondary)']}
               className="h-full"
             />
           </div>
@@ -1022,7 +1091,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
               data={masteryBars}
               index="exercise"
               categories={['masteryPct']}
-              colors={['hsl(var(--chart-2, var(--primary)))']}
+              colors={['var(--chart-2)']}
               className="h-full"
             />
           </div>

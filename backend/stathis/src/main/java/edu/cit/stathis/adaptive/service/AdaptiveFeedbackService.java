@@ -35,26 +35,68 @@ public class AdaptiveFeedbackService {
   public AdaptiveBatchIngestResultDTO ingestBatch(String studentId, AdaptiveBatchIngestDTO batch) {
     List<String> interventionIds = new ArrayList<>();
     List<String> responseIds = new ArrayList<>();
+    List<String> errors = new ArrayList<>();
+    int interventionsFailed = 0;
+    int responsesFailed = 0;
 
     if (batch.getInterventions() != null) {
       for (FeedbackInterventionRequestDTO req : batch.getInterventions()) {
-        FeedbackIntervention saved = saveIntervention(studentId, req);
-        interventionIds.add(saved.getPhysicalId());
+        try {
+          FeedbackIntervention saved = saveIntervention(studentId, req);
+          interventionIds.add(saved.getPhysicalId());
+        } catch (ResponseStatusException ex) {
+          interventionsFailed++;
+          errors.add(
+              "FI:"
+                  + (req.getPhysicalId() != null ? req.getPhysicalId() : "?")
+                  + ":"
+                  + ex.getReason());
+        } catch (RuntimeException ex) {
+          interventionsFailed++;
+          errors.add(
+              "FI:"
+                  + (req.getPhysicalId() != null ? req.getPhysicalId() : "?")
+                  + ":"
+                  + ex.getMessage());
+        }
       }
     }
 
     if (batch.getResponses() != null) {
       for (FeedbackResponseRequestDTO req : batch.getResponses()) {
-        FeedbackResponse saved = saveResponse(studentId, req);
-        responseIds.add(saved.getPhysicalId());
+        try {
+          FeedbackResponse saved = saveResponse(studentId, req);
+          responseIds.add(saved.getPhysicalId());
+        } catch (ResponseStatusException ex) {
+          responsesFailed++;
+          errors.add(
+              "FR:"
+                  + (req.getInterventionPhysicalId() != null
+                      ? req.getInterventionPhysicalId()
+                      : "?")
+                  + ":"
+                  + ex.getReason());
+        } catch (RuntimeException ex) {
+          responsesFailed++;
+          errors.add(
+              "FR:"
+                  + (req.getInterventionPhysicalId() != null
+                      ? req.getInterventionPhysicalId()
+                      : "?")
+                  + ":"
+                  + ex.getMessage());
+        }
       }
     }
 
     return AdaptiveBatchIngestResultDTO.builder()
         .interventionsSaved(interventionIds.size())
         .responsesSaved(responseIds.size())
+        .interventionsFailed(interventionsFailed)
+        .responsesFailed(responsesFailed)
         .interventionPhysicalIds(interventionIds)
         .responsePhysicalIds(responseIds)
+        .errors(errors)
         .updatedProfile(profileService.toDto(profileService.getOrCreate(studentId)))
         .build();
   }
@@ -246,17 +288,27 @@ public class AdaptiveFeedbackService {
                   .build());
     }
 
+    Map<String, FeedbackResponse> responseByIntervention = new HashMap<>();
+    for (FeedbackResponse response : allResponses) {
+      if (response.getInterventionPhysicalId() != null) {
+        responseByIntervention.putIfAbsent(response.getInterventionPhysicalId(), response);
+      }
+    }
+
     return AdaptiveInsightsDTO.builder()
         .studentId(studentId)
         .profile(profile)
         .mastery(mastery)
+        .preferredModalityByExercise(profile.getPreferredModalityByExercise())
         .modalityMeanDelta(modalityMeanDelta)
         .topRecurringErrors(topErrors)
         .totalInterventions(closedPairs)
         .successfulInterventions(successes)
         .overallSuccessRate(RctEvaluationMetrics.successRate(successes, closedPairs))
         .recentInterventions(
-            recent.stream().map(this::toInterventionDto).collect(Collectors.toList()))
+            recent.stream()
+                .map(fi -> toInterventionDto(fi, responseByIntervention.get(fi.getPhysicalId())))
+                .collect(Collectors.toList()))
         .profileHistory(history)
         .build();
   }
@@ -520,6 +572,11 @@ public class AdaptiveFeedbackService {
   }
 
   private FeedbackInterventionResponseDTO toInterventionDto(FeedbackIntervention entity) {
+    return toInterventionDto(entity, null);
+  }
+
+  private FeedbackInterventionResponseDTO toInterventionDto(
+      FeedbackIntervention entity, FeedbackResponse response) {
     return FeedbackInterventionResponseDTO.builder()
         .physicalId(entity.getPhysicalId())
         .studentId(entity.getStudentId())
@@ -535,6 +592,9 @@ public class AdaptiveFeedbackService {
         .baselineSeverity(entity.getBaselineSeverity())
         .policySource(entity.getPolicySource())
         .experimentArm(entity.getExperimentArm())
+        .responseSuccess(response != null ? response.isSuccess() : null)
+        .responseDelta(response != null ? response.getDelta() : null)
+        .correctionDelivered(entity.getMessageText())
         .build();
   }
 

@@ -13,6 +13,8 @@ public class AdaptiveInsightsDTO {
   private String studentId;
   private StudentLearningProfileDTO profile;
   private List<ExerciseMasteryDTO> mastery;
+  /** Convenience mirror of profile.preferredModalityByExercise for teacher widgets. */
+  private Map<String, Object> preferredModalityByExercise;
   private Map<String, Double> modalityMeanDelta;
   private Map<String, Long> topRecurringErrors;
   private long totalInterventions;

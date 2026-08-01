@@ -29,7 +29,7 @@ export function LineChart({
   data,
   categories,
   index,
-  colors = ['hsl(var(--primary))', 'hsl(var(--secondary))'],
+  colors = ['var(--primary)', 'var(--secondary)'],
   className
 }: LineChartProps) {
   return (
@@ -54,16 +54,16 @@ export function LineChart({
           <div className="w-full" style={{ height: 240, minHeight: 240 }}>
             <ResponsiveContainer width="100%" height={240}>
               <RechartsLineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                 <XAxis
                   dataKey={index}
-                  stroke="hsl(var(--muted-foreground))"
+                  stroke="var(--muted-foreground)"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="hsl(var(--muted-foreground))"
+                  stroke="var(--muted-foreground)"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
@@ -71,8 +71,8 @@ export function LineChart({
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    borderColor: 'hsl(var(--border))',
+                    backgroundColor: 'var(--card)',
+                    borderColor: 'var(--border)',
                     borderRadius: '12px',
                     boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)'
                   }}

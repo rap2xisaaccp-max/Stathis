@@ -26,4 +26,8 @@ public class FeedbackInterventionResponseDTO {
   private double baselineSeverity;
   private PolicySource policySource;
   private String experimentArm;
+  /** Populated on insights when a closed-loop response exists. */
+  private Boolean responseSuccess;
+  private Double responseDelta;
+  private String correctionDelivered;
 }

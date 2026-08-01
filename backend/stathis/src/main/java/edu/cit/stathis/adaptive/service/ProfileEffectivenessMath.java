@@ -72,6 +72,11 @@ public final class ProfileEffectivenessMath {
   }
 
   @SuppressWarnings("unchecked")
+  /** Minimum closed-loop pairs before a per-exercise preference is LEARNED. */
+  public static final int LEARNED_MIN_N = 5;
+  /** Minimum score margin over the runner-up to declare LEARNED. */
+  public static final double LEARNED_MARGIN = 0.05;
+
   public static FeedbackModality derivePreferredModality(Map<String, Object> effectiveness) {
     FeedbackModality best = FeedbackModality.VERBAL_TEXT;
     double bestScore = Double.NEGATIVE_INFINITY;
@@ -80,6 +85,9 @@ public final class ProfileEffectivenessMath {
     }
 
     for (FeedbackModality modality : FeedbackModality.values()) {
+      if (modality == FeedbackModality.DEMONSTRATION) {
+        continue;
+      }
       Object raw = effectiveness.get(modality.name());
       if (!(raw instanceof Map<?, ?>)) {
         continue;
@@ -104,6 +112,111 @@ public final class ProfileEffectivenessMath {
     }
     return best;
   }
+
+  /**
+   * Derives preferred modality per exercise from composite keys {@code exercise|error|modality}.
+   * Source is DEFAULT (n=0), EXPLORING (0&lt;n&lt;5 or thin margin), or LEARNED (n≥5 and margin≥0.05).
+   */
+  @SuppressWarnings("unchecked")
+  public static Map<String, Object> derivePreferredByExercise(Map<String, Object> effectiveness) {
+    Map<String, Object> out = new HashMap<>();
+    if (effectiveness == null || effectiveness.isEmpty()) {
+      return out;
+    }
+
+    Map<String, Map<FeedbackModality, Agg>> byExercise = new HashMap<>();
+    for (Map.Entry<String, Object> e : effectiveness.entrySet()) {
+      String key = e.getKey();
+      if (key == null || !key.contains("|") || !(e.getValue() instanceof Map<?, ?>)) {
+        continue;
+      }
+      String[] parts = key.split("\\|");
+      if (parts.length != 3) {
+        continue;
+      }
+      String exercise = parts[0];
+      FeedbackModality modality;
+      try {
+        modality = FeedbackModality.valueOf(parts[2]);
+      } catch (IllegalArgumentException ex) {
+        continue;
+      }
+      if (modality == FeedbackModality.DEMONSTRATION) {
+        continue;
+      }
+      Map<String, Object> bucket = (Map<String, Object>) e.getValue();
+      int n = ((Number) bucket.getOrDefault("n", 0)).intValue();
+      if (n < 1) {
+        continue;
+      }
+      double meanDelta =
+          ((Number)
+                  bucket.getOrDefault(
+                      "bayesianMeanDelta", bucket.getOrDefault("meanDelta", 0.0)))
+              .doubleValue();
+      double successRate = ((Number) bucket.getOrDefault("successRate", 0.0)).doubleValue();
+      double score = meanDelta + 0.2 * successRate + Math.log1p(n) * 0.01;
+      byExercise
+          .computeIfAbsent(exercise, k -> new HashMap<>())
+          .merge(
+              modality,
+              new Agg(n, meanDelta, score),
+              (a, b) -> new Agg(a.n + b.n, (a.meanDelta * a.n + b.meanDelta * b.n) / (a.n + b.n),
+                  Math.max(a.score, b.score)));
+    }
+
+    for (Map.Entry<String, Map<FeedbackModality, Agg>> ex : byExercise.entrySet()) {
+      FeedbackModality best = FeedbackModality.VERBAL_TEXT;
+      double bestScore = Double.NEGATIVE_INFINITY;
+      double secondScore = Double.NEGATIVE_INFINITY;
+      int bestN = 0;
+      int totalN = 0;
+      double bestMean = 0.0;
+      boolean hasBest = false;
+      for (Map.Entry<FeedbackModality, Agg> m : ex.getValue().entrySet()) {
+        Agg agg = m.getValue();
+        // Recompute score from aggregated mean/n for stable ranking.
+        double score = agg.meanDelta + Math.log1p(agg.n) * 0.01;
+        totalN += agg.n;
+        if (!hasBest
+            || score > bestScore
+            || (score == bestScore && agg.n > bestN)
+            || (score == bestScore
+                && agg.n == bestN
+                && m.getKey() == FeedbackModality.VERBAL_TEXT)) {
+          if (hasBest) {
+            secondScore = bestScore;
+          }
+          best = m.getKey();
+          bestScore = score;
+          bestN = agg.n;
+          bestMean = agg.meanDelta;
+          hasBest = true;
+        } else if (score > secondScore) {
+          secondScore = score;
+        }
+      }
+      String source;
+      if (totalN <= 0) {
+        source = "DEFAULT";
+        best = FeedbackModality.VERBAL_TEXT;
+      } else if (totalN < LEARNED_MIN_N || (bestScore - secondScore) < LEARNED_MARGIN) {
+        source = "EXPLORING";
+      } else {
+        source = "LEARNED";
+      }
+      Map<String, Object> row = new HashMap<>();
+      row.put("modality", best.name());
+      row.put("n", totalN);
+      row.put("meanDelta", bestMean);
+      row.put("confidence", Math.min(1.0, totalN / (double) LEARNED_MIN_N));
+      row.put("source", source);
+      out.put(ex.getKey(), row);
+    }
+    return out;
+  }
+
+  private record Agg(int n, double meanDelta, double score) {}
 
   @SuppressWarnings("unchecked")
   private static Map<String, Object> readBucket(Object existing) {
