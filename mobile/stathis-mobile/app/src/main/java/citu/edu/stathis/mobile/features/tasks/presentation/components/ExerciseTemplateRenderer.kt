@@ -53,6 +53,7 @@ import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
 import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
+import citu.edu.stathis.mobile.features.exercise.domain.SessionAccuracyTracker
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
@@ -791,8 +792,17 @@ private fun ExerciseControlsOverlay(
         if (currentReps != sessionReps) currentReps = sessionReps
     }
     var currentTime by remember { mutableIntStateOf(0) }
-    var currentAccuracy by remember { mutableFloatStateOf(0f) }
+    val accuracyTracker = remember { SessionAccuracyTracker() }
+    /** Session mean of non-zero confidence samples — triggers live progress republish. */
+    var sessionAccuracy by remember { mutableFloatStateOf(0f) }
     var isTimerRunning by remember { mutableStateOf(false) }
+
+    fun recordAccuracySample(confidence: Float) {
+        accuracyTracker.record(confidence)
+        sessionAccuracy = accuracyTracker.sessionAccuracy
+    }
+
+    fun accuracyForSubmit(): Float = accuracyTracker.accuracyForSubmit()
     /** Idempotent completion for auto-goal, Finish, and Complete-during-reverify. */
     var hasEmittedCompletion by remember { mutableStateOf(false) }
     val overlayCompletionGuard = remember { ExerciseSubmissionGuard() }
@@ -817,12 +827,13 @@ private fun ExerciseControlsOverlay(
     // Re-apply when timer resumes after re-verify even if feedback object identity is unchanged
     LaunchedEffect(liveExerciseFeedback, isTimerRunning, onTrackingActive, identityPhase) {
         val feedback = liveExerciseFeedback ?: return@LaunchedEffect
-        if (onTrackingActive && isTimerRunning && identityPhase == IdentityPhase.VERIFIED) {
+        val gateOk = onTrackingActive && isTimerRunning && identityPhase == IdentityPhase.VERIFIED
+        if (gateOk) {
             applyLiveReps(feedback.repCount)
             exerciseState = feedback.exerciseState
             exerciseConfidence = feedback.confidence
             exerciseFeedback = feedback.formIssues
-            currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
+            recordAccuracySample(feedback.confidence)
         }
     }
 
@@ -848,7 +859,7 @@ private fun ExerciseControlsOverlay(
     }
 
     // Publish live progress to teacher dashboard every 2s while running
-    LaunchedEffect(isTimerRunning, currentReps, currentTime, currentAccuracy) {
+    LaunchedEffect(isTimerRunning, currentReps, currentTime, sessionAccuracy) {
         if (!isTimerRunning) return@LaunchedEffect
         kotlinx.coroutines.delay(2000)
         exerciseSyncViewModel.publishProgress(
@@ -858,7 +869,7 @@ private fun ExerciseControlsOverlay(
             exerciseType = template.exerciseType,
             reps = currentReps,
             goalReps = template.goalReps,
-            accuracy = currentAccuracy.toDouble(),
+            accuracy = accuracyForSubmit().toDouble(),
             timeTakenSeconds = currentTime,
             completed = false
         )
@@ -882,8 +893,7 @@ private fun ExerciseControlsOverlay(
         exerciseConfidence = result.confidence ?: 0f
         exerciseFeedback = result.feedback
 
-        // Update accuracy based on confidence
-        currentAccuracy = (exerciseConfidence * 100f).coerceAtMost(100f)
+        recordAccuracySample(exerciseConfidence)
     } }
 
     val healthConnectViewModel: HealthConnectViewModel = hiltViewModel()
@@ -1039,11 +1049,12 @@ private fun ExerciseControlsOverlay(
             )
             exerciseVitalsMonitoringService.stopMonitoringWithPostActivity(vitalSigns ?: fallbackVitals)
 
+            val submitAccuracy = accuracyForSubmit()
             val performance = buildExercisePerformance(
                 template = template,
                 classroomIdEncoded = classroomId,
                 actualReps = currentReps,
-                actualAccuracy = currentAccuracy,
+                actualAccuracy = submitAccuracy,
                 actualTime = currentTime,
                 weightKg = weightKg
             )
@@ -1054,7 +1065,7 @@ private fun ExerciseControlsOverlay(
                 exerciseType = template.exerciseType,
                 reps = currentReps,
                 goalReps = template.goalReps,
-                accuracy = currentAccuracy.toDouble(),
+                accuracy = submitAccuracy.toDouble(),
                 timeTakenSeconds = currentTime,
                 completed = true
             )
@@ -1079,11 +1090,12 @@ private fun ExerciseControlsOverlay(
         isTimerRunning = false
         onSessionInProgressChange(false)
         shouldStopWithPostActivity = true
+        val submitAccuracy = accuracyForSubmit()
         val performance = buildExercisePerformance(
             template = template,
             classroomIdEncoded = classroomId,
             actualReps = currentReps,
-            actualAccuracy = currentAccuracy,
+            actualAccuracy = submitAccuracy,
             actualTime = currentTime,
             weightKg = weightKg
         )
@@ -1094,7 +1106,7 @@ private fun ExerciseControlsOverlay(
             exerciseType = template.exerciseType,
             reps = currentReps,
             goalReps = template.goalReps,
-            accuracy = currentAccuracy.toDouble(),
+            accuracy = submitAccuracy.toDouble(),
             timeTakenSeconds = currentTime,
             completed = true
         )
@@ -1154,7 +1166,7 @@ private fun ExerciseControlsOverlay(
 
                     MinimalProgressIndicator(
                         label = "A",
-                        current = currentAccuracy.toInt(),
+                        current = accuracyForSubmit().toInt(),
                         goal = template.goalAccuracy,
                         icon = Icons.Default.GpsFixed,
                         animateProgress = false
@@ -1442,11 +1454,12 @@ private fun ExerciseControlsOverlay(
                                     isTimerRunning = false
                                     onSessionInProgressChange(false)
                                     shouldStopWithPostActivity = true
+                                    val submitAccuracy = accuracyForSubmit()
                                     val performance = buildExercisePerformance(
                                         template = template,
                                         classroomIdEncoded = classroomId,
                                         actualReps = currentReps,
-                                        actualAccuracy = currentAccuracy,
+                                        actualAccuracy = submitAccuracy,
                                         actualTime = currentTime,
                                         weightKg = weightKg
                                     )
@@ -1457,7 +1470,7 @@ private fun ExerciseControlsOverlay(
                                         exerciseType = template.exerciseType,
                                         reps = currentReps,
                                         goalReps = template.goalReps,
-                                        accuracy = currentAccuracy.toDouble(),
+                                        accuracy = submitAccuracy.toDouble(),
                                         timeTakenSeconds = currentTime,
                                         completed = true
                                     )
@@ -1528,11 +1541,12 @@ private fun ExerciseControlsOverlay(
                         // Stop vitals monitoring with post-activity vitals
                         shouldStopWithPostActivity = true
                         // End this attempt and show performance results
+                        val submitAccuracy = accuracyForSubmit()
                         val performance = buildExercisePerformance(
                             template = template,
                             classroomIdEncoded = classroomId,
                             actualReps = currentReps,
-                            actualAccuracy = currentAccuracy,
+                            actualAccuracy = submitAccuracy,
                             actualTime = currentTime,
                             weightKg = weightKg
                         )
@@ -1543,7 +1557,7 @@ private fun ExerciseControlsOverlay(
                             exerciseType = template.exerciseType,
                             reps = currentReps,
                             goalReps = template.goalReps,
-                            accuracy = currentAccuracy.toDouble(),
+                            accuracy = submitAccuracy.toDouble(),
                             timeTakenSeconds = currentTime,
                             completed = true
                         )

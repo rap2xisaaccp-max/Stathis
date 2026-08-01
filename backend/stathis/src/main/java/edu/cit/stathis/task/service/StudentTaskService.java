@@ -31,9 +31,6 @@ import edu.cit.stathis.classroom.service.ClassroomService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
-import edu.cit.stathis.common.debug.AgentDebugLog;
-import java.util.Map;
-
 @Service
 public class StudentTaskService {
     @Autowired
@@ -88,11 +85,6 @@ public class StudentTaskService {
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
         java.util.List<TaskCompletion> completionRows =
                 taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
-        // #region agent log
-        AgentDebugLog.log("B", "StudentTaskService.getTaskProgress", "progress lookup",
-                Map.of("taskId", taskId, "studentId", studentId, "completionRowCount", completionRows.size(),
-                        "taskExerciseTemplateId", String.valueOf(task.getExerciseTemplateId())));
-        // #endregion
         TaskCompletion completion = completionRows.isEmpty() ? null : completionRows.get(0);
         Score quizScore = task.getQuizTemplateId() != null
             ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
@@ -309,30 +301,9 @@ public class StudentTaskService {
             String taskId,
             String exerciseTemplateId,
             ExerciseResultSubmissionDTO result) {
-        // #region agent log
-        AgentDebugLog.log("A", "StudentTaskService.completeExercise:entry", "completeExercise called",
-                Map.of("studentId", studentId, "taskId", taskId, "exerciseTemplateId", exerciseTemplateId,
-                        "hasBody", result != null));
-        // #endregion
-        ExerciseTemplate template;
-        try {
-            template = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
-                    .orElseThrow(() -> new EntityNotFoundException(
-                            "Exercise template not found with ID: " + exerciseTemplateId));
-            // #region agent log
-            AgentDebugLog.log("A", "StudentTaskService.completeExercise:template", "template hydrated",
-                    Map.of("exerciseTemplateId", exerciseTemplateId,
-                            "exerciseType", template.getExerciseType() != null ? template.getExerciseType().name() : "null",
-                            "difficulty", template.getExerciseDifficulty() != null ? template.getExerciseDifficulty().name() : "null"));
-            // #endregion
-        } catch (RuntimeException ex) {
-            // #region agent log
-            AgentDebugLog.log("A", "StudentTaskService.completeExercise:templateFail", "template load failed",
-                    Map.of("exerciseTemplateId", exerciseTemplateId, "error", ex.getClass().getSimpleName(),
-                            "message", String.valueOf(ex.getMessage())));
-            // #endregion
-            throw ex;
-        }
+        ExerciseTemplate template = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Exercise template not found with ID: " + exerciseTemplateId));
 
         int reps = result != null ? Math.max(0, result.getReps()) : 0;
         double accuracy = result != null ? result.getAccuracy() : 0.0;
@@ -350,13 +321,6 @@ public class StudentTaskService {
 
         Task task = taskRepository.findByPhysicalId(taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
-        // #region agent log
-        AgentDebugLog.log("C", "StudentTaskService.completeExercise:taskMatch", "task vs path template",
-                Map.of("taskId", taskId,
-                        "taskExerciseTemplateId", String.valueOf(task.getExerciseTemplateId()),
-                        "pathExerciseTemplateId", exerciseTemplateId,
-                        "idsMatch", exerciseTemplateId != null && exerciseTemplateId.equals(task.getExerciseTemplateId())));
-        // #endregion
 
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
@@ -405,15 +369,6 @@ public class StudentTaskService {
 
         Score savedScore = scoreRepository.save(existingScore);
         updateTaskCompletion(studentId, taskId, "exercise", true);
-        // #region agent log
-        AgentDebugLog.log("D", "StudentTaskService.completeExercise:saved", "score and task_completions updated",
-                Map.of("scorePhysicalId", String.valueOf(savedScore.getPhysicalId()),
-                        "attempts", savedScore.getAttempts(),
-                        "scoreValue", savedScore.getScore(),
-                        "reps", savedScore.getReps() != null ? savedScore.getReps() : 0,
-                        "exerciseTemplateId", String.valueOf(savedScore.getExerciseTemplateId()),
-                        "taskId", taskId));
-        // #endregion
 
         String classroomId = result != null ? result.getClassroomId() : null;
         if (classroomId == null || classroomId.isBlank()) {
@@ -454,11 +409,6 @@ public class StudentTaskService {
         // and roll back completeExercise transactions.
         java.util.List<TaskCompletion> rows =
                 taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
-        // #region agent log
-        AgentDebugLog.log("B", "StudentTaskService.updateTaskCompletion", "resolve completion rows",
-                Map.of("studentId", studentId, "taskId", taskId, "rowCount", rows.size(),
-                        "componentType", componentType));
-        // #endregion
         TaskCompletion completion;
         if (rows.isEmpty()) {
             completion = TaskCompletion.builder()

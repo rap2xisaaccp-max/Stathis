@@ -201,7 +201,6 @@ class TaskTemplateViewModel @Inject constructor(
                     exerciseType = performance.exerciseType,
                     classroomId = performance.classroomId
                 )
-
                 val score = taskRepository.completeExercise(taskId, performance.templateId, submission)
 
                 // Increment exercise attempts in cache (using LessonAttemptsCache for now)
