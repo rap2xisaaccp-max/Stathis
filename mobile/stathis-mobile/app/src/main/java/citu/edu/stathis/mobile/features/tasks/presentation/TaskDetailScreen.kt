@@ -38,79 +38,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
-import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
-import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
-import citu.edu.stathis.mobile.features.tasks.presentation.components.LessonTemplateRenderer
-import citu.edu.stathis.mobile.features.tasks.presentation.components.QuizTemplateRenderer
 import coil3.compose.AsyncImage
 import kotlin.math.abs
-
-@Composable
-private fun FallbackComponentsSection(
-    task: Task,
-    viewModel: TaskViewModel,
-    onStartExercise: (String) -> Unit,
-    onStartQuiz: (String) -> Unit,
-    onStartLesson: (String) -> Unit,
-    onBackAfterLesson: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            // Lesson (use embedded template if present). Open in dedicated screen.
-            task.lessonTemplate?.let { lesson ->
-                TaskComponentCard(
-                    title = "Lesson",
-                    icon = Icons.Default.MenuBook,
-                    isCompleted = false,
-                    attempts = 0,
-                    maxAttempts = task.maxAttempts,
-                    canStart = true,
-                    onClick = { onStartLesson(lesson.physicalId) }
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // Exercise (open via button similar to quiz/lesson)
-            val embeddedExerciseId = task.exerciseTemplateId ?: task.exerciseTemplate?.physicalId
-            embeddedExerciseId?.let { templateId ->
-                TaskComponentCard(
-                    title = "Exercise",
-                    icon = Icons.Default.FitnessCenter,
-                    isCompleted = false,
-                    attempts = 0,
-                    maxAttempts = task.maxAttempts,
-                    canStart = true,
-                    onClick = { onStartExercise(templateId) }
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // Quiz
-            val embeddedQuizId = task.quizTemplateId ?: task.quizTemplate?.physicalId
-            embeddedQuizId?.let { templateId ->
-                TaskComponentCard(
-                    title = "Quiz",
-                    icon = Icons.Default.Quiz,
-                    isCompleted = false,
-                    attempts = 0,
-                    maxAttempts = task.maxAttempts,
-                    canStart = true,
-                    onClick = { onStartQuiz(templateId) }
-                )
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -254,7 +183,7 @@ fun TaskDetailScreen(
 
                     // Components Section - Directly show task components without progress wrapper
                     // Lesson Component (only show when progress is available)
-                    if (progress != null && (currentTask.lessonTemplateId?.isNotEmpty() == true || currentTask.lessonTemplate != null)) {
+                    if (currentTask.lessonTemplateId?.isNotEmpty() == true || currentTask.lessonTemplate != null) {
                         val effectiveMaxAttempts = if (currentTask.maxAttempts > 0) currentTask.maxAttempts else 10
                         val canStartLesson = lessonAttempts < effectiveMaxAttempts
                         val lessonCompleted = (lessonAttempts > 0) || (progress?.lessonCompleted == true)
@@ -292,9 +221,9 @@ fun TaskDetailScreen(
                         }
                     }
 
-                    // Exercise Component (only show when progress is available)
+                    // Exercise launcher → task_exercise graded session (not an attempt UI).
                     val exerciseTemplatePhysicalId = currentTask.exerciseTemplateId ?: currentTask.exerciseTemplate?.physicalId
-                    if (progress != null && !exerciseTemplatePhysicalId.isNullOrEmpty()) {
+                    if (!exerciseTemplatePhysicalId.isNullOrEmpty()) {
                         val exerciseAttempts = progress?.exerciseAttempts
                             ?: if (exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())) 1 else 0
                         val isExerciseCompleted = (progress?.exerciseCompleted == true)
@@ -321,13 +250,15 @@ fun TaskDetailScreen(
                         
                         item {
                             TaskComponentCard(
-                                title = "Exercise",
+                                title = currentTask.exerciseTemplate?.title?.takeIf { it.isNotBlank() } ?: "Exercise",
                                 icon = Icons.Default.FitnessCenter,
                                 isCompleted = isExerciseCompleted,
                                 attempts = exerciseAttempts,
-                                maxAttempts = maxAttempts,
+                                // Hide fake 0/n while progress is still loading — this card is only a launcher.
+                                maxAttempts = if (progress == null) 0 else maxAttempts,
                                 canStart = canStartExercise,
                                 score = exerciseScoreText,
+                                showAttemptBadge = progress != null,
                                 onClick = {
                                     if (!isUnavailable) {
                                         onStartExercise(exerciseTemplatePhysicalId!!)
@@ -351,9 +282,9 @@ fun TaskDetailScreen(
                         }
                     }
 
-                    // Quiz Component (only show when progress is available)
+                    // Quiz Component
                     val quizTemplatePhysicalId = currentTask.quizTemplateId ?: currentTask.quizTemplate?.physicalId
-                    if (progress != null && !quizTemplatePhysicalId.isNullOrEmpty()) {
+                    if (!quizTemplatePhysicalId.isNullOrEmpty()) {
                         val quizScore = progress?.quizScore
                         val maxQuizScore = progress?.maxQuizScore ?: currentTask.quizTemplate?.maxScore
                         val quizAttempts = progress?.quizAttempts ?: 0
@@ -397,74 +328,36 @@ fun TaskDetailScreen(
                         }
                     }
                     
-                    // Fallback components when progress is not available
+                    // Progress may still be loading — never show a fake 0/n "attempt" card.
                     if (progress == null) {
                         item {
-                            FallbackComponentsSection(
-                                task = currentTask,
-                                viewModel = viewModel,
-                                onStartLesson = { templateId ->
-                                    if (!isUnavailable) {
-                                        onStartLesson(templateId)
-                                    } else {
-                                        coroutineScope.launch {
-                                            val reason = buildString {
-                                                val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
-                                                    .getOrNull()?.isBefore(OffsetDateTime.now()) == true
-                                                val activeVal = currentTask.isActive ?: true
-                                                if (!activeVal) append("Task is deactivated.")
-                                                if (pastDeadline) {
-                                                    if (isNotEmpty()) append(" ")
-                                                    append("Deadline has passed.")
-                                                }
-                                            }.ifBlank { "This task is unavailable." }
-                                            snackbarHostState.showSnackbar(reason)
-                                        }
-                                    }
-                                },
-                                onStartExercise = { templateId ->
-                                    if (!isUnavailable) {
-                                        onStartExercise(templateId)
-                                    } else {
-                                        coroutineScope.launch {
-                                            val reason = buildString {
-                                                val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
-                                                    .getOrNull()?.isBefore(OffsetDateTime.now()) == true
-                                                val activeVal = currentTask.isActive ?: true
-                                                if (!activeVal) append("Task is deactivated.")
-                                                if (pastDeadline) {
-                                                    if (isNotEmpty()) append(" ")
-                                                    append("Deadline has passed.")
-                                                }
-                                            }.ifBlank { "This task is unavailable." }
-                                            snackbarHostState.showSnackbar(reason)
-                                        }
-                                    }
-                                },
-                                onStartQuiz = { templateId ->
-                                    if (!isUnavailable) {
-                                        onStartQuiz(templateId)
-                                    } else {
-                                        coroutineScope.launch {
-                                            val reason = buildString {
-                                                val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
-                                                    .getOrNull()?.isBefore(OffsetDateTime.now()) == true
-                                                val activeVal = currentTask.isActive ?: true
-                                                if (!activeVal) append("Task is deactivated.")
-                                                if (pastDeadline) {
-                                                    if (isNotEmpty()) append(" ")
-                                                    append("Deadline has passed.")
-                                                }
-                                            }.ifBlank { "This task is unavailable." }
-                                            snackbarHostState.showSnackbar(reason)
-                                        }
-                                    }
-                                },
-                                onBackAfterLesson = onNavigateBack,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    Text(
+                                        text = "Loading attempt progress…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
+
                 }
             }
         }
@@ -936,6 +829,7 @@ private fun TaskComponentCard(
     maxAttempts: Int,
     canStart: Boolean,
     score: String? = null,
+    showAttemptBadge: Boolean = true,
     onClick: () -> Unit
 ) {
     Card(
@@ -998,7 +892,7 @@ private fun TaskComponentCard(
                         text = when {
                             score != null -> score
                             isCompleted -> "Completed"
-                            else -> "Ready to start"
+                            else -> "Open session"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1006,24 +900,25 @@ private fun TaskComponentCard(
                 }
             }
             
-            // Right side - Action button and subtle attempt indicator
+            // Right side - Action button and optional progress badge (not the attempt session UI)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Subtle attempt count (less emphasized)
-                Text(
-                    text = if (maxAttempts <= 0) "$attempts/∞" else "$attempts/$maxAttempts",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-                
+                if (showAttemptBadge) {
+                    Text(
+                        text = if (maxAttempts <= 0) "$attempts/∞" else "$attempts/$maxAttempts",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
                 // Action button
                 Button(
                     onClick = onClick,

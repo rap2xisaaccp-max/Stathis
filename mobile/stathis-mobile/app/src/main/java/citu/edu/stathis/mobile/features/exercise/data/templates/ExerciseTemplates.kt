@@ -15,6 +15,8 @@ data class ExerciseTemplate(
 
 /** Legacy practice IDs that still appear in bookmarks / older builds. */
 private val PRACTICE_TEMPLATE_ID_ALIASES = mapOf(
+    // Former practice Squat id collided with a real classroom template physicalId.
+    "EXERCISE-25-6994-096" to "EXERCISE-PRACTICE-SQUAT",
     "EXERCISE-BEG-002" to "EXERCISE-PRACTICE-PUSHUP",
     "EXERCISE-BEG-003" to "EXERCISE-PRACTICE-GLUTE-BRIDGE",
     "EXERCISE-BEG-004" to "EXERCISE-PRACTICE-STATIC-LUNGES",
@@ -41,7 +43,7 @@ fun generateTemplatesForLevel(level: ExperienceLevel): List<ExerciseTemplate> {
     return when (level) {
         ExperienceLevel.BEGINNER -> listOf(
             ExerciseTemplate(
-                physicalId = "EXERCISE-25-6994-096",
+                physicalId = "EXERCISE-PRACTICE-SQUAT",
                 title = "Bodyweight Squats",
                 description = "Learn proper squat form with bodyweight reps.",
                 exerciseType = "SQUATS",

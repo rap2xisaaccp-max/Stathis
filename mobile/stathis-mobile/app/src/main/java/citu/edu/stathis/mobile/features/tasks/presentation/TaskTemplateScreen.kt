@@ -168,37 +168,33 @@ fun TaskTemplateScreen(
                         "EXERCISE" -> {
                             val exerciseTemplate = currentState.template as? ExerciseTemplate
                             if (exerciseTemplate != null) {
-                                // Wait for task detail to load before rendering exercise template
+                                // Always use the graded ExerciseTemplateRenderer path (same for all
+                                // exercise types). Do not block on taskDetail — Start was previously
+                                // stranded on Task Detail's "Ready to start 0/n" launcher when the
+                                // student-task fetch failed non-fatally.
                                 val currentTaskDetail = taskDetail
                                 val exerciseAttemptsUsed by viewModel.exerciseAttempts.collectAsState()
-                                if (currentTaskDetail != null) {
-                                    ExerciseTemplateRenderer(
-                                        template = exerciseTemplate,
-                                        classroomId = "${currentTaskDetail.classroomPhysicalId}|${currentTaskDetail.physicalId}", // Encode both classroom and task IDs
-                                        navController = navController,
-                                        returnRouteAfterMetrics = if (templateId != null) {
-                                            "task_exercise/$taskId/$templateId"
-                                        } else {
-                                            null
-                                        },
-                                        maxAttempts = currentTaskDetail.maxAttempts,
-                                        attemptsUsed = exerciseAttemptsUsed,
-                                        onSessionFinished = { performance ->
-                                            viewModel.submitExercise(taskId, performance)
-                                        },
-                                        onExerciseAttemptReady = { viewModel.prepareExerciseAttempt() },
-                                        onFinishSession = onTaskCompleted,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else {
-                                    // Show loading while waiting for task detail
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator()
-                                    }
-                                }
+                                val classroomIdEncoded = currentTaskDetail?.let {
+                                    "${it.classroomPhysicalId}|${it.physicalId}"
+                                } ?: "|$taskId"
+                                ExerciseTemplateRenderer(
+                                    template = exerciseTemplate,
+                                    classroomId = classroomIdEncoded,
+                                    navController = navController,
+                                    returnRouteAfterMetrics = if (templateId != null) {
+                                        "task_exercise/$taskId/$templateId"
+                                    } else {
+                                        null
+                                    },
+                                    maxAttempts = currentTaskDetail?.maxAttempts ?: 0,
+                                    attemptsUsed = exerciseAttemptsUsed,
+                                    onSessionFinished = { performance ->
+                                        viewModel.submitExercise(taskId, performance)
+                                    },
+                                    onExerciseAttemptReady = { viewModel.prepareExerciseAttempt() },
+                                    onFinishSession = onTaskCompleted,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             } else {
                                 ErrorMessage("Invalid exercise template")
                             }
