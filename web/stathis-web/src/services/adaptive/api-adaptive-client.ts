@@ -42,10 +42,10 @@ export interface DifficultyRecommendationDTO {
   exerciseType: string;
   masteryLevel: number;
   sessionsCount?: number | null;
-  recommendedDifficulty: string;
-  recommendedGoalReps: number;
-  rationale: string;
-  requiresTeacherApproval: boolean;
+  recommendedDifficulty?: string | null;
+  recommendedGoalReps?: number | null;
+  rationale?: string | null;
+  requiresTeacherApproval?: boolean;
   topErrors?: string[];
 }
 

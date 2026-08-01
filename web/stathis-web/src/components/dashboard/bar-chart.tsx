@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
+  LabelList,
 } from 'recharts';
 import { motion } from 'framer-motion';
 import { BarChart3 } from 'lucide-react';
@@ -18,9 +19,16 @@ interface BarChartProps {
   description?: string;
   data: any[];
   categories: string[];
+  /** Friendly tooltip / legend names keyed by dataKey */
+  categoryNames?: Record<string, string>;
   index: string;
   colors?: string[];
   className?: string;
+  /** Force a fixed Y domain (e.g. mastery 0–100 so zero bars stay readable). */
+  yDomain?: [number, number];
+  /** Show numeric labels on bars (helps when values are 0%). */
+  showValueLabels?: boolean;
+  valueSuffix?: string;
 }
 
 export function BarChart({
@@ -28,9 +36,13 @@ export function BarChart({
   description,
   data,
   categories,
+  categoryNames,
   index,
   colors = ['var(--primary)', 'var(--secondary)'],
-  className
+  className,
+  yDomain,
+  showValueLabels = false,
+  valueSuffix = '',
 }: BarChartProps) {
   return (
     <motion.div
@@ -67,9 +79,14 @@ export function BarChart({
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(value) => `${value}`}
+                  domain={yDomain}
+                  tickFormatter={(value) => `${value}${valueSuffix}`}
                 />
                 <Tooltip
+                  formatter={(value: number, name: string) => [
+                    `${value}${valueSuffix}`,
+                    categoryNames?.[name] || name,
+                  ]}
                   contentStyle={{
                     backgroundColor: 'var(--card)',
                     borderColor: 'var(--border)',
@@ -81,9 +98,20 @@ export function BarChart({
                   <Bar
                     key={category}
                     dataKey={category}
+                    name={categoryNames?.[category] || category}
                     fill={colors[i % colors.length]}
                     radius={[6, 6, 0, 0]}
-                  />
+                    minPointSize={yDomain ? 3 : 0}
+                  >
+                    {showValueLabels && (
+                      <LabelList
+                        dataKey={category}
+                        position="top"
+                        formatter={(v: number) => `${v}${valueSuffix}`}
+                        className="fill-muted-foreground text-[10px]"
+                      />
+                    )}
+                  </Bar>
                 ))}
               </RechartsBarChart>
             </ResponsiveContainer>

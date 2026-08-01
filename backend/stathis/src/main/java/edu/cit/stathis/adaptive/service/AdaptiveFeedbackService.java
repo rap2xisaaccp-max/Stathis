@@ -234,15 +234,18 @@ public class AdaptiveFeedbackService {
 
     List<FeedbackIntervention> allInterventions =
         interventionRepository.findByStudentIdOrderByDeliveredAtDesc(studentId);
+    List<FeedbackIntervention> coachableInterventions =
+        allInterventions.stream().filter(this::isCoachableIntervention).collect(Collectors.toList());
     List<FeedbackIntervention> recent =
         allInterventions.stream().limit(25).collect(Collectors.toList());
 
+    // Recurring form errors: coachable codes only (exclude camera/model technical signals).
     Map<String, Long> topErrors =
         RctEvaluationMetrics.countDistinctSessionErrors(
-            allInterventions.stream()
+            coachableInterventions.stream()
                 .map(FeedbackIntervention::getSessionId)
                 .collect(Collectors.toList()),
-            allInterventions.stream()
+            coachableInterventions.stream()
                 .map(i -> i.getErrorCode() != null ? i.getErrorCode().name() : null)
                 .collect(Collectors.toList()));
 
@@ -250,16 +253,33 @@ public class AdaptiveFeedbackService {
     List<FeedbackResponse> allResponses =
         responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId);
 
+    Map<String, FeedbackIntervention> interventionById = new HashMap<>();
+    for (FeedbackIntervention fi : allInterventions) {
+      if (fi.getPhysicalId() != null) {
+        interventionById.put(fi.getPhysicalId(), fi);
+      }
+    }
+    List<FeedbackResponse> coachableResponses =
+        allResponses.stream()
+            .filter(
+                fr -> {
+                  FeedbackIntervention fi =
+                      interventionById.get(fr.getInterventionPhysicalId());
+                  return fi != null && isCoachableIntervention(fi);
+                })
+            .collect(Collectors.toList());
+
     Map<String, Double> modalityMeanDelta =
         extractModalityMeanDelta(profile.getModalityEffectivenessJson());
     // Fallback: derive from closed-loop FR↔FI when profile buckets are empty/unreadable
-    if (modalityMeanDelta.isEmpty() && !allResponses.isEmpty()) {
-      modalityMeanDelta = modalityMeanDeltaFromResponses(allInterventions, allResponses);
+    if (modalityMeanDelta.isEmpty() && !coachableResponses.isEmpty()) {
+      modalityMeanDelta =
+          modalityMeanDeltaFromResponses(coachableInterventions, coachableResponses);
     }
 
-    // Closed-loop success: successes / response pairs (not FI count).
-    long closedPairs = allResponses.size();
-    long successes = allResponses.stream().filter(FeedbackResponse::isSuccess).count();
+    // Closed-loop success: successes / coachable response pairs (not FI count; not technical).
+    long closedPairs = coachableResponses.size();
+    long successes = coachableResponses.stream().filter(FeedbackResponse::isSuccess).count();
     List<ExerciseMasteryDTO> mastery = getMastery(studentId);
     List<ProfileHistoryPointDTO> history = profileService.listHistory(studentId);
 
@@ -572,6 +592,13 @@ public class AdaptiveFeedbackService {
       means.put(entry.getKey(), RctEvaluationMetrics.mean(entry.getValue()));
     }
     return means;
+  }
+
+  private boolean isCoachableIntervention(FeedbackIntervention intervention) {
+    if (intervention == null || intervention.getErrorCode() == null) {
+      return false;
+    }
+    return !intervention.getErrorCode().isTechnical();
   }
 
   private FeedbackInterventionResponseDTO toInterventionDto(FeedbackIntervention entity) {

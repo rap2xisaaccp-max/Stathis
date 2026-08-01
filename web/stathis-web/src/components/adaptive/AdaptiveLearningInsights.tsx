@@ -41,7 +41,17 @@ import {
   buildMasteryTimelineChartData,
   buildModalityEffectivenessChartData,
   buildRecurringErrorsChartData,
+  MASTERY_CATEGORY_NAMES,
+  MASTERY_CHART_Y_DOMAIN,
+  TIMELINE_CATEGORY_NAMES,
 } from '@/components/adaptive/adaptive-insights-charts';
+import {
+  closedLoopSuccessCopy,
+  formErrorDisplay,
+  formatLearningTrend,
+  isInsufficientFormCorrectionData,
+  preferredModalityCopy,
+} from '@/components/adaptive/form-error-labels';
 
 function formatPct(value: number | null | undefined, n?: number): string {
   if (n === 0) return 'Insufficient data';
@@ -76,7 +86,13 @@ function suggestionText(item: {
   exerciseType: string;
   recommendedDifficulty?: string | null;
   recommendedGoalReps?: number | null;
+  recommendationRationale?: string | null;
+  sessionsCount?: number | null;
+  masteryLevel?: number;
 }): string {
+  if (isInsufficientFormCorrectionData(item.sessionsCount, item.masteryLevel)) {
+    return `${item.exerciseType}: Insufficient form-correction data`;
+  }
   const bits: string[] = [];
   if (item.recommendedDifficulty) {
     bits.push(`difficulty ${item.recommendedDifficulty}`);
@@ -127,22 +143,27 @@ function MasteryRecommendationRow({
       })
     : null;
 
+  const insufficient = isInsufficientFormCorrectionData(
+    item.sessionsCount,
+    item.masteryLevel
+  );
+
   return (
     <div className="space-y-2 rounded-xl border border-border/50 bg-background/40 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">{item.exerciseType.replaceAll('_', ' ')}</span>
         <div className="flex flex-wrap items-center gap-2">
-          {item.recommendedDifficulty ? (
+          {insufficient ? (
+            <Badge variant="outline">Insufficient form-correction data</Badge>
+          ) : item.recommendedDifficulty ? (
             <Badge variant="secondary">Suggest {item.recommendedDifficulty}</Badge>
           ) : (
             <Badge variant="outline">Difficulty —</Badge>
           )}
-          {item.recommendedGoalReps != null ? (
+          {!insufficient && item.recommendedGoalReps != null ? (
             <Badge variant="outline">~{item.recommendedGoalReps} reps</Badge>
-          ) : (
-            <Badge variant="outline">Reps —</Badge>
-          )}
-          {(item.requiresTeacherApproval ?? true) && (
+          ) : null}
+          {!insufficient && (item.requiresTeacherApproval ?? true) && (
             <Badge variant="outline">Teacher approval</Badge>
           )}
         </div>
@@ -151,7 +172,7 @@ function MasteryRecommendationRow({
         <>
           <Progress value={Math.round((item.masteryLevel || 0) * 100)} />
           <p className="text-xs text-muted-foreground">
-            Mastery {Math.round((item.masteryLevel || 0) * 100)}% · Sessions{' '}
+            Form-correction mastery {Math.round((item.masteryLevel || 0) * 100)}% · Sessions{' '}
             {item.sessionsCount ?? 0}
             {item.medianTimeToCorrectionMs != null &&
               ` · Median correction ${Math.round(item.medianTimeToCorrectionMs / 1000)}s`}
@@ -159,43 +180,49 @@ function MasteryRecommendationRow({
           </p>
         </>
       )}
-      {item.recommendationRationale && (
+      {(item.recommendationRationale ||
+        (insufficient &&
+          'Insufficient form-correction data. Soft difficulty suggestions require measured coaching responses — session count alone is not enough.')) && (
         <p className="text-xs text-muted-foreground leading-relaxed">
-          {item.recommendationRationale}
+          {item.recommendationRationale ||
+            'Insufficient form-correction data. Soft difficulty suggestions require measured coaching responses — session count alone is not enough.'}
         </p>
       )}
       {(item.topErrors || []).length > 0 && (
         <div className="flex flex-wrap gap-1">
           {(item.topErrors || []).map((err) => (
             <Badge key={err} variant="outline" className="text-[10px]">
-              {err.replaceAll('_', ' ')}
+              {formErrorDisplay(err)}
             </Badge>
           ))}
         </div>
       )}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <Button type="button" size="sm" variant="outline" onClick={onCopy}>
-          {copied ? (
-            <>
-              <Check className="mr-1 h-3.5 w-3.5" />
-              Copied
-            </>
-          ) : (
-            <>
-              <Copy className="mr-1 h-3.5 w-3.5" />
-              Copy suggestion
-            </>
-          )}
-        </Button>
-        <Button type="button" size="sm" variant="ghost" asChild>
-          <Link href="/classroom">
-            <ExternalLink className="mr-1 h-3.5 w-3.5" />
-            Open classrooms to apply
-          </Link>
-        </Button>
-      </div>
+      {!insufficient && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button type="button" size="sm" variant="outline" onClick={onCopy}>
+            {copied ? (
+              <>
+                <Check className="mr-1 h-3.5 w-3.5" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="mr-1 h-3.5 w-3.5" />
+                Copy suggestion
+              </>
+            )}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" asChild>
+            <Link href="/classroom">
+              <ExternalLink className="mr-1 h-3.5 w-3.5" />
+              Open classrooms to apply
+            </Link>
+          </Button>
+        </div>
+      )}
       <p className="text-[11px] text-muted-foreground">
-        Soft recommendation only — never auto-applied to exercise templates.
+        Soft recommendation only — never auto-applied to exercise templates. Form-correction
+        mastery is separate from classroom task scores.
       </p>
     </div>
   );
@@ -764,8 +791,8 @@ function StudentProgressSnapshotCard({
       <CardHeader>
         <CardTitle className="text-base">Student progress snapshot</CardTitle>
         <CardDescription>
-          Task scores and attempts from Student Progress (same live backend data as
-          the Scores tab).
+          Classroom task scores and attempts (same live backend data as the Scores tab).
+          These are separate from adaptive form-correction mastery below.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -822,7 +849,8 @@ function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }
       <CardHeader>
         <CardTitle className="text-base">Preferred Modality by Exercise</CardTitle>
         <CardDescription>
-          Statistical preference from closed-loop responses (LEARNED requires n≥5).
+          Which coaching channel reduced form severity most for each exercise. LEARNED
+          needs at least 5 measured coaching responses with a clear margin.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -830,23 +858,20 @@ function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }
           <p className="text-sm text-muted-foreground">Insufficient data</p>
         ) : (
           entries.map(([exercise, row]) => {
-            const source = (row?.source || 'DEFAULT').toUpperCase();
-            const modality = row?.modality?.replaceAll('_', ' ') || '—';
-            const label =
-              source === 'LEARNED'
-                ? modality
-                : source === 'EXPLORING'
-                  ? `Learning (${modality})`
-                  : 'Insufficient data';
+            const copy = preferredModalityCopy({
+              modality: row?.modality,
+              source: row?.source,
+              n: row?.n,
+            });
             return (
               <div
                 key={exercise}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
               >
                 <span className="font-medium">{exercise.replaceAll('_', ' ')}</span>
-                <div className="flex flex-wrap items-center gap-1">
-                  <Badge variant="secondary">{label}</Badge>
-                  <Badge variant="outline">n={row?.n ?? 0}</Badge>
+                <div className="min-w-0 text-right">
+                  <Badge variant="secondary">{copy.title}</Badge>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{copy.detail}</p>
                 </div>
               </div>
             );
@@ -904,7 +929,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
               <div className="min-w-0">
                 <p className="font-medium truncate">
                   {item.exerciseType.replaceAll('_', ' ')} ·{' '}
-                  {item.errorCode.replaceAll('_', ' ')}
+                  {formErrorDisplay(item.errorCode)}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
                   {item.messageText || item.correctionDelivered || 'Coaching cue delivered'}
@@ -953,29 +978,7 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         <h3 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">
           Learning profile summary
         </h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
-            <CardHeader className="pb-2">
-              <CardDescription>Preferred modality (overall)</CardDescription>
-              <CardTitle className="text-lg">
-                {(data.profile?.totalInterventions ?? 0) < 1
-                  ? 'Insufficient data'
-                  : data.profile?.preferredModality?.replaceAll('_', ' ') || 'Learning'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Derived from measured post-feedback improvement.
-              {data.profile?.updatedAt && (
-                <span className="mt-1 block text-[11px]">
-                  Updated{' '}
-                  {new Date(data.profile.updatedAt).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
-                </span>
-              )}
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 md:grid-cols-2">
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
               <CardDescription>Closed-loop success</CardDescription>
@@ -984,22 +987,29 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              {data.successfulInterventions}/{data.totalInterventions} successful
-              response pairs
+              {closedLoopSuccessCopy(
+                data.successfulInterventions,
+                data.totalInterventions
+              )}
             </CardContent>
           </Card>
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
-              <CardDescription>Learning rate (EWMA Δ)</CardDescription>
-              <CardTitle className="text-lg">
-                {formatDelta(data.profile?.learningRateEstimate)}
+              <CardDescription>Recent learning trend</CardDescription>
+              <CardTitle className="text-lg" title="Smoothed recent severity-reduction trend from coaching responses (not score points).">
+                {formatLearningTrend(data.profile?.learningRateEstimate)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Consistency {formatPct(data.profile?.consistencyScore)}
-              {data.profile?.fatigueSensitivity != null && (
+              Higher positive values mean recent coaching responses reduced form severity
+              more. Not classroom score points.
+              {data.profile?.updatedAt && (
                 <span className="mt-1 block text-[11px]">
-                  Fatigue sensitivity {formatPct(data.profile.fatigueSensitivity)}
+                  Profile updated{' '}
+                  {new Date(data.profile.updatedAt).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
                 </span>
               )}
             </CardContent>
@@ -1062,11 +1072,15 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           <div className="min-h-[300px]">
             <LineChart
               title="Mastery timeline"
-              description="Mastery and consistency over adaptive profile history"
+              description="Form-correction mastery and coaching success rate over adaptive profile history"
               data={timelineData}
               index="date"
               categories={['masteryPct', 'consistencyPct']}
+              categoryNames={TIMELINE_CATEGORY_NAMES}
               colors={['var(--primary)', 'var(--secondary)']}
+              yDomain={MASTERY_CHART_Y_DOMAIN}
+              showLegend
+              valueSuffix="%"
               className="h-full"
             />
           </div>
@@ -1087,11 +1101,15 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           <div className="min-h-[300px]">
             <BarChart
               title="Mastery by exercise"
-              description="Current mastery level per exercise type (newest sessions first)"
+              description="Form-correction mastery (not task score). Axis is 0–100%; 0% still lists the exercise."
               data={masteryBars}
               index="exercise"
               categories={['masteryPct']}
+              categoryNames={MASTERY_CATEGORY_NAMES}
               colors={['var(--chart-2)']}
+              yDomain={MASTERY_CHART_Y_DOMAIN}
+              showValueLabels
+              valueSuffix="%"
               className="h-full"
             />
           </div>
@@ -1142,17 +1160,26 @@ function AdaptiveRecommendationsCard({
     if (masteryRows.length > 0) {
       return masteryRows.map((item) => {
         const rec = difficultyByType.get(item.exerciseType);
+        const insufficient = isInsufficientFormCorrectionData(
+          item.sessionsCount,
+          item.masteryLevel
+        );
         return {
           physicalId: item.physicalId,
           exerciseType: item.exerciseType,
           masteryLevel: item.masteryLevel,
           sessionsCount: item.sessionsCount,
-          recommendedDifficulty:
-            item.recommendedDifficulty || rec?.recommendedDifficulty || null,
-          recommendedGoalReps:
-            item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null,
-          recommendationRationale:
-            item.recommendationRationale || rec?.rationale || null,
+          recommendedDifficulty: insufficient
+            ? null
+            : item.recommendedDifficulty || rec?.recommendedDifficulty || null,
+          recommendedGoalReps: insufficient
+            ? null
+            : item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null,
+          recommendationRationale: insufficient
+            ? rec?.rationale ||
+              item.recommendationRationale ||
+              'Insufficient form-correction data. Soft difficulty suggestions require measured coaching responses — session count alone is not enough.'
+            : item.recommendationRationale || rec?.rationale || null,
           requiresTeacherApproval:
             item.requiresTeacherApproval ?? rec?.requiresTeacherApproval ?? true,
           topErrors: rec?.topErrors || [],

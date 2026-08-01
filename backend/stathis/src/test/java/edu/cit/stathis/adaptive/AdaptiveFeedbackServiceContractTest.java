@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import edu.cit.stathis.adaptive.dto.AdaptiveBatchIngestDTO;
+import edu.cit.stathis.adaptive.dto.AdaptiveInsightsDTO;
 import edu.cit.stathis.adaptive.dto.AdaptiveRecommendationDTO;
 import edu.cit.stathis.adaptive.dto.AdaptiveRecommendationRequestDTO;
 import edu.cit.stathis.adaptive.dto.FeedbackInterventionRequestDTO;
@@ -25,6 +26,7 @@ import edu.cit.stathis.adaptive.service.AdaptiveFeedbackService;
 import edu.cit.stathis.adaptive.service.AdaptivePolicyService;
 import edu.cit.stathis.adaptive.service.ExerciseMasteryService;
 import edu.cit.stathis.adaptive.service.StudentLearningProfileService;
+import edu.cit.stathis.classroom.entity.Classroom;
 import edu.cit.stathis.classroom.repository.ClassroomRepository;
 import java.util.List;
 import java.util.Optional;
@@ -205,5 +207,95 @@ class AdaptiveFeedbackServiceContractTest {
     verify(profileService, never()).applyResponse(any(), any());
     verify(masteryService, never()).applyResponse(any(), any());
     verify(armRollupService, never()).recordResponse(any(), any());
+  }
+
+  @Test
+  void getInsightsExcludesTechnicalErrorsFromSuccessAndTopErrors() {
+    Classroom classroom = org.mockito.Mockito.mock(Classroom.class);
+    when(classroom.getTeacherId()).thenReturn("TEACHER-1");
+    when(classroomRepository.findByClassroomStudents_Student_User_PhysicalId("STUDENT-1"))
+        .thenReturn(List.of(classroom));
+
+    FeedbackIntervention coachable =
+        FeedbackIntervention.builder()
+            .physicalId("FI-SAG")
+            .studentId("STUDENT-1")
+            .sessionId("SES-1")
+            .exerciseType("SQUATS")
+            .errorCode(FormErrorCode.SAG)
+            .modality(FeedbackModality.VISUAL_HIGHLIGHT)
+            .build();
+    FeedbackIntervention technical =
+        FeedbackIntervention.builder()
+            .physicalId("FI-TECH")
+            .studentId("STUDENT-1")
+            .sessionId("SES-1")
+            .exerciseType("SQUATS")
+            .errorCode(FormErrorCode.LOW_CONFIDENCE)
+            .modality(FeedbackModality.VERBAL_TEXT)
+            .build();
+    FeedbackIntervention coachableFail =
+        FeedbackIntervention.builder()
+            .physicalId("FI-ROM")
+            .studentId("STUDENT-1")
+            .sessionId("SES-2")
+            .exerciseType("SQUATS")
+            .errorCode(FormErrorCode.LOW_ROM)
+            .modality(FeedbackModality.VERBAL_TEXT)
+            .build();
+
+    when(interventionRepository.findByStudentIdOrderByDeliveredAtDesc("STUDENT-1"))
+        .thenReturn(List.of(coachable, technical, coachableFail));
+    when(responseRepository.findByStudentIdOrderByCreatedAtDesc("STUDENT-1"))
+        .thenReturn(
+            List.of(
+                FeedbackResponse.builder()
+                    .physicalId("FR-1")
+                    .studentId("STUDENT-1")
+                    .interventionPhysicalId("FI-SAG")
+                    .success(true)
+                    .delta(0.2)
+                    .build(),
+                FeedbackResponse.builder()
+                    .physicalId("FR-TECH")
+                    .studentId("STUDENT-1")
+                    .interventionPhysicalId("FI-TECH")
+                    .success(true)
+                    .delta(0.3)
+                    .build(),
+                FeedbackResponse.builder()
+                    .physicalId("FR-2")
+                    .studentId("STUDENT-1")
+                    .interventionPhysicalId("FI-ROM")
+                    .success(false)
+                    .delta(0.05)
+                    .build()));
+
+    when(profileService.getOrCreate("STUDENT-1"))
+        .thenReturn(
+            StudentLearningProfile.builder()
+                .physicalId("SLP-1")
+                .studentId("STUDENT-1")
+                .totalInterventions(2)
+                .build());
+    when(profileService.toDto(any()))
+        .thenReturn(
+            StudentLearningProfileDTO.builder()
+                .studentId("STUDENT-1")
+                .totalInterventions(2)
+                .learningRateEstimate(0.1)
+                .consistencyScore(0.5)
+                .build());
+    when(profileService.listHistory("STUDENT-1")).thenReturn(List.of());
+    when(masteryService.listForStudent("STUDENT-1")).thenReturn(List.of());
+
+    AdaptiveInsightsDTO insights = service.getInsights("TEACHER-1", "STUDENT-1");
+
+    assertEquals(2, insights.getTotalInterventions());
+    assertEquals(1, insights.getSuccessfulInterventions());
+    assertEquals(0.5, insights.getOverallSuccessRate(), 1e-6);
+    assertFalse(insights.getTopRecurringErrors().containsKey("LOW_CONFIDENCE"));
+    assertTrue(insights.getTopRecurringErrors().containsKey("SAG"));
+    assertTrue(insights.getTopRecurringErrors().containsKey("LOW_ROM"));
   }
 }

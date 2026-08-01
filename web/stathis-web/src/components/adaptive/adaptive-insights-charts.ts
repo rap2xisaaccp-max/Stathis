@@ -3,10 +3,22 @@ import {
   ExerciseMasteryDTO,
   ProfileHistoryPointDTO,
 } from '@/services/adaptive/api-adaptive-client';
+import { formErrorDisplay, formErrorLabel } from '@/components/adaptive/form-error-labels';
 
 export function formatModalityLabel(modality: string): string {
   return modality.replaceAll('_', ' ');
 }
+
+export const MASTERY_CHART_Y_DOMAIN: [number, number] = [0, 100];
+
+export const TIMELINE_CATEGORY_NAMES: Record<string, string> = {
+  masteryPct: 'Mastery',
+  consistencyPct: 'Consistency',
+};
+
+export const MASTERY_CATEGORY_NAMES: Record<string, string> = {
+  masteryPct: 'Mastery',
+};
 
 export function buildModalityEffectivenessChartData(
   modalityMeanDelta: Record<string, number> | null | undefined
@@ -22,14 +34,19 @@ export function buildModalityEffectivenessChartData(
 export function buildRecurringErrorsChartData(
   topRecurringErrors: Record<string, number> | null | undefined,
   limit = 8
-): Array<{ error: string; count: number }> {
+): Array<{ error: string; count: number; code: string }> {
   return Object.entries(topRecurringErrors || {})
     .map(([error, count]) => ({
-      error: formatModalityLabel(error),
+      code: error,
+      error: formErrorLabel(error),
       count: Number(count) || 0,
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
+}
+
+export function recurringErrorTeacherLabel(code: string): string {
+  return formErrorDisplay(code);
 }
 
 export function buildMasteryByExerciseChartData(

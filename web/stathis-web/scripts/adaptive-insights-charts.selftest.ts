@@ -4,6 +4,9 @@ import {
   buildModalityEffectivenessChartData,
   buildRecurringErrorsChartData,
   hasChartableInsights,
+  MASTERY_CATEGORY_NAMES,
+  MASTERY_CHART_Y_DOMAIN,
+  TIMELINE_CATEGORY_NAMES,
 } from '../src/components/adaptive/adaptive-insights-charts';
 
 assert.deepEqual(
@@ -15,14 +18,46 @@ assert.deepEqual(
 );
 
 assert.equal(buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1).length, 1);
-assert.equal(buildMasteryByExerciseChartData([{ physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.42 }])[0].masteryPct, 42);
+assert.equal(
+  buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1)[0].error,
+  'Insufficient depth'
+);
+assert.equal(
+  buildMasteryByExerciseChartData([
+    { physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.42 },
+  ])[0].masteryPct,
+  42
+);
 assert.deepEqual(
   buildMasteryByExerciseChartData([
-    { physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.4, lastSessionAt: '2026-01-01T00:00:00Z' },
-    { physicalId: 'm2', studentId: 's', exerciseType: 'PUSH_UP', masteryLevel: 0.9, lastSessionAt: '2026-06-01T00:00:00Z' },
+    {
+      physicalId: 'm1',
+      studentId: 's',
+      exerciseType: 'SQUAT',
+      masteryLevel: 0.4,
+      lastSessionAt: '2026-01-01T00:00:00Z',
+    },
+    {
+      physicalId: 'm2',
+      studentId: 's',
+      exerciseType: 'PUSH_UP',
+      masteryLevel: 0.9,
+      lastSessionAt: '2026-06-01T00:00:00Z',
+    },
   ]).map((r) => r.exercise),
   ['PUSH UP', 'SQUAT']
 );
+
+const zeroMastery = buildMasteryByExerciseChartData([
+  { physicalId: 'm1', studentId: 's', exerciseType: 'SQUATS', masteryLevel: 0 },
+  { physicalId: 'm2', studentId: 's', exerciseType: 'LUNGES', masteryLevel: 0 },
+]);
+assert.equal(zeroMastery.length, 2);
+assert.equal(zeroMastery[0].masteryPct, 0);
+assert.deepEqual(MASTERY_CHART_Y_DOMAIN, [0, 100]);
+assert.equal(MASTERY_CATEGORY_NAMES.masteryPct, 'Mastery');
+assert.equal(TIMELINE_CATEGORY_NAMES.consistencyPct, 'Consistency');
+
 assert.equal(
   hasChartableInsights({
     studentId: 's',
