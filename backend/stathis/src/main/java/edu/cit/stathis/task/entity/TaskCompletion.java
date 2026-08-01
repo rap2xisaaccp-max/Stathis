@@ -5,6 +5,8 @@ import lombok.*;
 import java.time.OffsetDateTime;
 
 @Entity
+// Unique index uq_task_completions_student_task is applied via V6 SQL after dedupe.
+// Do not declare @UniqueConstraint here until that migration has been run on prod.
 @Table(name = "task_completions")
 @Getter
 @Setter
