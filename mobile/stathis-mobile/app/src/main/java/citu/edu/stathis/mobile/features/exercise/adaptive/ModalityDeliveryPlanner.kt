@@ -30,7 +30,8 @@ object ModalityDeliveryPlanner {
     fun plan(
         modality: FeedbackModality,
         errorCode: FormErrorCode,
-        interventionLogged: Boolean
+        interventionLogged: Boolean,
+        exerciseType: String? = null
     ): Plan {
         if (!interventionLogged) {
             return Plan(
@@ -42,7 +43,7 @@ object ModalityDeliveryPlanner {
                 channel = "suppressed"
             )
         }
-        val targets = ModalityHighlightTargets.forError(errorCode)
+        val targets = ModalityHighlightTargets.forError(errorCode, exerciseType)
         return when (modality) {
             FeedbackModality.VERBAL_TEXT ->
                 Plan(
@@ -78,9 +79,16 @@ object ModalityDeliveryPlanner {
         interventionId: String,
         modality: FeedbackModality,
         errorCode: FormErrorCode,
-        message: String
+        message: String,
+        exerciseType: String? = null
     ): DeliveredFeedback {
-        val plan = plan(modality, errorCode, interventionLogged = interventionId.isNotBlank())
+        val plan =
+            plan(
+                modality,
+                errorCode,
+                interventionLogged = interventionId.isNotBlank(),
+                exerciseType = exerciseType
+            )
         return DeliveredFeedback(
             interventionId = interventionId,
             modality = modality,

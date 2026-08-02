@@ -39,7 +39,8 @@ data class DeliveredFeedback(
     val highlightLandmarkIds: Set<Int> = emptySet(),
     val highlightBones: List<Pair<Int, Int>> = emptyList(),
     val showTextBanner: Boolean = true,
-    val deliveryChannel: String = "text"
+    val deliveryChannel: String = "text",
+    val exerciseType: String? = null
 )
 
 data class InterventionRequestDto(
@@ -104,6 +105,8 @@ data class StudentLearningProfileDto(
     val studentId: String? = null,
     val preferredModality: String? = null,
     val modalityEffectivenessJson: Map<String, Any?>? = null,
+    /** exerciseType → { modality, n, meanDelta, confidence, source }. */
+    val preferredModalityByExercise: Map<String, Any?>? = null,
     val learningRateEstimate: Double? = null,
     val consistencyScore: Double? = null,
     val fatigueSensitivity: Double? = null,

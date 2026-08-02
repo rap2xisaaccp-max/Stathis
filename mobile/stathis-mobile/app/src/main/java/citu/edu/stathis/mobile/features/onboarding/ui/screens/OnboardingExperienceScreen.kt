@@ -31,7 +31,7 @@ import androidx.compose.foundation.clickable
 fun OnboardingExperienceScreen(
     onConfirm: (level: Int) -> Unit
 ) {
-    var level by remember { mutableStateOf(0) } // 0=Beginner,1=Normal,2=Expert
+    var level by remember { mutableStateOf(0) } // 0=Beginner,1=Intermediate,2=Advanced
 
     Column(
         modifier = Modifier
@@ -87,8 +87,8 @@ fun OnboardingExperienceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 DiscretePoint(label = "Beginner", selected = level == 0) { level = 0 }
-                DiscretePoint(label = "Normal", selected = level == 1) { level = 1 }
-                DiscretePoint(label = "Expert", selected = level == 2) { level = 2 }
+                DiscretePoint(label = "Intermediate", selected = level == 1) { level = 1 }
+                DiscretePoint(label = "Advanced", selected = level == 2) { level = 2 }
             }
         }
 

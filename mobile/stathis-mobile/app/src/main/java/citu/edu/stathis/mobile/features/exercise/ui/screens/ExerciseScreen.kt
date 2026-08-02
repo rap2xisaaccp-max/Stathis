@@ -74,9 +74,11 @@ import citu.edu.stathis.mobile.features.exercise.ui.components.PoseSkeletonOverl
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.vitals.ui.HealthCompactIndicator
 import com.google.mlkit.vision.pose.Pose
+import citu.edu.stathis.mobile.features.tasks.presentation.DebugSessionLog
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 @Composable
 fun ExerciseScreen(
@@ -87,8 +89,14 @@ fun ExerciseScreen(
     exerciseTitle: String? = null,
     showExerciseFeedbackOverlay: Boolean = true,
     onExerciseFeedback: ((OnDeviceFeedback) -> Unit)? = null,
-    /** When true, exercise rep analysis runs. Disable until identity is verified. */
+    /**
+     * When true, exercise rep analysis runs.
+     * Must stay false until the attempt is ACTIVE (overlay Start) so preview/verify
+     * cannot accumulate hidden reps.
+     */
     enableExerciseTracking: Boolean = true,
+    /** Increment to force [OnDeviceExerciseAnalyzer] reset (new attempt / Start). */
+    detectorResetKey: Int = 0,
     /** When true, run facial recognition against the enrolled embedding. */
     verifyFace: Boolean = false,
     enrolledFaceEmbedding: FloatArray? = null,
@@ -114,6 +122,12 @@ fun ExerciseScreen(
     val onDeviceExerciseAnalyzer = remember { OnDeviceExerciseAnalyzer() }
     val skeletonSession = remember { SkeletonPresenceTracker.Session() }
     val faceVerifiedLatch = remember { AtomicBoolean(false) }
+    // #region agent log
+    val trackingEnabledRef = remember { AtomicBoolean(enableExerciseTracking) }
+    val resetKeyRef = remember { AtomicInteger(detectorResetKey) }
+    val appliedResetRef = remember { AtomicInteger(0) }
+    val preStartAnalyzeCount = remember { AtomicInteger(0) }
+    // #endregion
 
     val exerciseState by exerciseViewModel.uiState.collectAsState()
     var exerciseFeedback by remember { mutableStateOf<OnDeviceFeedback?>(null) }
@@ -126,6 +140,10 @@ fun ExerciseScreen(
     androidx.compose.runtime.SideEffect {
         backendSignalRef.flags = exerciseState.flags
         backendSignalRef.ruleSeverity = exerciseState.ruleSeverity
+        // #region agent log
+        trackingEnabledRef.set(enableExerciseTracking)
+        resetKeyRef.set(detectorResetKey)
+        // #endregion
     }
 
     var latestPose by remember { mutableStateOf<Pose?>(null) }
@@ -142,6 +160,26 @@ fun ExerciseScreen(
 
     LaunchedEffect(exerciseType) {
         onDeviceExerciseAnalyzer.resetExerciseState()
+        exerciseFeedback = null
+    }
+
+    LaunchedEffect(detectorResetKey) {
+        if (detectorResetKey <= 0) return@LaunchedEffect
+        // #region agent log
+        DebugSessionLog.log(
+            hypothesisId = "H-A",
+            location = "ExerciseScreen.kt:LaunchedEffect(detectorResetKey)",
+            message = "async_reset_fired",
+            data = mapOf(
+                "detectorResetKey" to detectorResetKey,
+                "enableExerciseTracking" to enableExerciseTracking,
+                "trackingRef" to trackingEnabledRef.get(),
+                "appliedResetBefore" to appliedResetRef.get()
+            )
+        )
+        // #endregion
+        onDeviceExerciseAnalyzer.resetExerciseState()
+        appliedResetRef.set(detectorResetKey)
         exerciseFeedback = null
     }
 
@@ -278,15 +316,83 @@ fun ExerciseScreen(
                                             }
                                         }
 
-                                        if (enableExerciseTracking && exerciseType != null) {
+                                        // #region agent log
+                                        val trackingCapture = enableExerciseTracking
+                                        val trackingLive = trackingEnabledRef.get()
+                                        val rk = resetKeyRef.get()
+                                        var applied = appliedResetRef.get()
+                                        // Apply pending Start/Retry reset on the analysis thread BEFORE analyze
+                                        // so frames cannot seed UI from a prior attempt (H-A).
+                                        if (rk > applied) {
+                                            DebugSessionLog.log(
+                                                hypothesisId = "H-A",
+                                                location = "ExerciseScreen.kt:PoseAnalyzer",
+                                                message = "sync_reset_before_analyze",
+                                                data = mapOf(
+                                                    "resetKey" to rk,
+                                                    "appliedReset" to applied,
+                                                    "trackingLive" to trackingLive,
+                                                    "runId" to "post-fix"
+                                                ),
+                                                runId = "post-fix"
+                                            )
+                                            onDeviceExerciseAnalyzer.resetExerciseState()
+                                            appliedResetRef.set(rk)
+                                            applied = rk
+                                        }
+                                        if (trackingCapture != trackingLive) {
+                                            DebugSessionLog.log(
+                                                hypothesisId = "H-B",
+                                                location = "ExerciseScreen.kt:PoseAnalyzer",
+                                                message = "stale_tracking_capture",
+                                                data = mapOf(
+                                                    "closureCapture" to trackingCapture,
+                                                    "liveRef" to trackingLive,
+                                                    "resetKey" to rk,
+                                                    "appliedReset" to applied
+                                                ),
+                                                runId = "post-fix"
+                                            )
+                                        }
+                                        // #endregion
+                                        // Prefer live AtomicBoolean so Start/Stop is not stuck on a stale CameraX closure.
+                                        if (trackingLive && exerciseType != null) {
                                             val analyzed = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                            // #region agent log
+                                            if (analyzed.repCount > 0 && analyzed.repCount <= 2) {
+                                                DebugSessionLog.log(
+                                                    hypothesisId = "H-A",
+                                                    location = "ExerciseScreen.kt:PoseAnalyzer",
+                                                    message = "post_start_rep",
+                                                    data = mapOf(
+                                                        "repCount" to analyzed.repCount,
+                                                        "resetKey" to rk,
+                                                        "appliedReset" to applied
+                                                    ),
+                                                    runId = "post-fix"
+                                                )
+                                            }
+                                            // #endregion
                                             exerciseFeedback = analyzed.copy(
                                                 backendFlags = backendSignalRef.flags,
                                                 ruleSeverity = backendSignalRef.ruleSeverity
                                             )
                                             onExerciseFeedback?.invoke(exerciseFeedback!!)
+                                        } else if (trackingCapture && !trackingLive) {
+                                            // #region agent log
+                                            val n = preStartAnalyzeCount.incrementAndGet()
+                                            if (n <= 3) {
+                                                DebugSessionLog.log(
+                                                    hypothesisId = "H-B",
+                                                    location = "ExerciseScreen.kt:PoseAnalyzer",
+                                                    message = "blocked_stale_true_capture",
+                                                    data = mapOf("count" to n),
+                                                    runId = "post-fix"
+                                                )
+                                            }
+                                            // #endregion
                                         }
-                                        if (enablePostureAnalysis && enableExerciseTracking) {
+                                        if (enablePostureAnalysis && trackingLive) {
                                             val poseLandmarks = (0 until 33).mapNotNull { idx ->
                                                 val lm = pose.getPoseLandmark(idx) ?: return@mapNotNull null
                                                 citu.edu.stathis.mobile.features.exercise.ui.util.Landmark(

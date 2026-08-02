@@ -28,14 +28,22 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from 'sonner';
+import {
+  EXERCISE_DIFFICULTIES,
+  EXERCISE_GOAL_REPS_OPTIONS,
+} from '@/lib/exercise-difficulty';
 
 // Exercise template form schema
 const exerciseTemplateSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(100, 'Title cannot exceed 100 characters'),
   description: z.string().min(3, 'Description must be at least 3 characters').max(500, 'Description cannot exceed 500 characters'),
   exerciseType: z.string().min(1, 'Exercise type is required'),
-  exerciseDifficulty: z.string().min(1, 'Exercise difficulty is required'),
-  goalReps: z.string().min(1, 'Goal reps is required').regex(/^[0-9]+$/, 'Goal reps must be a number'),
+  exerciseDifficulty: z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED'], {
+    required_error: 'Exercise difficulty is required',
+  }),
+  goalReps: z.enum(['10', '20', '30'], {
+    required_error: 'Goal reps is required',
+  }),
   goalAccuracy: z.string().min(1, 'Goal accuracy is required').regex(/^[0-9]+$/, 'Goal accuracy must be a number'),
   goalTime: z.string().min(1, 'Goal time is required').regex(/^[0-9]+$/, 'Goal time must be a number')
 });
@@ -57,18 +65,8 @@ const exerciseTypes = [
   { value: "STATIC_LUNGES", label: "Static Lunges" }
 ];
 
-const exerciseDifficulties = [
-  { value: "BEGINNER", label: "Beginner" },
-  { value: "INTERMEDIATE", label: "Intermediate" },
-  { value: "ADVANCED", label: "Advanced" },
-  { value: "EXPERT", label: "Expert" }
-];
-
-const goalRepsOptions = [
-  { value: "10", label: "10 repetitions" },
-  { value: "20", label: "20 repetitions" },
-  { value: "30", label: "30 repetitions" }
-];
+const exerciseDifficulties = [...EXERCISE_DIFFICULTIES];
+const goalRepsOptions = [...EXERCISE_GOAL_REPS_OPTIONS];
 
 const goalAccuracyOptions = [
   { value: "70", label: "70%" },
@@ -89,8 +87,8 @@ export function CreateExerciseForm({ onSuccess, onCancel }: CreateExerciseFormPr
       title: '',
       description: '',
       exerciseType: '',
-      exerciseDifficulty: '',
-      goalReps: '',
+      exerciseDifficulty: undefined,
+      goalReps: undefined,
       goalAccuracy: '',
       goalTime: ''
     }
@@ -103,7 +101,7 @@ export function CreateExerciseForm({ onSuccess, onCancel }: CreateExerciseFormPr
         title: data.title,
         description: data.description,
         exerciseType: data.exerciseType as 'PUSH_UP' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES',
-        exerciseDifficulty: data.exerciseDifficulty as 'BEGINNER' | 'EXPERT',
+        exerciseDifficulty: data.exerciseDifficulty as 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED',
         goalReps: data.goalReps,
         goalAccuracy: data.goalAccuracy,
         goalTime: data.goalTime

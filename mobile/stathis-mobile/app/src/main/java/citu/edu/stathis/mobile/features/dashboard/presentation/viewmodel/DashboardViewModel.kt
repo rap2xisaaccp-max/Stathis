@@ -151,7 +151,9 @@ class DashboardViewModel @Inject constructor(
                 }
                 
                 // Sort by closing date; do NOT truncate. Let UI decide how many to show.
+                // Only teacher-started tasks are student-visible (API + client filter).
                 val upcomingTasks = allTasks
+                    .filter { it.isStarted == true && (it.isActive ?: true) }
                     .sortedBy { it.closingDate }
                 
                 if (upcomingTasks.isEmpty()) {

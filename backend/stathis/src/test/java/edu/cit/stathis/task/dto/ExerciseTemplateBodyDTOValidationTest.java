@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExerciseTemplateBodyDTOValidationTest {
@@ -20,13 +21,13 @@ class ExerciseTemplateBodyDTOValidationTest {
     }
 
     @Test
-    void acceptsExpertDifficultyAndGluteBridgeExerciseType() {
+    void acceptsAdvancedDifficultyAndGluteBridgeExerciseType() {
         ExerciseTemplateBodyDTO dto = ExerciseTemplateBodyDTO.builder()
             .title("Glute Bridge Template")
             .description("A glute bridge template for class")
             .exerciseType("GLUTE_BRIDGE")
-            .exerciseDifficulty("EXPERT")
-            .goalReps("12")
+            .exerciseDifficulty("ADVANCED")
+            .goalReps("30")
             .goalAccuracy("85")
             .goalTime("45")
             .build();
@@ -34,5 +35,24 @@ class ExerciseTemplateBodyDTOValidationTest {
         Set<ConstraintViolation<ExerciseTemplateBodyDTO>> violations = validator.validate(dto);
 
         assertTrue(violations.isEmpty(), () -> "Expected no validation errors, but got: " + violations);
+    }
+
+    @Test
+    void rejectsExpertDifficultyForNewTemplates() {
+        ExerciseTemplateBodyDTO dto = ExerciseTemplateBodyDTO.builder()
+            .title("Push Up Template")
+            .description("A push up template for class")
+            .exerciseType("PUSH_UP")
+            .exerciseDifficulty("EXPERT")
+            .goalReps("20")
+            .goalAccuracy("80")
+            .goalTime("60")
+            .build();
+
+        Set<ConstraintViolation<ExerciseTemplateBodyDTO>> violations = validator.validate(dto);
+
+        assertFalse(violations.isEmpty());
+        assertTrue(
+            violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("exerciseDifficulty")));
     }
 }

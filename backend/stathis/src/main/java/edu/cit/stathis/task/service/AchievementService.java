@@ -146,14 +146,15 @@ public class AchievementService {
         score.setCompleted(true);
         score.setCompletedAt(OffsetDateTime.now());
 
-        // Calculate score based on difficulty
-        if (difficulty == ExerciseDifficulty.BEGINNER) {
+        // Calculate score based on difficulty (canonical: BEGINNER / INTERMEDIATE / ADVANCED)
+        ExerciseDifficulty band = difficulty != null ? difficulty.canonical() : ExerciseDifficulty.BEGINNER;
+        if (band == ExerciseDifficulty.BEGINNER) {
             score.setScore(accuracy == 100.0 ? 100 : 0);
             score.setMaxScore(100);
-        } else { // EXPERT
-            // Get exercise template to check goal accuracy
-            // If accuracy is below goal, apply deduction
-            // Implementation depends on your exercise template structure
+        } else {
+            // Intermediate / Advanced: retain accuracy-based score wiring when expanded
+            score.setScore((int) Math.round(Math.min(100.0, Math.max(0.0, accuracy))));
+            score.setMaxScore(100);
         }
 
         scoreRepository.save(score);

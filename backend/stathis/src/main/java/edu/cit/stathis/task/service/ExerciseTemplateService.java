@@ -54,18 +54,8 @@ public class ExerciseTemplateService {
     }
 
     private ExerciseDifficulty resolveExerciseDifficulty(String rawValue) {
-        if (rawValue == null) {
-            throw new IllegalArgumentException("Exercise difficulty is required");
-        }
-
-        String normalized = rawValue.trim().toUpperCase().replace(' ', '_');
-        return switch (normalized) {
-            case "BEGINNER" -> ExerciseDifficulty.BEGINNER;
-            case "INTERMEDIATE" -> ExerciseDifficulty.INTERMEDIATE;
-            case "ADVANCED" -> ExerciseDifficulty.ADVANCED;
-            case "EXPERT" -> ExerciseDifficulty.EXPERT;
-            default -> ExerciseDifficulty.valueOf(normalized);
-        };
+        // Maps legacy EXPERT → ADVANCED; rejects unknown values.
+        return ExerciseDifficulty.fromTeacherInput(rawValue);
     }
 
     private String generatePhysicalId() {
@@ -135,7 +125,9 @@ public class ExerciseTemplateService {
             .title(exerciseTemplate.getTitle())
             .description(exerciseTemplate.getDescription())
             .exerciseType(exerciseTemplate.getExerciseType())
-            .exerciseDifficulty(exerciseTemplate.getExerciseDifficulty())
+            .exerciseDifficulty(exerciseTemplate.getExerciseDifficulty() != null
+                    ? exerciseTemplate.getExerciseDifficulty().canonical()
+                    : ExerciseDifficulty.BEGINNER)
             .goalReps(exerciseTemplate.getGoalReps())
             .goalAccuracy(exerciseTemplate.getGoalAccuracy())
             .goalTime(exerciseTemplate.getGoalTime())

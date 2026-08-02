@@ -160,7 +160,8 @@ fun TaskDetailScreen(
                     val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
                         .getOrNull()?.isBefore(OffsetDateTime.now()) == true
                     val active = currentTask.isActive ?: true
-                    val isUnavailable = pastDeadline || !active
+                    val started = currentTask.isStarted == true
+                    val isUnavailable = pastDeadline || !active || !started
                     // Hero Section
                     item {
                         TaskHeroSection(
@@ -185,7 +186,7 @@ fun TaskDetailScreen(
                     // Lesson Component (only show when progress is available)
                     if (currentTask.lessonTemplateId?.isNotEmpty() == true || currentTask.lessonTemplate != null) {
                         val effectiveMaxAttempts = if (currentTask.maxAttempts > 0) currentTask.maxAttempts else 10
-                        val canStartLesson = lessonAttempts < effectiveMaxAttempts
+                        val canStartLesson = !isUnavailable && lessonAttempts < effectiveMaxAttempts
                         val lessonCompleted = (lessonAttempts > 0) || (progress?.lessonCompleted == true)
                         val lessonTemplatePhysicalId = currentTask.lessonTemplate?.physicalId ?: currentTask.lessonTemplateId
                         
@@ -207,7 +208,12 @@ fun TaskDetailScreen(
                                                 val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
                                                     .getOrNull()?.isBefore(OffsetDateTime.now()) == true
                                                 val activeVal = currentTask.isActive ?: true
-                                                if (!activeVal) append("Task is deactivated.")
+                                                val startedVal = currentTask.isStarted == true
+                                                if (!startedVal) append("Waiting for teacher to start this task.")
+                                                if (!activeVal) {
+                                                    if (isNotEmpty()) append(" ")
+                                                    append("Task is deactivated.")
+                                                }
                                                 if (pastDeadline) {
                                                     if (isNotEmpty()) append(" ")
                                                     append("Deadline has passed.")
@@ -230,7 +236,7 @@ fun TaskDetailScreen(
                             || exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
                             || exerciseAttempts > 0
                         val maxAttempts = currentTask.maxAttempts
-                        val canStartExercise = maxAttempts <= 0 || exerciseAttempts < maxAttempts
+                        val canStartExercise = !isUnavailable && (maxAttempts <= 0 || exerciseAttempts < maxAttempts)
                         val exerciseScore = progress?.exerciseScore
                         val maxExerciseScore = progress?.maxExerciseScore ?: 100
                         val exerciseReps = progress?.exerciseReps
@@ -268,7 +274,12 @@ fun TaskDetailScreen(
                                                 val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
                                                     .getOrNull()?.isBefore(OffsetDateTime.now()) == true
                                                 val activeVal = currentTask.isActive ?: true
-                                                if (!activeVal) append("Task is deactivated.")
+                                                val startedVal = currentTask.isStarted == true
+                                                if (!startedVal) append("Waiting for teacher to start this task.")
+                                                if (!activeVal) {
+                                                    if (isNotEmpty()) append(" ")
+                                                    append("Task is deactivated.")
+                                                }
                                                 if (pastDeadline) {
                                                     if (isNotEmpty()) append(" ")
                                                     append("Deadline has passed.")
@@ -290,7 +301,7 @@ fun TaskDetailScreen(
                         val quizAttempts = progress?.quizAttempts ?: 0
                         val effectiveMaxAttempts = if (currentTask.maxAttempts > 0) currentTask.maxAttempts else 10
                         val isQuizCompleted = quizAttempts > 0
-                        val canTakeQuiz = quizAttempts < effectiveMaxAttempts
+                        val canTakeQuiz = !isUnavailable && quizAttempts < effectiveMaxAttempts
                         
                         val scoreText = if (quizScore != null && maxQuizScore != null && maxQuizScore > 0) {
                             "Score: ${quizScore}/${maxQuizScore}"
@@ -314,7 +325,12 @@ fun TaskDetailScreen(
                                                 val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
                                                     .getOrNull()?.isBefore(OffsetDateTime.now()) == true
                                                 val activeVal = currentTask.isActive ?: true
-                                                if (!activeVal) append("Task is deactivated.")
+                                                val startedVal = currentTask.isStarted == true
+                                                if (!startedVal) append("Waiting for teacher to start this task.")
+                                                if (!activeVal) {
+                                                    if (isNotEmpty()) append(" ")
+                                                    append("Task is deactivated.")
+                                                }
                                                 if (pastDeadline) {
                                                     if (isNotEmpty()) append(" ")
                                                     append("Deadline has passed.")

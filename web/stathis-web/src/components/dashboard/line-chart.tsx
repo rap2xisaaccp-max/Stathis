@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
+  Legend,
 } from 'recharts';
 import { motion } from 'framer-motion';
 import { TrendingUp } from 'lucide-react';
@@ -18,9 +19,14 @@ interface LineChartProps {
   description?: string;
   data: any[];
   categories: string[];
+  /** Friendly tooltip / legend names keyed by dataKey */
+  categoryNames?: Record<string, string>;
   index: string;
   colors?: string[];
   className?: string;
+  yDomain?: [number, number];
+  showLegend?: boolean;
+  valueSuffix?: string;
 }
 
 export function LineChart({
@@ -28,9 +34,13 @@ export function LineChart({
   description,
   data,
   categories,
+  categoryNames,
   index,
-  colors = ['hsl(var(--primary))', 'hsl(var(--secondary))'],
-  className
+  colors = ['var(--primary)', 'var(--secondary)'],
+  className,
+  yDomain,
+  showLegend = false,
+  valueSuffix = '',
 }: LineChartProps) {
   return (
     <motion.div
@@ -54,34 +64,46 @@ export function LineChart({
           <div className="w-full" style={{ height: 240, minHeight: 240 }}>
             <ResponsiveContainer width="100%" height={240}>
               <RechartsLineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                 <XAxis
                   dataKey={index}
-                  stroke="hsl(var(--muted-foreground))"
+                  stroke="var(--muted-foreground)"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="hsl(var(--muted-foreground))"
+                  stroke="var(--muted-foreground)"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(value) => `${value}`}
+                  domain={yDomain}
+                  tickFormatter={(value) => `${value}${valueSuffix}`}
                 />
                 <Tooltip
+                  formatter={(value: number, name: string) => [
+                    `${value}${valueSuffix}`,
+                    categoryNames?.[name] || name,
+                  ]}
                   contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    borderColor: 'hsl(var(--border))',
+                    backgroundColor: 'var(--card)',
+                    borderColor: 'var(--border)',
                     borderRadius: '12px',
                     boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)'
                   }}
                 />
+                {showLegend && (
+                  <Legend
+                    formatter={(value) => categoryNames?.[value] || value}
+                    wrapperStyle={{ fontSize: 12 }}
+                  />
+                )}
                 {categories.map((category, i) => (
                   <Line
                     key={category}
                     type="monotone"
                     dataKey={category}
+                    name={categoryNames?.[category] || category}
                     stroke={colors[i % colors.length]}
                     strokeWidth={3}
                     dot={{ r: 5, fill: colors[i % colors.length] }}

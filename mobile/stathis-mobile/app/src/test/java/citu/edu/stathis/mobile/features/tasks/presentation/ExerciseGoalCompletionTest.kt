@@ -62,8 +62,24 @@ class ExerciseGoalCompletionTest {
 
     @Test
     fun doesNotClearCountersWhenParentAlreadyHasReps() {
+        // Legacy helper — live Start path always resets via beginCountingAttempt().
         assertTrue(ExerciseGoalCompletion.shouldClearCountersOnStart(0))
         assertFalse(ExerciseGoalCompletion.shouldClearCountersOnStart(1))
         assertFalse(ExerciseGoalCompletion.shouldClearCountersOnStart(6))
+    }
+
+    @Test
+    fun autoCompleteIdempotentWithSubmissionGuard() {
+        val guard = ExerciseSubmissionGuard()
+        var completes = 0
+        fun tryComplete(reps: Int, goal: Int) {
+            if (ExerciseGoalCompletion.shouldAutoComplete(reps, goal, 1, 600) && guard.tryAcquire()) {
+                completes++
+            }
+        }
+        tryComplete(10, 10)
+        tryComplete(11, 10)
+        tryComplete(12, 10)
+        assertTrue(completes == 1)
     }
 }

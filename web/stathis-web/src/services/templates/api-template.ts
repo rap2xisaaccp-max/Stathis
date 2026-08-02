@@ -40,7 +40,7 @@ export interface ExerciseTemplateBodyDTO {
   title: string; // required, minLength: 3, maxLength: 100
   description: string; // required, minLength: 0, maxLength: 500
   exerciseType: 'PUSH_UP' | 'PUSH_UPS' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES' | 'SQUAT' | 'GLUTE_BRIDGES' | 'LYING_LEG_RAISE' | 'STATIC_LUNGE' | 'LEG_RAISES' | 'LEG_RAISE' | 'LUNGES' | 'LUNGE' | 'PUSHUP' | 'PUSHUPS'; // required - updated to match backend enum and mobile aliases
-  exerciseDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'; // required - updated to match backend enum
+  exerciseDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'; // required — teacher create options (no Expert)
   goalReps: string; // required, pattern: ^[0-9]+$
   goalAccuracy: string; // required, pattern: ^[0-9]+$
   goalTime: string; // required, pattern: ^[0-9]+$
@@ -51,7 +51,8 @@ export interface ExerciseTemplateResponseDTO {
   title: string;
   description: string;
   exerciseType: 'PUSH_UP' | 'PUSH_UPS' | 'SQUATS' | 'GLUTE_BRIDGE' | 'LYING_LEG_RAISES' | 'STATIC_LUNGES' | 'SQUAT' | 'GLUTE_BRIDGES' | 'LYING_LEG_RAISE' | 'STATIC_LUNGE' | 'LEG_RAISES' | 'LEG_RAISE' | 'LUNGES' | 'LUNGE' | 'PUSHUP' | 'PUSHUPS'; // Note: API enum values
-  exerciseDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT'; // Note: API enum values
+  /** Backend normalizes legacy EXPERT → ADVANCED on read. */
+  exerciseDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
   goalReps: number; // integer
   goalAccuracy: number; // integer
   goalTime: number; // integer

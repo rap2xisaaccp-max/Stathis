@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchAdaptiveInsights,
@@ -13,6 +14,11 @@ import {
   ClassroomEvaluationDTO,
   DifficultyRecommendationDTO,
 } from '@/services/adaptive/api-adaptive-client';
+import {
+  formatExerciseDifficulty,
+  normalizeExerciseDifficulty,
+  snapGoalRepsToTemplateOptions,
+} from '@/lib/exercise-difficulty';
 import {
   Card,
   CardContent,
@@ -34,17 +40,46 @@ import {
   Check,
   ExternalLink,
   RefreshCw,
+  Eye,
 } from 'lucide-react';
 import {
   buildMasteryByExerciseChartData,
   buildMasteryTimelineChartData,
   buildModalityEffectivenessChartData,
   buildRecurringErrorsChartData,
+  formatModalityLabel,
+  MASTERY_CATEGORY_NAMES,
+  MASTERY_CHART_Y_DOMAIN,
+  TIMELINE_CATEGORY_NAMES,
 } from '@/components/adaptive/adaptive-insights-charts';
 
-function formatPct(value: number | null | undefined): string {
+import {
+  closedLoopSuccessCopy,
+  formErrorLabel,
+  formatImprovementDeltaTooltip,
+  formatLearningProgressLabel,
+  formatLearningProgressTooltip,
+  isInsufficientFormCorrectionData,
+  learningProgressDescription,
+  MORE_COACHING_DATA_NEEDED,
+  preferredModalityCopy,
+} from '@/components/adaptive/form-error-labels';
+
+import {
+  StudentTaskStatsModal,
+  ProgressSnapshotItem,
+} from '@/components/adaptive/StudentTaskStatsModal';
+
+
+function formatPct(value: number | null | undefined, n?: number): string {
+  if (n === 0) return 'Insufficient data';
   if (value == null || Number.isNaN(value)) return '—';
   return `${Math.round(value * 100)}%`;
+}
+
+function showApsleResearchUi(searchParams: URLSearchParams | null): boolean {
+  if (process.env.NEXT_PUBLIC_APSLE_SHOW_RCT === 'true') return true;
+  return searchParams?.get('research') === '1';
 }
 
 function formatDelta(value: number | null | undefined): string {
@@ -69,7 +104,13 @@ function suggestionText(item: {
   exerciseType: string;
   recommendedDifficulty?: string | null;
   recommendedGoalReps?: number | null;
+  recommendationRationale?: string | null;
+  sessionsCount?: number | null;
+  masteryLevel?: number;
 }): string {
+  if (isInsufficientFormCorrectionData(item.sessionsCount, item.masteryLevel)) {
+    return `${item.exerciseType}: More Coaching Data Needed`;
+  }
   const bits: string[] = [];
   if (item.recommendedDifficulty) {
     bits.push(`difficulty ${item.recommendedDifficulty}`);
@@ -120,22 +161,31 @@ function MasteryRecommendationRow({
       })
     : null;
 
+  const insufficient = isInsufficientFormCorrectionData(
+    item.sessionsCount,
+    item.masteryLevel
+  );
+
   return (
     <div className="space-y-2 rounded-xl border border-border/50 bg-background/40 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">{item.exerciseType.replaceAll('_', ' ')}</span>
         <div className="flex flex-wrap items-center gap-2">
-          {item.recommendedDifficulty ? (
-            <Badge variant="secondary">Suggest {item.recommendedDifficulty}</Badge>
+          {insufficient ? (
+            <Badge variant="outline">More Coaching Data Needed</Badge>
+          ) : item.recommendedDifficulty ? (
+            <Badge variant="secondary">
+              Suggest {formatExerciseDifficulty(item.recommendedDifficulty)}
+            </Badge>
           ) : (
             <Badge variant="outline">Difficulty —</Badge>
           )}
-          {item.recommendedGoalReps != null ? (
-            <Badge variant="outline">~{item.recommendedGoalReps} reps</Badge>
-          ) : (
-            <Badge variant="outline">Reps —</Badge>
-          )}
-          {(item.requiresTeacherApproval ?? true) && (
+          {!insufficient && item.recommendedGoalReps != null ? (
+            <Badge variant="outline">
+              ~{snapGoalRepsToTemplateOptions(item.recommendedGoalReps)} reps
+            </Badge>
+          ) : null}
+          {!insufficient && (item.requiresTeacherApproval ?? true) && (
             <Badge variant="outline">Teacher approval</Badge>
           )}
         </div>
@@ -144,7 +194,7 @@ function MasteryRecommendationRow({
         <>
           <Progress value={Math.round((item.masteryLevel || 0) * 100)} />
           <p className="text-xs text-muted-foreground">
-            Mastery {Math.round((item.masteryLevel || 0) * 100)}% · Sessions{' '}
+            APSLE Form Mastery {Math.round((item.masteryLevel || 0) * 100)}% · Sessions{' '}
             {item.sessionsCount ?? 0}
             {item.medianTimeToCorrectionMs != null &&
               ` · Median correction ${Math.round(item.medianTimeToCorrectionMs / 1000)}s`}
@@ -152,43 +202,48 @@ function MasteryRecommendationRow({
           </p>
         </>
       )}
-      {item.recommendationRationale && (
+      {(item.recommendationRationale || (insufficient && MORE_COACHING_DATA_NEEDED)) && (
         <p className="text-xs text-muted-foreground leading-relaxed">
-          {item.recommendationRationale}
+          {insufficient
+            ? MORE_COACHING_DATA_NEEDED
+            : item.recommendationRationale}
         </p>
       )}
       {(item.topErrors || []).length > 0 && (
         <div className="flex flex-wrap gap-1">
           {(item.topErrors || []).map((err) => (
             <Badge key={err} variant="outline" className="text-[10px]">
-              {err.replaceAll('_', ' ')}
+              {formErrorLabel(err)}
             </Badge>
           ))}
         </div>
       )}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <Button type="button" size="sm" variant="outline" onClick={onCopy}>
-          {copied ? (
-            <>
-              <Check className="mr-1 h-3.5 w-3.5" />
-              Copied
-            </>
-          ) : (
-            <>
-              <Copy className="mr-1 h-3.5 w-3.5" />
-              Copy suggestion
-            </>
-          )}
-        </Button>
-        <Button type="button" size="sm" variant="ghost" asChild>
-          <Link href="/classroom">
-            <ExternalLink className="mr-1 h-3.5 w-3.5" />
-            Open classrooms to apply
-          </Link>
-        </Button>
-      </div>
+      {!insufficient && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button type="button" size="sm" variant="outline" onClick={onCopy}>
+            {copied ? (
+              <>
+                <Check className="mr-1 h-3.5 w-3.5" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="mr-1 h-3.5 w-3.5" />
+                Copy suggestion
+              </>
+            )}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" asChild>
+            <Link href="/classroom">
+              <ExternalLink className="mr-1 h-3.5 w-3.5" />
+              Open classrooms to apply
+            </Link>
+          </Button>
+        </div>
+      )}
       <p className="text-[11px] text-muted-foreground">
-        Soft recommendation only — never auto-applied to exercise templates.
+        Soft recommendation only — never auto-applied to exercise templates. APSLE Form
+        Mastery is separate from classroom task scores.
       </p>
     </div>
   );
@@ -243,6 +298,9 @@ export function AdaptiveLearningInsights({
     goalReps?: number | null;
   }>;
 }) {
+  const searchParams = useSearchParams();
+  const showResearch = showApsleResearchUi(searchParams);
+
   const insightsQuery = useQuery({
     queryKey: ['adaptive-insights', studentId],
     queryFn: () => fetchAdaptiveInsights(studentId),
@@ -254,7 +312,7 @@ export function AdaptiveLearningInsights({
   const evaluationQuery = useQuery({
     queryKey: ['adaptive-evaluation', studentId],
     queryFn: () => fetchAdaptiveEvaluation(studentId),
-    enabled: !!studentId,
+    enabled: !!studentId && showResearch,
     staleTime: 1000 * 30,
     refetchOnWindowFocus: true,
     retry: 1,
@@ -262,7 +320,7 @@ export function AdaptiveLearningInsights({
   const classroomQuery = useQuery({
     queryKey: ['adaptive-classroom-evaluation', classroomId],
     queryFn: () => fetchClassroomEvaluation(classroomId!),
-    enabled: !!classroomId,
+    enabled: !!classroomId && showResearch,
     staleTime: 1000 * 30,
     refetchOnWindowFocus: true,
     retry: 1,
@@ -278,29 +336,36 @@ export function AdaptiveLearningInsights({
 
   return (
     <div className="space-y-4">
-      <StudentProgressSnapshotCard progressItems={progressItems} />
-
-      <EvaluationSummaryCard
-        evaluation={evaluationQuery.data}
-        isError={evaluationQuery.isError}
-        isLoading={evaluationQuery.isLoading}
-        onRetry={() => evaluationQuery.refetch()}
+      <StudentProgressSnapshotCard
+        studentId={studentId}
+        progressItems={progressItems}
       />
 
-      <FeedbackEffectivenessCard
-        evaluation={evaluationQuery.data}
-        isLoading={evaluationQuery.isLoading}
-        isError={evaluationQuery.isError}
-        onRetry={() => evaluationQuery.refetch()}
-      />
+      {showResearch && (
+        <>
+          <EvaluationSummaryCard
+            evaluation={evaluationQuery.data}
+            isError={evaluationQuery.isError}
+            isLoading={evaluationQuery.isLoading}
+            onRetry={() => evaluationQuery.refetch()}
+          />
 
-      <ClassroomAblationCard
-        classroomId={classroomId}
-        classroomEvaluation={classroomQuery.data}
-        isLoading={classroomQuery.isLoading}
-        isError={classroomQuery.isError}
-        onRetry={() => classroomQuery.refetch()}
-      />
+          <FeedbackEffectivenessCard
+            evaluation={evaluationQuery.data}
+            isLoading={evaluationQuery.isLoading}
+            isError={evaluationQuery.isError}
+            onRetry={() => evaluationQuery.refetch()}
+          />
+
+          <ClassroomAblationCard
+            classroomId={classroomId}
+            classroomEvaluation={classroomQuery.data}
+            isLoading={classroomQuery.isLoading}
+            isError={classroomQuery.isError}
+            onRetry={() => classroomQuery.refetch()}
+          />
+        </>
+      )}
 
       {insightsQuery.isLoading && (
         <>
@@ -711,7 +776,7 @@ function FeedbackEffectivenessCard({
               data={modalityData}
               index="modality"
               categories={['delta']}
-              colors={['hsl(var(--chart-3, var(--primary)))']}
+              colors={['var(--chart-3)']}
               className="h-full"
             />
           </div>
@@ -727,70 +792,134 @@ function FeedbackEffectivenessCard({
 }
 
 function StudentProgressSnapshotCard({
+  studentId,
   progressItems,
 }: {
-  progressItems?: Array<{
-    taskId: string;
-    taskName: string;
-    taskType?: string | null;
-    completed?: boolean;
-    score?: number | null;
-    maxScore?: number | null;
-    attempts?: number | null;
-    reps?: number | null;
-    goalReps?: number | null;
-  }>;
+  studentId: string;
+  progressItems?: ProgressSnapshotItem[];
 }) {
+  const [selectedTask, setSelectedTask] = useState<ProgressSnapshotItem | null>(
+    null
+  );
+  const [statsOpen, setStatsOpen] = useState(false);
+
   const items = (progressItems || [])
     .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON')
     .slice(0, 6);
 
+  const openTaskStats = (item: ProgressSnapshotItem) => {
+    setSelectedTask(item);
+    setStatsOpen(true);
+  };
+
+  return (
+    <>
+      <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-base">Student progress snapshot</CardTitle>
+          <CardDescription>
+            Task scores and attempts from Student Progress (same live backend data as
+            the Scores tab). Use view to inspect accuracy and attempt history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No scored quiz/exercise progress yet for this classroom.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {items.map((item) => (
+                <div
+                  key={`${item.taskId}-${item.taskType}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{item.taskName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(item.taskType || 'TASK').replaceAll('_', ' ')}
+                      {item.attempts != null ? ` · ${item.attempts} attempts` : ''}
+                      {item.reps != null
+                        ? ` · ${item.reps}${item.goalReps != null ? `/${item.goalReps}` : ''} reps`
+                        : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.completed && (
+                      <Badge variant="secondary">Done</Badge>
+                    )}
+                    <span className="font-medium">
+                      {item.score != null
+                        ? `${item.score}/${item.maxScore ?? 100}`
+                        : '—'}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="View task statistics"
+                      aria-label={`View statistics for ${item.taskName}`}
+                      onClick={() => openTaskStats(item)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <StudentTaskStatsModal
+        open={statsOpen}
+        onOpenChange={setStatsOpen}
+        studentId={studentId}
+        task={selectedTask}
+      />
+    </>
+  );
+}
+
+function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }) {
+  const byExercise =
+    data.preferredModalityByExercise ||
+    data.profile?.preferredModalityByExercise ||
+    {};
+  const entries = Object.entries(byExercise);
   return (
     <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
       <CardHeader>
-        <CardTitle className="text-base">Student progress snapshot</CardTitle>
+        <CardTitle className="text-base">Preferred Modality by Exercise</CardTitle>
         <CardDescription>
-          Task scores and attempts from Student Progress (same live backend data as
-          the Scores tab).
+          Shows which coaching method helped the student improve the most for each exercise.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No scored quiz/exercise progress yet for this classroom.
-          </p>
+      <CardContent className="space-y-2">
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Insufficient data</p>
         ) : (
-          <div className="space-y-2">
-            {items.map((item) => (
+          entries.map(([exercise, row]) => {
+            const copy = preferredModalityCopy({
+              modality: row?.modality,
+              source: row?.source,
+              n: row?.n,
+            });
+            return (
               <div
-                key={`${item.taskId}-${item.taskType}`}
+                key={exercise}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
               >
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{item.taskName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(item.taskType || 'TASK').replaceAll('_', ' ')}
-                    {item.attempts != null ? ` · ${item.attempts} attempts` : ''}
-                    {item.reps != null
-                      ? ` · ${item.reps}${item.goalReps != null ? `/${item.goalReps}` : ''} reps`
-                      : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {item.completed ? (
-                    <Badge variant="secondary">Done</Badge>
-                  ) : (
-                    <Badge variant="outline">Open</Badge>
-                  )}
-                  <span className="font-medium">
-                    {item.score != null
-                      ? `${item.score}/${item.maxScore ?? 100}`
-                      : '—'}
-                  </span>
+                <span className="font-medium">{exercise.replaceAll('_', ' ')}</span>
+                <div className="min-w-0 text-right">
+                  <Badge variant="secondary">{copy.title}</Badge>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{copy.detail}</p>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })
         )}
       </CardContent>
     </Card>
@@ -803,9 +932,9 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
     return (
       <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
         <CardHeader>
-          <CardTitle className="text-base">Recent coaching events</CardTitle>
+          <CardTitle className="text-base">Recent Adaptive Interventions</CardTitle>
           <CardDescription>
-            No closed-loop interventions logged for this student yet.
+            No recent coaching cues for this student yet.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -815,9 +944,9 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
   return (
     <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
       <CardHeader>
-        <CardTitle className="text-base">Recent coaching events</CardTitle>
+        <CardTitle className="text-base">Recent Adaptive Interventions</CardTitle>
         <CardDescription>
-          Closed-loop interventions for this student ({recent.length})
+          Recent coaching cues for this student ({recent.length})
         </CardDescription>
       </CardHeader>
       <CardContent className="max-h-80 space-y-2 overflow-y-auto pr-1">
@@ -830,6 +959,13 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
                 minute: '2-digit',
               })
             : null;
+          const improved =
+            item.responseSuccess == null
+              ? 'Pending'
+              : item.responseSuccess
+                ? 'Improved'
+                : 'No change';
+          const deltaTooltip = formatImprovementDeltaTooltip(item.responseDelta);
           return (
             <div
               key={item.physicalId}
@@ -838,19 +974,23 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
               <div className="min-w-0">
                 <p className="font-medium truncate">
                   {item.exerciseType.replaceAll('_', ' ')} ·{' '}
-                  {item.errorCode.replaceAll('_', ' ')}
+                  {formErrorLabel(item.errorCode)}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {item.messageText || 'Coaching cue delivered'}
+                  {item.messageText || item.correctionDelivered || 'Coaching cue delivered'}
                   {when ? ` · ${when}` : ''}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1">
-                <Badge variant="secondary">{item.modality.replaceAll('_', ' ')}</Badge>
-                {item.policySource && (
-                  <Badge variant="outline">{item.policySource.replaceAll('_', ' ')}</Badge>
-                )}
-                {item.experimentArm && <Badge variant="outline">{item.experimentArm}</Badge>}
+                <Badge variant="secondary">{formatModalityLabel(item.modality)}</Badge>
+                <Badge
+                  variant="outline"
+                  title={
+                    item.responseSuccess && deltaTooltip ? deltaTooltip : undefined
+                  }
+                >
+                  {improved}
+                </Badge>
               </div>
             </div>
           );
@@ -880,8 +1020,6 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
 
   return (
     <>
-      <RecentInterventionsCard data={data} />
-
       <div>
         <h3 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">
           Learning profile summary
@@ -889,13 +1027,15 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
-              <CardDescription>Preferred modality</CardDescription>
+              <CardDescription>Preferred modality (overall)</CardDescription>
               <CardTitle className="text-lg">
-                {data.profile?.preferredModality?.replaceAll('_', ' ') || 'Building…'}
+                {(data.profile?.totalInterventions ?? 0) < 1
+                  ? 'Insufficient data'
+                  : formatModalityLabel(data.profile?.preferredModality) || 'Learning'}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Derived from measured post-feedback improvement.
+              Shows the coaching method that helped this student improve most overall.
               {data.profile?.updatedAt && (
                 <span className="mt-1 block text-[11px]">
                   Updated{' '}
@@ -911,54 +1051,57 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
             <CardHeader className="pb-2">
               <CardDescription>Closed-loop success</CardDescription>
               <CardTitle className="text-lg">
-                {formatPct(data.overallSuccessRate)}
+                {formatPct(data.overallSuccessRate, data.totalInterventions)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              {data.successfulInterventions}/{data.totalInterventions} successful
-              response pairs
+              {closedLoopSuccessCopy(
+                data.successfulInterventions,
+                data.totalInterventions
+              )}
             </CardContent>
           </Card>
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
-              <CardDescription>Learning rate (EWMA Δ)</CardDescription>
-              <CardTitle className="text-lg">
-                {formatDelta(data.profile?.learningRateEstimate)}
+              <CardDescription>Learning Progress</CardDescription>
+              <CardTitle
+                className="text-lg"
+                title={formatLearningProgressTooltip(data.profile?.learningRateEstimate)}
+              >
+                {formatLearningProgressLabel(data.profile?.learningRateEstimate)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Consistency {formatPct(data.profile?.consistencyScore)}
-              {data.profile?.fatigueSensitivity != null && (
-                <span className="mt-1 block text-[11px]">
-                  Fatigue sensitivity {formatPct(data.profile.fatigueSensitivity)}
-                </span>
-              )}
+              {learningProgressDescription(data.profile?.learningRateEstimate)}
             </CardContent>
           </Card>
         </div>
       </div>
 
+      <PreferredModalityByExerciseCard data={data} />
+      <RecentInterventionsCard data={data} />
+
       <div className="grid gap-4 lg:grid-cols-2">
         {modalityData.length > 0 ? (
           <div className="min-h-[300px]">
             <BarChart
-              title="Modality effectiveness"
-              description="Mean severity reduction from closed-loop responses"
+              title="Feedback Effectiveness"
+              description="Average form improvement for each coaching method. Higher is better."
               data={modalityData}
               index="modality"
               categories={['delta']}
-              colors={['hsl(var(--primary))']}
+              categoryNames={{ delta: 'Average form improvement' }}
+              colors={['var(--primary)']}
               className="h-full"
             />
           </div>
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Modality effectiveness</CardTitle>
+              <CardTitle className="text-base">Feedback Effectiveness</CardTitle>
               <CardDescription>
-                Connected to insights — no closed-loop modality samples yet (
-                {data.totalInterventions ?? 0} response pairs). Needs form coaching with a
-                recorded feedback response, not Score completion alone.
+                No coaching-method comparison yet. This chart fills in after successful
+                coaching responses during practice.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -967,23 +1110,27 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {errorData.length > 0 ? (
           <div className="min-h-[300px]">
             <BarChart
-              title="Recurring form errors"
-              description="Distinct sessions where each error was coached (not raw intervention spam)"
+              title="Most Common Form Errors"
+              description="Shows the form mistakes that appeared most often during the student’s practice sessions."
               data={errorData}
               index="error"
               categories={['count']}
-              colors={['hsl(var(--destructive))']}
+              colors={['var(--destructive)']}
+              formatTooltipValue={(value) =>
+                value === 1
+                  ? 'Observed in 1 practice session'
+                  : `Observed in ${value} practice sessions`
+              }
               className="h-full"
             />
           </div>
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Recurring form errors</CardTitle>
+              <CardTitle className="text-base">Most Common Form Errors</CardTitle>
               <CardDescription>
-                Connected to insights — no coached form errors yet (
-                {(data.recentInterventions || []).length} recent events). Clean sessions with
-                perfect form will stay empty here.
+                No form mistakes have been recorded for this student yet. This chart fills in
+                after practice sessions where coaching addresses form.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -992,23 +1139,26 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {timelineData.length > 0 ? (
           <div className="min-h-[300px]">
             <LineChart
-              title="Mastery timeline"
-              description="Mastery and consistency over adaptive profile history"
+              title="Learning Progress Over Time"
+              description="APSLE Form Mastery and coaching success over time."
               data={timelineData}
               index="date"
               categories={['masteryPct', 'consistencyPct']}
-              colors={['hsl(var(--primary))', 'hsl(var(--secondary))']}
+              categoryNames={TIMELINE_CATEGORY_NAMES}
+              colors={['var(--primary)', 'var(--secondary)']}
+              yDomain={MASTERY_CHART_Y_DOMAIN}
+              showLegend
+              valueSuffix="%"
               className="h-full"
             />
           </div>
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Mastery timeline</CardTitle>
+              <CardTitle className="text-base">Learning Progress Over Time</CardTitle>
               <CardDescription>
-                Connected to insights — no profile history or mastery/session seed yet (
-                {(data.mastery || []).length} mastery rows). Complete an exercise so mobile
-                calls adaptive flush + recordSession.
+                Progress over time will appear after the student completes practice with
+                successful coaching responses.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1017,23 +1167,26 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {masteryBars.length > 0 ? (
           <div className="min-h-[300px]">
             <BarChart
-              title="Mastery by exercise"
-              description="Current mastery level per exercise type (newest sessions first)"
+              title="APSLE Form Mastery by Exercise"
+              description="APSLE Form Mastery (not classroom task score). Axis is 0–100%; 0% still lists the exercise."
               data={masteryBars}
               index="exercise"
               categories={['masteryPct']}
-              colors={['hsl(var(--chart-2, var(--primary)))']}
+              categoryNames={MASTERY_CATEGORY_NAMES}
+              colors={['var(--chart-2)']}
+              yDomain={MASTERY_CHART_Y_DOMAIN}
+              showValueLabels
+              valueSuffix="%"
               className="h-full"
             />
           </div>
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Mastery by exercise</CardTitle>
+              <CardTitle className="text-base">APSLE Form Mastery by Exercise</CardTitle>
               <CardDescription>
-                Connected to insights — `exercise_mastery` has no rows for this student yet.
-                Graded Score completion alone does not create mastery; adaptive
-                recordSession / feedback responses do.
+                No APSLE Form Mastery records yet for this student. Classroom task scores
+                alone do not create mastery — successful coaching responses do.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1073,17 +1226,30 @@ function AdaptiveRecommendationsCard({
     if (masteryRows.length > 0) {
       return masteryRows.map((item) => {
         const rec = difficultyByType.get(item.exerciseType);
+        const insufficient = isInsufficientFormCorrectionData(
+          item.sessionsCount,
+          item.masteryLevel
+        );
         return {
           physicalId: item.physicalId,
           exerciseType: item.exerciseType,
           masteryLevel: item.masteryLevel,
           sessionsCount: item.sessionsCount,
-          recommendedDifficulty:
-            item.recommendedDifficulty || rec?.recommendedDifficulty || null,
-          recommendedGoalReps:
-            item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null,
-          recommendationRationale:
-            item.recommendationRationale || rec?.rationale || null,
+          recommendedDifficulty: insufficient
+            ? null
+            : (() => {
+                const raw =
+                  item.recommendedDifficulty || rec?.recommendedDifficulty || null;
+                return raw ? normalizeExerciseDifficulty(raw) : null;
+              })(),
+          recommendedGoalReps: insufficient
+            ? null
+            : snapGoalRepsToTemplateOptions(
+                item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null
+              ),
+          recommendationRationale: insufficient
+            ? MORE_COACHING_DATA_NEEDED
+            : item.recommendationRationale || rec?.rationale || null,
           requiresTeacherApproval:
             item.requiresTeacherApproval ?? rec?.requiresTeacherApproval ?? true,
           topErrors: rec?.topErrors || [],
@@ -1098,8 +1264,10 @@ function AdaptiveRecommendationsCard({
       exerciseType: rec.exerciseType,
       masteryLevel: rec.masteryLevel,
       sessionsCount: rec.sessionsCount,
-      recommendedDifficulty: rec.recommendedDifficulty ?? null,
-      recommendedGoalReps: rec.recommendedGoalReps ?? null,
+      recommendedDifficulty: rec.recommendedDifficulty
+        ? normalizeExerciseDifficulty(rec.recommendedDifficulty)
+        : null,
+      recommendedGoalReps: snapGoalRepsToTemplateOptions(rec.recommendedGoalReps ?? null),
       recommendationRationale: rec.rationale,
       requiresTeacherApproval: rec.requiresTeacherApproval,
       topErrors: rec.topErrors || [],
