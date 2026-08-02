@@ -255,46 +255,71 @@ export function StudentTaskStatsModal({
             </div>
 
             <div>
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Attempts
-              </h4>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Attempts
+                </h4>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {attempts.length} recorded
+                </span>
+              </div>
               {attempts.length === 0 ? (
                 <p className="rounded-xl border border-border/40 px-3 py-4 text-sm text-muted-foreground">
-                  No attempts recorded for this task yet.
+                  No attempts recorded for this task yet. New submissions will appear here.
                 </p>
               ) : (
-                <Accordion type="single" collapsible className="rounded-xl border border-border/40 px-3">
-                  {attempts.map((attempt) => (
-                    <AccordionItem
-                      key={attempt.physicalId}
-                      value={attempt.physicalId}
-                      className="border-border/40"
-                    >
-                      <AccordionTrigger className="py-3 text-sm hover:no-underline">
-                        <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left">
-                          <span className="font-medium">Attempt {attempt.attemptNumber}</span>
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Crosshair className="h-3 w-3" />
-                            {formatAccuracy(attempt.accuracy)}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Trophy className="h-3 w-3" />
-                            {attempt.score}/{attempt.maxScore || 100}
-                          </span>
-                          {attempt.reps != null && (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                              <Repeat2 className="h-3 w-3" />
-                              {attempt.reps}
-                              {attempt.goalReps != null ? `/${attempt.goalReps}` : ''} reps
+                <Accordion
+                  type="multiple"
+                  className="rounded-xl border border-border/40 px-3"
+                >
+                  {attempts.map((attempt, index) => {
+                    const kind = attempt.exerciseTemplateId
+                      ? 'Exercise'
+                      : attempt.quizTemplateId
+                        ? 'Quiz'
+                        : 'Attempt';
+                    return (
+                      <AccordionItem
+                        key={attempt.physicalId}
+                        value={attempt.physicalId}
+                        className="border-border/40"
+                      >
+                        <AccordionTrigger className="py-3 text-sm hover:no-underline">
+                          <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left">
+                            <span className="font-medium">
+                              Attempt {attempt.attemptNumber}
+                              <span className="ml-1.5 font-normal text-muted-foreground">
+                                · {kind}
+                              </span>
                             </span>
-                          )}
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="pb-3">
-                        <AttemptDetails attempt={attempt} />
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
+                            <span className="inline-flex items-center gap-1 text-xs text-primary">
+                              <Crosshair className="h-3 w-3" />
+                              {formatAccuracy(attempt.accuracy)}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Trophy className="h-3 w-3" />
+                              {attempt.score}/{attempt.maxScore || 100}
+                            </span>
+                            {attempt.reps != null && (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <Repeat2 className="h-3 w-3" />
+                                {attempt.reps}
+                                {attempt.goalReps != null ? `/${attempt.goalReps}` : ''} reps
+                              </span>
+                            )}
+                            {index === attempts.length - 1 && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                Latest
+                              </Badge>
+                            )}
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="pb-3">
+                          <AttemptDetails attempt={attempt} />
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
                 </Accordion>
               )}
             </div>

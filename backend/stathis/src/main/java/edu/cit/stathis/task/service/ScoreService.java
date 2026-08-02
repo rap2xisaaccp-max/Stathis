@@ -87,12 +87,14 @@ public class ScoreService {
     @Transactional(readOnly = true)
     public List<ScoreAttemptResponseDTO> getAttemptsByStudentAndTask(String studentId, String taskId) {
         List<ScoreAttempt> attempts =
-                scoreAttemptRepository.findByStudentIdAndTaskIdOrderByAttemptNumberAsc(studentId, taskId);
+                scoreAttemptRepository.findByStudentIdAndTaskIdOrderByCompletedAtAscAttemptNumberAsc(
+                        studentId, taskId);
         if (!attempts.isEmpty()) {
+            // Return every stored attempt for this student + task (viewable history).
             return attempts.stream().map(this::toAttemptResponse).collect(Collectors.toList());
         }
-        // Fallback: surface latest aggregate Score as a single synthetic attempt so teachers
-        // can still see accuracy for data recorded before attempt history existed.
+        // Fallback for data recorded before attempt history existed:
+        // expose each aggregate Score row as a synthetic latest attempt.
         return scoreRepository.findByStudentIdAndTaskId(studentId, taskId).stream()
                 .filter(s -> s.getAttempts() > 0 || s.isCompleted())
                 .map(this::toSyntheticAttempt)
