@@ -29,6 +29,8 @@ interface BarChartProps {
   /** Show numeric labels on bars (helps when values are 0%). */
   showValueLabels?: boolean;
   valueSuffix?: string;
+  /** Optional teacher-friendly tooltip value (defaults to value + suffix). */
+  formatTooltipValue?: (value: number, name: string) => string;
 }
 
 export function BarChart({
@@ -43,6 +45,7 @@ export function BarChart({
   yDomain,
   showValueLabels = false,
   valueSuffix = '',
+  formatTooltipValue,
 }: BarChartProps) {
   return (
     <motion.div
@@ -83,10 +86,16 @@ export function BarChart({
                   tickFormatter={(value) => `${value}${valueSuffix}`}
                 />
                 <Tooltip
-                  formatter={(value: number, name: string) => [
-                    `${value}${valueSuffix}`,
-                    categoryNames?.[name] || name,
-                  ]}
+                  formatter={(value: number, name: string) => {
+                    if (formatTooltipValue) {
+                      // Custom value carries the full teacher-facing sentence; hide series name.
+                      return [formatTooltipValue(Number(value), name), ''];
+                    }
+                    return [
+                      `${value}${valueSuffix}`,
+                      categoryNames?.[name] || name,
+                    ];
+                  }}
                   contentStyle={{
                     backgroundColor: 'var(--card)',
                     borderColor: 'var(--border)',

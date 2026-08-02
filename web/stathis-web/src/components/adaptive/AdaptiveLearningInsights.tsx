@@ -1059,23 +1059,27 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {errorData.length > 0 ? (
           <div className="min-h-[300px]">
             <BarChart
-              title="Recurring form errors"
-              description="Distinct sessions where each error was coached (not raw intervention spam)"
+              title="Most Common Form Errors"
+              description="Shows the form mistakes that appeared most often during the student’s practice sessions."
               data={errorData}
               index="error"
               categories={['count']}
               colors={['var(--destructive)']}
+              formatTooltipValue={(value) =>
+                value === 1
+                  ? 'Observed in 1 practice session'
+                  : `Observed in ${value} practice sessions`
+              }
               className="h-full"
             />
           </div>
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Recurring form errors</CardTitle>
+              <CardTitle className="text-base">Most Common Form Errors</CardTitle>
               <CardDescription>
-                Connected to insights — no coached form errors yet (
-                {(data.recentInterventions || []).length} recent events). Clean sessions with
-                perfect form will stay empty here.
+                No form mistakes have been recorded for this student yet. This chart fills in
+                after practice sessions where coaching addresses form.
               </CardDescription>
             </CardHeader>
           </Card>

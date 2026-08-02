@@ -8,8 +8,9 @@ import {
   preferredModalityCopy,
 } from '../src/components/adaptive/form-error-labels';
 
-assert.equal(formErrorLabel('SAG'), 'Body alignment sag');
-assert.equal(formErrorDisplay('LOW_ROM'), 'Incomplete range of motion (LOW_ROM)');
+assert.equal(formErrorLabel('SAG'), 'Hips sagging');
+assert.equal(formErrorLabel('KNEES_IN'), 'Knees moving inward');
+assert.equal(formErrorDisplay('LOW_ROM'), 'Incomplete movement (LOW_ROM)');
 assert.equal(formatLearningTrend(0.24), '+0.24 severity');
 assert.equal(formatLearningTrend(-0.1), '-0.10 severity');
 assert.equal(

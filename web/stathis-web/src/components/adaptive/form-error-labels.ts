@@ -5,23 +5,23 @@ export type FormErrorLabel = {
 
 const FORM_ERROR_LABELS: Record<string, FormErrorLabel> = {
   SAG: {
-    label: 'Body alignment sag',
+    label: 'Hips sagging',
     explanation: 'Hips or torso dropping below a straight body line.',
   },
   LOW_ROM: {
-    label: 'Incomplete range of motion',
-    explanation: 'Movement did not travel through a full useful range.',
+    label: 'Incomplete movement',
+    explanation: 'Movement did not travel through the full useful range.',
   },
   DEPTH_LOW: {
-    label: 'Insufficient depth',
+    label: 'Not deep enough',
     explanation: 'Squat or lunge did not reach enough depth.',
   },
   KNEES_IN: {
-    label: 'Knees caving inward',
+    label: 'Knees moving inward',
     explanation: 'Knees collapsing inward instead of tracking over the toes.',
   },
   CHEST_UP: {
-    label: 'Chest / torso position',
+    label: 'Chest / torso dropping',
     explanation: 'Torso collapsing or not staying upright.',
   },
   PIKE: {

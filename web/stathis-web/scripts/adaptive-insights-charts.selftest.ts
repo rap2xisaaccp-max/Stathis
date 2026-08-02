@@ -20,7 +20,11 @@ assert.deepEqual(
 assert.equal(buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1).length, 1);
 assert.equal(
   buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1)[0].error,
-  'Insufficient depth'
+  'Not deep enough'
+);
+assert.equal(
+  buildRecurringErrorsChartData({ SAG: 2, LOW_ROM: 1 }, 2).map((r) => r.error).join('|'),
+  'Hips sagging|Incomplete movement'
 );
 assert.equal(
   buildMasteryByExerciseChartData([
