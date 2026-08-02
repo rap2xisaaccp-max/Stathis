@@ -52,6 +52,9 @@ class ClassroomViewModel @Inject constructor(
     // Selected classroom
     private val _selectedClassroom = MutableStateFlow<Classroom?>(null)
     val selectedClassroom: StateFlow<Classroom?> = _selectedClassroom.asStateFlow()
+
+    // Classroom currently open on the detail screen (used to sync header after list refresh)
+    private var detailClassroomId: String? = null
     
     /**
      * Loads all classrooms for the current student
@@ -95,6 +98,7 @@ class ClassroomViewModel @Inject constructor(
                                     _classroomsState.value = ClassroomsState.Empty
                                 } else {
                                     _classroomsState.value = ClassroomsState.Success(classrooms)
+                                    syncSelectedClassroomFromList(classrooms)
                                     // Fetch verification flags for current user in these classrooms
                                     var me = authTokenManager.physicalIdFlow.firstOrNull()
                                     Timber.d("Current user ID (from token store): $me")
@@ -242,6 +246,35 @@ class ClassroomViewModel @Inject constructor(
     }
     
     /**
+     * Loads classroom metadata (name, teacher, student count) for the detail screen.
+     */
+    fun loadClassroomDetails(classroomId: String) {
+        detailClassroomId = classroomId
+        viewModelScope.launch {
+            // Instant fill from already-loaded enrolled list when available
+            resolveClassroomFromList(classroomId)
+
+            try {
+                getClassroomDetailsUseCase(classroomId)
+                    .catch { e ->
+                        Timber.e(e, "Error loading classroom details for $classroomId")
+                        resolveClassroomFromList(classroomId)
+                    }
+                    .collectLatest { classroom ->
+                        _selectedClassroom.value = classroom
+                    }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading classroom details for $classroomId")
+            }
+
+            // Repository may complete without emitting on failed responses
+            if (_selectedClassroom.value?.physicalId != classroomId) {
+                resolveClassroomFromList(classroomId)
+            }
+        }
+    }
+
+    /**
      * Loads all tasks for a specific classroom
      */
     fun loadClassroomTasks(classroomId: String) {
@@ -272,8 +305,25 @@ class ClassroomViewModel @Inject constructor(
      * Sets the selected classroom
      */
     fun selectClassroom(classroom: Classroom) {
+        detailClassroomId = classroom.physicalId
         _selectedClassroom.value = classroom
         loadClassroomTasks(classroom.physicalId)
+    }
+
+    private fun resolveClassroomFromList(classroomId: String) {
+        val state = _classroomsState.value
+        if (state is ClassroomsState.Success) {
+            state.classrooms.find { it.physicalId == classroomId }?.let {
+                _selectedClassroom.value = it
+            }
+        }
+    }
+
+    private fun syncSelectedClassroomFromList(classrooms: List<Classroom>) {
+        val id = detailClassroomId ?: _selectedClassroom.value?.physicalId ?: return
+        classrooms.find { it.physicalId == id }?.let {
+            _selectedClassroom.value = it
+        }
     }
     
     /**
