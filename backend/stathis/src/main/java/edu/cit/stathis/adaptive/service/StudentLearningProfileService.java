@@ -59,6 +59,7 @@ public class StudentLearningProfileService {
         .studentId(profile.getStudentId())
         .preferredModality(profile.getPreferredModality())
         .modalityEffectivenessJson(profile.getModalityEffectivenessJson())
+        .preferredModalityByExercise(profile.getPreferredModalityByExerciseJson())
         .learningRateEstimate(profile.getLearningRateEstimate())
         .consistencyScore(profile.getConsistencyScore())
         .fatigueSensitivity(profile.getFatigueSensitivity())
@@ -113,6 +114,8 @@ public class StudentLearningProfileService {
 
     profile.setPreferredModality(
         ProfileEffectivenessMath.derivePreferredModality(effectiveness));
+    profile.setPreferredModalityByExerciseJson(
+        ProfileEffectivenessMath.derivePreferredByExercise(effectiveness));
 
     StudentLearningProfile saved = profileRepository.save(profile);
     maybeSnapshot(saved, "response:" + response.getPhysicalId());
@@ -135,6 +138,8 @@ public class StudentLearningProfileService {
       Map<String, Object> snapshot = new HashMap<>();
       snapshot.put("preferredModality", profile.getPreferredModality());
       snapshot.put("modalityEffectivenessJson", profile.getModalityEffectivenessJson());
+      snapshot.put(
+          "preferredModalityByExerciseJson", profile.getPreferredModalityByExerciseJson());
       snapshot.put("learningRateEstimate", profile.getLearningRateEstimate());
       snapshot.put("consistencyScore", profile.getConsistencyScore());
       snapshot.put("totalInterventions", profile.getTotalInterventions());

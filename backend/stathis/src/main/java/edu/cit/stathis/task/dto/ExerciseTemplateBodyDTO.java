@@ -25,8 +25,8 @@ public class ExerciseTemplateBodyDTO {
     private String exerciseType;
 
     @NotBlank(message = "Exercise difficulty is required")
-    @Pattern(regexp = "^(BEGINNER|INTERMEDIATE|ADVANCED|EXPERT)$",
-             message = "Invalid exercise difficulty. Must be one of: BEGINNER, INTERMEDIATE, ADVANCED, EXPERT")
+    @Pattern(regexp = "^(BEGINNER|INTERMEDIATE|ADVANCED)$",
+             message = "Invalid exercise difficulty. Must be one of: BEGINNER, INTERMEDIATE, ADVANCED")
     private String exerciseDifficulty;
 
     @NotBlank(message = "Goal reps is required")

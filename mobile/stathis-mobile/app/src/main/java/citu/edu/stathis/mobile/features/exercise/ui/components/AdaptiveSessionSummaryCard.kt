@@ -127,8 +127,8 @@ fun StudentMasterySection(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Preferred feedback: ${
-                                profile?.preferredModality?.replace('_', ' ') ?: "Building…"
+                            text = "Overall preferred feedback: ${
+                                profile?.preferredModality?.replace('_', ' ') ?: "Insufficient data"
                             }",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
@@ -177,6 +177,14 @@ fun StudentMasterySection(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Text(
+                                        text = preferredByExerciseLabel(
+                                            profile?.preferredModalityByExercise,
+                                            item.exerciseType
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                     item.recommendedDifficulty?.let { difficulty ->
                                         Text(
                                             text = "Soft tip: $difficulty · ~${item.recommendedGoalReps ?: 8} reps (teacher approves)",
@@ -191,5 +199,26 @@ fun StudentMasterySection(
                 }
             }
         }
+    }
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun preferredByExerciseLabel(
+    preferredByExercise: Map<String, Any?>?,
+    exerciseType: String
+): String {
+    val row = preferredByExercise?.get(exerciseType) as? Map<*, *>
+        ?: preferredByExercise?.entries?.firstOrNull {
+            it.key.equals(exerciseType, ignoreCase = true)
+        }?.value as? Map<*, *>
+    if (row == null) {
+        return "Preferred modality: Insufficient data"
+    }
+    val source = row["source"]?.toString()?.uppercase() ?: "DEFAULT"
+    val modality = row["modality"]?.toString()?.replace('_', ' ') ?: "—"
+    return when (source) {
+        "LEARNED" -> "Preferred modality: $modality"
+        "EXPLORING" -> "Preferred modality: Learning ($modality)"
+        else -> "Preferred modality: Insufficient data"
     }
 }

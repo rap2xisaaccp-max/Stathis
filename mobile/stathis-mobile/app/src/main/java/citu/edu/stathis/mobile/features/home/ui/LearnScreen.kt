@@ -550,7 +550,8 @@ private fun LearnUpcomingTasksSection(
                     val pastDeadline = runCatching { java.time.OffsetDateTime.parse(task.closingDate) }
                         .getOrNull()?.isBefore(now) == true
                     val active = task.isActive ?: true
-                    !pastDeadline && active // Only include tasks that are not past deadline and are active
+                    val started = task.isStarted == true
+                    !pastDeadline && active && started
                 }
                 
                 if (availableTasks.isEmpty()) {
@@ -668,11 +669,12 @@ private fun ProgressAndTasksHeader(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Tasks quick list
+        // Tasks quick list (teacher-started + active only)
         when (tasksState) {
             is TasksState.Success -> {
+                val visible = tasksState.tasks.filter { it.isStarted == true && (it.isActive ?: true) }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    tasksState.tasks.take(3).forEach { task ->
+                    visible.take(3).forEach { task ->
                         TaskItemRow(task = task)
                     }
                 }

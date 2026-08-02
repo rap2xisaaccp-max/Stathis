@@ -40,8 +40,8 @@ fun LearningGoal.displayName(): String = when (this) {
 
 fun ExperienceLevel.displayName(): String = when (this) {
     ExperienceLevel.BEGINNER -> "Beginner"
-    ExperienceLevel.INTERMEDIATE -> "Some Experience"
-    ExperienceLevel.ADVANCED -> "Experienced"
+    ExperienceLevel.INTERMEDIATE -> "Intermediate"
+    ExperienceLevel.ADVANCED -> "Advanced"
 }
 
 fun Interest.displayName(): String = when (this) {

@@ -24,8 +24,8 @@ interface ClassroomService {
         @Body classroomCode: Map<String, String>
     ): Response<Unit>
 
-    // Matches swagger: /api/tasks/classroom/{classroomId}
-    @GET("api/tasks/classroom/{classroomId}")
+    // Started+active only — students must not see tasks before teacher Start
+    @GET("api/tasks/classroom/{classroomId}/started")
     suspend fun getClassroomTasks(
         @Path("classroomId") classroomId: String
     ): Response<List<Task>>
