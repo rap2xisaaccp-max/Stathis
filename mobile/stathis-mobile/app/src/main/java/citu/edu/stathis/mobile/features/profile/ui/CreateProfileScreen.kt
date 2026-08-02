@@ -5,12 +5,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -26,6 +29,8 @@ fun CreateProfileScreen(navController: NavHostController, viewModel: CreateProfi
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
     var agreedToTerms by remember { mutableStateOf(false) }
 
     var step by remember { mutableStateOf(Step.EMAIL) }
@@ -104,7 +109,7 @@ fun CreateProfileScreen(navController: NavHostController, viewModel: CreateProfi
                         value = password,
                         onValueChange = { password = it },
                         label = { Text("Password (8+ characters)") },
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         singleLine = true,
                         isError = password.isNotBlank() && !(passwordValid && hasUpper && hasLower && hasDigit && hasSymbol),
                         supportingText = {
@@ -113,16 +118,34 @@ fun CreateProfileScreen(navController: NavHostController, viewModel: CreateProfi
                                 color = if (passwordValid && hasUpper && hasLower && hasDigit && hasSymbol) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
                             )
                         },
+                        trailingIcon = {
+                            val contentDesc = if (passwordVisible) "Hide password" else "Show password"
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = contentDesc
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it },
                         label = { Text("Confirm password") },
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         singleLine = true,
                         isError = confirmPassword.isNotBlank() && !passwordsMatch,
                         supportingText = { if (confirmPassword.isNotBlank() && !passwordsMatch) Text("Passwords do not match") },
+                        trailingIcon = {
+                            val contentDesc = if (confirmPasswordVisible) "Hide password" else "Show password"
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = contentDesc
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
