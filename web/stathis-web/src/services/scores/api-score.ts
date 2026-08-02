@@ -56,6 +56,25 @@ export interface ManualGradeDTO {
   feedback?: string;
 }
 
+export interface ScoreAttemptResponseDTO {
+  physicalId: string;
+  scorePhysicalId: string;
+  studentId: string;
+  taskId: string;
+  quizTemplateId?: string;
+  exerciseTemplateId?: string;
+  attemptNumber: number;
+  score: number;
+  maxScore: number;
+  accuracy?: number;
+  reps?: number;
+  goalReps?: number;
+  caloriesBurned?: number;
+  timeTaken?: number;
+  completedAt?: string;
+  createdAt?: string;
+}
+
 /**
  * Get a score by its physical ID
  */
@@ -166,6 +185,28 @@ export async function getScoresByStudentAndTaskId(studentId: string, taskId: str
   }
   
   return data as ScoreResponseDTO[];
+}
+
+/**
+ * Get per-attempt statistics for a student on a task
+ */
+export async function getAttemptsByStudentAndTaskId(
+  studentId: string,
+  taskId: string
+): Promise<ScoreAttemptResponseDTO[]> {
+  const { data, error, status } = await serverApiClient.get(
+    `/scores/student/${studentId}/task/${taskId}/attempts`
+  );
+
+  if (error || status >= 400) {
+    const errorMessage =
+      typeof error === 'object' && error !== null && 'message' in error
+        ? (error as { message: string }).message
+        : `Failed to fetch attempt history: ${status}`;
+    throw new Error(errorMessage);
+  }
+
+  return data as ScoreAttemptResponseDTO[];
 }
 
 /**

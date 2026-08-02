@@ -5,9 +5,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import edu.cit.stathis.task.repository.TaskRepository;
 import edu.cit.stathis.task.repository.ScoreRepository;
+import edu.cit.stathis.task.repository.ScoreAttemptRepository;
 import edu.cit.stathis.task.repository.TaskCompletionRepository;
 import edu.cit.stathis.task.entity.Task;
 import edu.cit.stathis.task.entity.Score;
+import edu.cit.stathis.task.entity.ScoreAttempt;
 import edu.cit.stathis.task.entity.TaskCompletion;
 import edu.cit.stathis.task.dto.StudentTaskResponseDTO;
 import edu.cit.stathis.task.dto.TaskProgressDTO;
@@ -41,6 +43,9 @@ public class StudentTaskService {
 
     @Autowired
     private ScoreRepository scoreRepository;
+
+    @Autowired
+    private ScoreAttemptRepository scoreAttemptRepository;
 
     @Autowired
     private TaskCompletionRepository taskCompletionRepository;
@@ -193,8 +198,13 @@ public class StudentTaskService {
         existingScore.setAttempts(existingScore.getAttempts() + 1);
         existingScore.setCompleted(true);
         existingScore.setCompletedAt(OffsetDateTime.now());
+        double quizAccuracy = existingScore.getMaxScore() > 0
+                ? (score * 100.0) / existingScore.getMaxScore()
+                : 0.0;
+        existingScore.setAccuracy(quizAccuracy);
 
         Score savedScore = scoreRepository.save(existingScore);
+        recordScoreAttempt(savedScore, score, existingScore.getMaxScore(), quizAccuracy, null, null, null, 0L);
         updateTaskCompletion(studentId, taskId, "quiz", true);
         return savedScore;
     }
@@ -286,8 +296,11 @@ public class StudentTaskService {
         existingScore.setAttempts(existingScore.getAttempts() + 1);
         existingScore.setCompleted(true);
         existingScore.setCompletedAt(OffsetDateTime.now());
+        double quizAccuracy = maxScore > 0 ? (computedScore * 100.0) / maxScore : 0.0;
+        existingScore.setAccuracy(quizAccuracy);
 
         Score savedScore = scoreRepository.save(existingScore);
+        recordScoreAttempt(savedScore, computedScore, maxScore, quizAccuracy, null, null, null, 0L);
         updateTaskCompletion(studentId, taskId, "quiz", true);
         return savedScore;
     }
@@ -296,6 +309,35 @@ public class StudentTaskService {
         if (task.getMaxAttempts() > 0 && existingScore.getAttempts() >= task.getMaxAttempts()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Maximum attempts reached for this task");
         }
+    }
+
+    private void recordScoreAttempt(
+            Score score,
+            int sessionScore,
+            int maxScore,
+            double accuracy,
+            Integer reps,
+            Integer goalReps,
+            Double caloriesBurned,
+            long timeTaken) {
+        ScoreAttempt attempt = ScoreAttempt.builder()
+                .physicalId("ATTEMPT-" + UUID.randomUUID().toString().toUpperCase())
+                .scorePhysicalId(score.getPhysicalId())
+                .studentId(score.getStudentId())
+                .taskId(score.getTaskId())
+                .quizTemplateId(score.getQuizTemplateId())
+                .exerciseTemplateId(score.getExerciseTemplateId())
+                .attemptNumber(score.getAttempts())
+                .score(sessionScore)
+                .maxScore(maxScore)
+                .accuracy(accuracy)
+                .reps(reps)
+                .goalReps(goalReps)
+                .caloriesBurned(caloriesBurned)
+                .timeTaken(timeTaken)
+                .completedAt(score.getCompletedAt() != null ? score.getCompletedAt() : OffsetDateTime.now())
+                .build();
+        scoreAttemptRepository.save(attempt);
     }
 
     @Transactional
@@ -404,6 +446,15 @@ public class StudentTaskService {
         existingScore.setMaxScore(100);
 
         Score savedScore = scoreRepository.save(existingScore);
+        recordScoreAttempt(
+                savedScore,
+                sessionScore,
+                100,
+                accuracy,
+                reps,
+                goalReps,
+                sessionCalories,
+                timeTaken);
         updateTaskCompletion(studentId, taskId, "exercise", true);
         // #region agent log
         AgentDebugLog.log("D", "StudentTaskService.completeExercise:saved", "score and task_completions updated",
