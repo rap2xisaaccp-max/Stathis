@@ -46,10 +46,11 @@ private fun calculateProgressPercentage(
 ): String {
     if (tasks.isEmpty()) return "0%"
 
-    // Filter out deactivated tasks for progress calculation
+    // Filter out deactivated / unstarted tasks for progress calculation
     val activeTasks = tasks.filter { task ->
         val active = task.isActive ?: true
-        active
+        val started = task.isStarted == true
+        active && started
     }
     
     if (activeTasks.isEmpty()) return "0%"
@@ -473,10 +474,11 @@ private fun ProgressOverviewSection(
         }
     }
 
-    // Filter out deactivated tasks for student-centric progress calculation
+    // Filter out deactivated / unstarted tasks for student-centric progress calculation
     val activeTasks = classroomTasks.filter { task ->
         val active = task.isActive ?: true
-        active
+        val started = task.isStarted == true
+        active && started
     }
     val activeTotalTasks = activeTasks.size
     

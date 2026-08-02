@@ -68,7 +68,8 @@ public class StudentTaskService {
         if (!classroomService.isUserEnrolledAndVerifiedInClassroom(studentId, classroomPhysicalId)) {
             throw new RuntimeException("You are not authorized to view tasks for this classroom (not verified)");
         }
-        List<Task> tasks = taskRepository.findByClassroomPhysicalId(classroomPhysicalId);
+        // Students only see teacher-started, active tasks
+        List<Task> tasks = taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
         return tasks.stream()
             .map(task -> buildStudentTaskResponse(task, studentId))
             .collect(Collectors.toList());
@@ -78,13 +79,26 @@ public class StudentTaskService {
     public StudentTaskResponseDTO getStudentTask(String taskId, String studentId) {
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         return buildStudentTaskResponse(task, studentId);
+    }
+
+    private void requireTaskStarted(Task task) {
+        if (!task.isStarted()) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Task has not been started by the teacher yet");
+        }
+        if (!task.isActive()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Task is no longer active");
+        }
     }
 
     @Transactional(readOnly = true)
     public TaskProgressDTO getTaskProgress(String taskId, String studentId) {
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         java.util.List<TaskCompletion> completionRows =
                 taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
         TaskCompletion completion = completionRows.isEmpty() ? null : completionRows.get(0);
@@ -132,6 +146,10 @@ public class StudentTaskService {
 
     @Transactional
     public Score submitQuizScore(String studentId, String taskId, String quizTemplateId, int score) {
+        Task task = taskRepository.findByPhysicalId(taskId)
+            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
+
         Score existingScore = scoreRepository.findQuizScore(studentId, taskId, quizTemplateId)
             .orElse(null);
 
@@ -145,8 +163,6 @@ public class StudentTaskService {
         }
 
         // Enforce max attempts based on Task configuration
-        Task task = taskRepository.findByPhysicalId(taskId)
-            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
         validateAttempts(task, existingScore);
 
         // Ensure maxScore is populated from quiz template if available
@@ -272,6 +288,7 @@ public class StudentTaskService {
         // Enforce max attempts based on Task configuration
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         validateAttempts(task, existingScore);
 
         existingScore.setScore(computedScore);
@@ -294,6 +311,9 @@ public class StudentTaskService {
 
     @Transactional
     public void completeLesson(String studentId, String taskId, String lessonTemplateId) {
+        Task task = taskRepository.findByPhysicalId(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         updateTaskCompletion(studentId, taskId, "lesson", true);
     }
 
@@ -324,6 +344,7 @@ public class StudentTaskService {
 
         Task task = taskRepository.findByPhysicalId(taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
 
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
@@ -350,13 +371,13 @@ public class StudentTaskService {
 
         validateAttempts(task, existingScore);
 
-        int previousReps = existingScore.getReps() != null ? existingScore.getReps() : 0;
         double previousCalories =
                 existingScore.getCaloriesBurned() != null ? existingScore.getCaloriesBurned() : 0.0;
         int previousScore = existingScore.getScore();
 
-        // Accumulate reps and calories across repeated attempts
-        existingScore.setReps(previousReps + reps);
+        // Latest attempt only — do not sum reps across attempts into the live score row.
+        existingScore.setReps(reps);
+        // Calories remain cumulative for energy totals; reps/time/accuracy reflect this attempt.
         existingScore.setCaloriesBurned(
                 Math.round((previousCalories + sessionCalories) * 10.0) / 10.0);
         existingScore.setGoalReps(goalReps);

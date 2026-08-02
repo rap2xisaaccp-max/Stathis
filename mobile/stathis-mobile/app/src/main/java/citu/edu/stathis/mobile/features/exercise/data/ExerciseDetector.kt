@@ -52,6 +52,16 @@ class ExerciseDetector {
     private var lyingLegRaiseState: ExerciseState = ExerciseState.WAITING
     private var lyingLegRaiseRepCount: Int = 0
     private var lyingLegRaiseInUpPosition: Boolean = false
+    private var lyingLegRaiseStableFrames: Int = 0
+    private var lyingLegRaiseLastRepTimeMs: Long = 0L
+    private val lyingLegRaiseMinRepIntervalMs: Long = 800L
+    private val lyingLegRaiseMinKneeAngle: Float = 150f
+    private val lyingLegRaiseRaiseFactor: Float = 0.18f
+    private val lyingLegRaiseLowerFactor: Float = 0.08f
+    private val lyingLegRaiseMaxAnkleAsymmetryFactor: Float = 0.12f
+    private val lyingLegRaiseMaxHipDriftFactor: Float = 0.08f
+    private var lyingLegRaiseBaselineHipY: Float? = null
+    private var lyingLegRaisePrevAnkleY: Float? = null
 
     // --- Sit-up ---
     private var situpState: ExerciseState = ExerciseState.WAITING
@@ -407,54 +417,182 @@ class ExerciseDetector {
     }
 
     fun analyzeLyingLegRaise(pose: Pose): ExerciseResult {
-        val feedback = mutableListOf<String>()
-        var repCompletedThisFrame = false
-
         val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
         val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
         val leftKnee = pose.getPoseLandmark(PoseLandmark.LEFT_KNEE)
         val rightKnee = pose.getPoseLandmark(PoseLandmark.RIGHT_KNEE)
         val leftAnkle = pose.getPoseLandmark(PoseLandmark.LEFT_ANKLE)
         val rightAnkle = pose.getPoseLandmark(PoseLandmark.RIGHT_ANKLE)
+        val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
+        val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
 
-        if (leftHip == null || rightHip == null || leftKnee == null || rightKnee == null || leftAnkle == null || rightAnkle == null) {
-            feedback.add("Keep hips, knees, and ankles visible.")
+        if (leftHip == null || rightHip == null || leftKnee == null || rightKnee == null ||
+            leftAnkle == null || rightAnkle == null || leftShoulder == null || rightShoulder == null
+        ) {
             resetLyingLegRaiseStateInternals()
-            return ExerciseResult(ExerciseState.INVALID, feedback, repCount = lyingLegRaiseRepCount)
+            return ExerciseResult(
+                ExerciseState.INVALID,
+                listOf("Keep hips, knees, ankles, and shoulders visible."),
+                repCount = lyingLegRaiseRepCount
+            )
         }
 
-        val avgHipY = (leftHip.position.y + rightHip.position.y) / 2f
-        val avgAnkleY = (leftAnkle.position.y + rightAnkle.position.y) / 2f
-        val avgKneeAngle = (angle(leftHip, leftKnee, leftAnkle) + angle(rightHip, rightKnee, rightAnkle)) / 2f
-        val bodySpan = abs(avgAnkleY - avgHipY).coerceAtLeast(1f)
-        val raiseThreshold = bodySpan * 0.12f
+        val leftKneeAngle = angle(leftHip, leftKnee, leftAnkle)
+        val rightKneeAngle = angle(rightHip, rightKnee, rightAnkle)
+        val confidence =
+            (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood +
+                leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood +
+                leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood +
+                leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood) / 8f
+
+        return analyzeLyingLegRaiseMetrics(
+            leftHipY = leftHip.position.y,
+            rightHipY = rightHip.position.y,
+            leftAnkleY = leftAnkle.position.y,
+            rightAnkleY = rightAnkle.position.y,
+            leftShoulderY = leftShoulder.position.y,
+            rightShoulderY = rightShoulder.position.y,
+            leftKneeAngle = leftKneeAngle,
+            rightKneeAngle = rightKneeAngle,
+            confidence = confidence,
+            nowMs = System.currentTimeMillis()
+        )
+    }
+
+    /**
+     * Testable LLR state machine. Image Y grows downward (MediaPipe): raised legs ⇒ smaller ankle Y.
+     */
+    internal fun analyzeLyingLegRaiseMetrics(
+        leftHipY: Float,
+        rightHipY: Float,
+        leftAnkleY: Float,
+        rightAnkleY: Float,
+        leftShoulderY: Float,
+        rightShoulderY: Float,
+        leftKneeAngle: Float,
+        rightKneeAngle: Float,
+        confidence: Float,
+        nowMs: Long
+    ): ExerciseResult {
+        val feedback = mutableListOf<String>()
+        var repCompletedThisFrame = false
+
+        if (confidence < defaultConfidenceThreshold) {
+            feedback.add("Low detection confidence")
+            lyingLegRaiseStableFrames = 0
+            return ExerciseResult(
+                lyingLegRaiseState,
+                feedback,
+                false,
+                confidence,
+                lyingLegRaiseRepCount
+            )
+        }
+
+        val avgHipY = (leftHipY + rightHipY) / 2f
+        val avgAnkleY = (leftAnkleY + rightAnkleY) / 2f
+        val avgShoulderY = (leftShoulderY + rightShoulderY) / 2f
+        val avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2f
+        // Prefer hip–shoulder span so threshold stays stable when ankles approach hips.
+        val bodySpan = abs(avgHipY - avgShoulderY).coerceAtLeast(80f)
+        val raiseThreshold = bodySpan * lyingLegRaiseRaiseFactor
+        val lowerThreshold = bodySpan * lyingLegRaiseLowerFactor
+        val maxAsymmetry = bodySpan * lyingLegRaiseMaxAnkleAsymmetryFactor
+        val maxHipDrift = bodySpan * lyingLegRaiseMaxHipDriftFactor
+
+        if (lyingLegRaiseBaselineHipY == null &&
+            lyingLegRaiseState == ExerciseState.WAITING
+        ) {
+            lyingLegRaiseBaselineHipY = avgHipY
+        }
+
+        val leftRaised = leftAnkleY < leftHipY - raiseThreshold
+        val rightRaised = rightAnkleY < rightHipY - raiseThreshold
+        val bothRaised = leftRaised && rightRaised
+        val bothLowered =
+            leftAnkleY >= leftHipY - lowerThreshold && rightAnkleY >= rightHipY - lowerThreshold
+        val legsStraight =
+            leftKneeAngle >= lyingLegRaiseMinKneeAngle && rightKneeAngle >= lyingLegRaiseMinKneeAngle
+        val anklesSymmetric = abs(leftAnkleY - rightAnkleY) <= maxAsymmetry
+        val hipsStable =
+            lyingLegRaiseBaselineHipY == null ||
+                abs(avgHipY - lyingLegRaiseBaselineHipY!!) <= maxHipDrift
+
+        // Reject one-frame spikes (impossible ROM jump relative to body span).
+        val prevAnkle = lyingLegRaisePrevAnkleY
+        lyingLegRaisePrevAnkleY = avgAnkleY
+        if (prevAnkle != null && abs(avgAnkleY - prevAnkle) > bodySpan * 0.55f) {
+            feedback.add("Movement too abrupt — slow the raise.")
+            lyingLegRaiseStableFrames = 0
+            return ExerciseResult(
+                lyingLegRaiseState,
+                feedback,
+                false,
+                confidence,
+                lyingLegRaiseRepCount
+            )
+        }
+
+        if (!legsStraight) {
+            feedback.add("Keep your legs straighter for better control.")
+        }
+        if (!anklesSymmetric) {
+            feedback.add("Raise both legs together.")
+        }
+        if (!hipsStable) {
+            feedback.add("Keep your hips and torso on the floor.")
+        }
+
+        val formOk = legsStraight && anklesSymmetric && hipsStable
+        val canCount =
+            nowMs - lyingLegRaiseLastRepTimeMs >= lyingLegRaiseMinRepIntervalMs
 
         when (lyingLegRaiseState) {
             ExerciseState.WAITING, ExerciseState.UP -> {
-                if (avgAnkleY < avgHipY - raiseThreshold) {
-                    lyingLegRaiseState = ExerciseState.DOWN
-                    lyingLegRaiseInUpPosition = true
+                if (bothRaised && formOk) {
+                    lyingLegRaiseStableFrames++
+                    if (lyingLegRaiseStableFrames >= requiredStableFrames) {
+                        lyingLegRaiseState = ExerciseState.DOWN
+                        lyingLegRaiseInUpPosition = true
+                        lyingLegRaiseStableFrames = 0
+                    }
+                } else {
+                    lyingLegRaiseStableFrames = 0
                 }
             }
             ExerciseState.DOWN -> {
-                if (avgAnkleY >= avgHipY - raiseThreshold * 0.4f) {
-                    lyingLegRaiseState = ExerciseState.UP
-                    if (lyingLegRaiseInUpPosition) {
-                        lyingLegRaiseRepCount++
-                        repCompletedThisFrame = true
+                if (bothLowered && formOk) {
+                    lyingLegRaiseStableFrames++
+                    if (lyingLegRaiseStableFrames >= requiredStableFrames) {
+                        lyingLegRaiseState = ExerciseState.UP
+                        if (lyingLegRaiseInUpPosition && canCount) {
+                            lyingLegRaiseRepCount++
+                            repCompletedThisFrame = true
+                            lyingLegRaiseLastRepTimeMs = nowMs
+                        }
+                        lyingLegRaiseInUpPosition = false
+                        lyingLegRaiseStableFrames = 0
                     }
-                    lyingLegRaiseInUpPosition = false
+                } else if (!bothRaised && !bothLowered) {
+                    // Holding mid-range or partial — do not count
+                    lyingLegRaiseStableFrames = 0
+                } else {
+                    lyingLegRaiseStableFrames = 0
                 }
             }
-            ExerciseState.INVALID -> lyingLegRaiseState = ExerciseState.WAITING
+            ExerciseState.INVALID -> {
+                lyingLegRaiseState = ExerciseState.WAITING
+                lyingLegRaiseStableFrames = 0
+            }
         }
 
-        if (avgKneeAngle < 150f) {
-            feedback.add("Keep your legs straighter for better control.")
-        }
-
-        val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
-        return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount)
+        return ExerciseResult(
+            lyingLegRaiseState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            lyingLegRaiseRepCount
+        )
     }
 
     private fun angle(first: PoseLandmark, center: PoseLandmark, second: PoseLandmark): Float {
@@ -499,6 +637,9 @@ class ExerciseDetector {
     private fun resetLyingLegRaiseStateInternals() {
         lyingLegRaiseState = ExerciseState.WAITING
         lyingLegRaiseInUpPosition = false
+        lyingLegRaiseStableFrames = 0
+        lyingLegRaiseBaselineHipY = null
+        lyingLegRaisePrevAnkleY = null
     }
 
     private fun resetSitupStateInternals() {
@@ -528,10 +669,17 @@ class ExerciseDetector {
         lyingLegRaiseState = ExerciseState.WAITING
         lyingLegRaiseRepCount = 0
         lyingLegRaiseInUpPosition = false
+        lyingLegRaiseStableFrames = 0
+        lyingLegRaiseLastRepTimeMs = 0L
+        lyingLegRaiseBaselineHipY = null
+        lyingLegRaisePrevAnkleY = null
 
         situpState = ExerciseState.WAITING
         situpRepCount = 0
         situpInUpPosition = false
     }
+
+    /** Test helper: current LLR absolute rep count. */
+    internal fun lyingLegRaiseRepCountForTests(): Int = lyingLegRaiseRepCount
 
 }

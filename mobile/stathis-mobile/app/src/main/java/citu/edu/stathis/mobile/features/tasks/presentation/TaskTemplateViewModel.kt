@@ -44,12 +44,25 @@ class TaskTemplateViewModel @Inject constructor(
                 _templateState.value = TemplateState.Loading
                 _error.value = null
 
-                // Fetch task details for deadline/isActive / classroom encoding.
-                // Failure is non-fatal for EXERCISE: graded UI still opens with route taskId.
-                runCatching {
+                // Classroom tasks require teacher Start before any template session opens.
+                // Practice catalog uses a separate practice_session route (not this ViewModel).
+                val task = runCatching {
                     taskRepository.getStudentTask(taskId).first()
-                }.onSuccess { task ->
-                    _taskDetail.value = task
+                }.getOrElse { err ->
+                    val msg = err.message.orEmpty()
+                    val waiting =
+                        msg.contains("not been started", ignoreCase = true) ||
+                            msg.contains("Forbidden", ignoreCase = true) ||
+                            msg.contains("403")
+                    throw if (waiting) {
+                        IllegalStateException("Waiting for teacher to start this task.")
+                    } else {
+                        err
+                    }
+                }
+                _taskDetail.value = task
+                if (task.isStarted != true) {
+                    throw IllegalStateException("Waiting for teacher to start this task.")
                 }
 
                 if (templateType == "EXERCISE") {

@@ -87,8 +87,14 @@ fun ExerciseScreen(
     exerciseTitle: String? = null,
     showExerciseFeedbackOverlay: Boolean = true,
     onExerciseFeedback: ((OnDeviceFeedback) -> Unit)? = null,
-    /** When true, exercise rep analysis runs. Disable until identity is verified. */
+    /**
+     * When true, exercise rep analysis runs.
+     * Must stay false until the attempt is ACTIVE (overlay Start) so preview/verify
+     * cannot accumulate hidden reps.
+     */
     enableExerciseTracking: Boolean = true,
+    /** Increment to force [OnDeviceExerciseAnalyzer] reset (new attempt / Start). */
+    detectorResetKey: Int = 0,
     /** When true, run facial recognition against the enrolled embedding. */
     verifyFace: Boolean = false,
     enrolledFaceEmbedding: FloatArray? = null,
@@ -141,6 +147,12 @@ fun ExerciseScreen(
     var exposureIndex by remember { mutableStateOf(0) }
 
     LaunchedEffect(exerciseType) {
+        onDeviceExerciseAnalyzer.resetExerciseState()
+        exerciseFeedback = null
+    }
+
+    LaunchedEffect(detectorResetKey) {
+        if (detectorResetKey <= 0) return@LaunchedEffect
         onDeviceExerciseAnalyzer.resetExerciseState()
         exerciseFeedback = null
     }

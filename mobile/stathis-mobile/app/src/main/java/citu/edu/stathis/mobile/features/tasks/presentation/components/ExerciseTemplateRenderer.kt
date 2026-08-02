@@ -43,8 +43,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.rememberNavController
 import citu.edu.stathis.mobile.core.data.AuthTokenManager
 import kotlinx.coroutines.flow.firstOrNull
-import citu.edu.stathis.mobile.features.exercise.data.ExerciseDetector
-import citu.edu.stathis.mobile.features.exercise.data.ExerciseResult
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
@@ -59,7 +57,6 @@ import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
-import com.google.mlkit.vision.pose.Pose
 import kotlinx.coroutines.launch
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
@@ -141,6 +138,10 @@ fun ExerciseTemplateRenderer(
     val sessionRepAccumulator = remember { ExerciseRepAccumulator() }
     var sessionReps by remember { mutableIntStateOf(0) }
     var sessionInProgress by remember { mutableStateOf(false) }
+    /** Overlay Start/Stop — only when true may detector/APSLE mutate attempt progress. */
+    var sessionCountingActive by remember { mutableStateOf(false) }
+    var detectorResetKey by remember { mutableIntStateOf(0) }
+    var adaptiveSessionLive by remember { mutableStateOf(false) }
     var resumeTimerAfterReverify by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
@@ -157,8 +158,18 @@ fun ExerciseTemplateRenderer(
         RctExperimentPrefs.isStaticControl(context)
     }
 
-    LaunchedEffect(isExerciseStarted, template.exerciseType, classroomId, sessionContext) {
-        if (isExerciseStarted) {
+    fun endAdaptiveSession() {
+        if (adaptiveSessionLive) {
+            adaptiveSessionViewModel.flushAndEnd()
+            adaptiveSessionLive = false
+        }
+    }
+
+    fun beginCountingAttempt() {
+        detectorResetKey += 1
+        sessionRepAccumulator.reset()
+        sessionReps = 0
+        if (!adaptiveSessionLive) {
             val (classroomPhysicalId, taskPhysicalId) = parseClassroomAndTaskId(classroomId)
             adaptiveSessionViewModel.startSession(
                 exerciseType = template.exerciseType,
@@ -167,12 +178,13 @@ fun ExerciseTemplateRenderer(
                 staticControl = staticControlArm,
                 sessionContext = sessionContext
             )
+            adaptiveSessionLive = true
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            adaptiveSessionViewModel.flushAndEnd()
+            endAdaptiveSession()
         }
     }
 
@@ -290,19 +302,19 @@ fun ExerciseTemplateRenderer(
             ExerciseScreen(
                 navController = rememberNavController(),
                 enableVitalsIndicator = false,
-                enablePostureAnalysis = isRecognized,
+                // Preview/verify may show landmarks; analysis only while counting is ACTIVE.
+                enablePostureAnalysis = sessionCountingActive && isRecognized,
                 exerciseType = resolveExerciseType(template.exerciseType),
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
                 onExerciseFeedback = { feedback ->
-                    // Only accept reps while the skeleton is classified as recognized
-                    if (identityPhase == IdentityPhase.VERIFIED) {
+                    if (sessionCountingActive && identityPhase == IdentityPhase.VERIFIED) {
                         latestExerciseFeedback = feedback
                         adaptiveSessionViewModel.onExerciseFeedback(feedback)
                     }
                 },
-                // Pose counting is gated in the overlay; tracking follows verified identity only.
-                enableExerciseTracking = isRecognized,
+                enableExerciseTracking = sessionCountingActive && isRecognized,
+                detectorResetKey = detectorResetKey,
                 verifyFace = needsFaceScan,
                 enrolledFaceEmbedding = faceIdentityState.enrolledEmbedding,
                 onFaceVerified = {
@@ -316,7 +328,7 @@ fun ExerciseTemplateRenderer(
                 },
                 monitorSkeletonPresence = isRecognized,
                 onSkeletonLeftFrame = {
-                    // Only after 5s out of frame â€” pause counting until face matches again
+                    // Only after 5s out of frame — pause counting until face matches again
                     if (identityPhase == IdentityPhase.VERIFIED) {
                         identityPhase = IdentityPhase.REVERIFYING
                         identityMessage =
@@ -357,6 +369,18 @@ fun ExerciseTemplateRenderer(
                 onSessionRepsChange = { sessionReps = it },
                 sessionInProgress = sessionInProgress,
                 onSessionInProgressChange = { sessionInProgress = it },
+                isTimerRunning = sessionCountingActive,
+                onTimerRunningChange = { running ->
+                    if (running) {
+                        if (!sessionInProgress) {
+                            beginCountingAttempt()
+                            sessionInProgress = true
+                        }
+                        sessionCountingActive = true
+                    } else {
+                        sessionCountingActive = false
+                    }
+                },
                 resumeTimerAfterReverify = resumeTimerAfterReverify,
                 onResumeTimerAfterReverifyChange = { resumeTimerAfterReverify = it },
                 onComplete = { performance ->
@@ -364,9 +388,10 @@ fun ExerciseTemplateRenderer(
                     exercisePerformance = performance
                     isExerciseCompleted = true
                     sessionInProgress = false
+                    sessionCountingActive = false
                     resumeTimerAfterReverify = false
                     displayedAttempts = maxOf(displayedAttempts + 1, attemptsUsed + 1)
-                    adaptiveSessionViewModel.flushAndEnd()
+                    endAdaptiveSession()
                     onSessionFinished(performance)
                 },
                 onCancel = {
@@ -376,10 +401,12 @@ fun ExerciseTemplateRenderer(
                     sessionRepAccumulator.reset()
                     sessionReps = 0
                     sessionInProgress = false
+                    sessionCountingActive = false
+                    detectorResetKey += 1
                     resumeTimerAfterReverify = false
                     identityPhase = IdentityPhase.UNVERIFIED
                     faceIdentityViewModel.clearSessionVerification()
-                    adaptiveSessionViewModel.flushAndEnd()
+                    endAdaptiveSession()
                     onCancel?.invoke()
                 },
                 modifier = Modifier.fillMaxSize()
@@ -398,6 +425,9 @@ fun ExerciseTemplateRenderer(
                         sessionRepAccumulator.reset()
                         sessionReps = 0
                         sessionInProgress = false
+                        sessionCountingActive = false
+                        detectorResetKey += 1
+                        endAdaptiveSession()
                         resumeTimerAfterReverify = false
                         isExerciseStarted = false
                         isExerciseCompleted = false
@@ -780,6 +810,8 @@ private fun ExerciseControlsOverlay(
     onSessionRepsChange: (Int) -> Unit,
     sessionInProgress: Boolean,
     onSessionInProgressChange: (Boolean) -> Unit,
+    isTimerRunning: Boolean,
+    onTimerRunningChange: (Boolean) -> Unit,
     resumeTimerAfterReverify: Boolean,
     onResumeTimerAfterReverifyChange: (Boolean) -> Unit,
     onComplete: (ExercisePerformance) -> Unit,
@@ -794,7 +826,6 @@ private fun ExerciseControlsOverlay(
     }
     var currentTime by remember { mutableIntStateOf(0) }
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
-    var isTimerRunning by remember { mutableStateOf(false) }
     /** Idempotent completion for auto-goal, Finish, and Complete-during-reverify. */
     var hasEmittedCompletion by remember { mutableStateOf(false) }
     val overlayCompletionGuard = remember { ExerciseSubmissionGuard() }
@@ -803,12 +834,9 @@ private fun ExerciseControlsOverlay(
     val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
     val (parsedClassroomId, parsedTaskId) = remember(classroomId) { parseClassroomAndTaskId(classroomId) }
 
-    // Pose detection state
-    val exerciseDetector = remember { ExerciseDetector() }
     var exerciseState by remember { mutableStateOf(ExerciseState.WAITING) }
     var exerciseConfidence by remember { mutableFloatStateOf(0f) }
     var exerciseFeedback by remember { mutableStateOf<List<String>>(emptyList()) }
-    var latestPose by remember { mutableStateOf<Pose?>(null) }
 
     fun applyLiveReps(detectorReps: Int) {
         val total = sessionRepAccumulator.applyDetectorReps(detectorReps)
@@ -833,18 +861,18 @@ private fun ExerciseControlsOverlay(
             IdentityPhase.REVERIFYING -> {
                 if (isTimerRunning) {
                     onResumeTimerAfterReverifyChange(true)
-                    isTimerRunning = false
+                    onTimerRunningChange(false)
                 }
             }
             IdentityPhase.VERIFIED -> {
                 if (resumeTimerAfterReverify) {
-                    isTimerRunning = true
+                    onTimerRunningChange(true)
                     onResumeTimerAfterReverifyChange(false)
                 }
             }
             IdentityPhase.UNVERIFIED, IdentityPhase.VERIFYING -> {
                 onResumeTimerAfterReverifyChange(false)
-                isTimerRunning = false
+                onTimerRunningChange(false)
             }
         }
     }
@@ -865,28 +893,6 @@ private fun ExerciseControlsOverlay(
             completed = false
         )
     }
-
-    // Function to handle pose detection
-    val handlePoseDetection = remember(template.exerciseType) { { pose: Pose ->
-        latestPose = pose
-        val result: ExerciseResult = when (resolveExerciseType(template.exerciseType)) {
-            ExerciseType.SQUAT -> exerciseDetector.analyzeSquat(pose)
-            ExerciseType.PUSHUP -> exerciseDetector.analyzePushup(pose)
-            ExerciseType.SIT_UP -> exerciseDetector.analyzeSitup(pose)
-            ExerciseType.GLUTE_BRIDGE -> exerciseDetector.analyzeGluteBridge(pose)
-            ExerciseType.STATIC_LUNGE -> exerciseDetector.analyzeStaticLunge(pose)
-            ExerciseType.LYING_LEG_RAISE -> exerciseDetector.analyzeLyingLegRaise(pose)
-            else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
-        }
-
-        applyLiveReps(result.repCount)
-        exerciseState = result.state
-        exerciseConfidence = result.confidence ?: 0f
-        exerciseFeedback = result.feedback
-
-        // Update accuracy based on confidence
-        currentAccuracy = (exerciseConfidence * 100f).coerceAtMost(100f)
-    } }
 
     val healthConnectViewModel: HealthConnectViewModel = hiltViewModel()
     val connectionState by healthConnectViewModel.connectionState.collectAsState()
@@ -988,19 +994,13 @@ private fun ExerciseControlsOverlay(
             )
         }
 
-        // First Start of an attempt: clear only when parent has no progress.
-        // If overlay remounted mid-session, parent sessionReps/sessionInProgress survive â€” do not wipe.
-        if (!sessionInProgress) {
-            onSessionInProgressChange(true)
-            if (ExerciseGoalCompletion.shouldClearCountersOnStart(sessionReps)) {
-                exerciseDetector.resetExercise()
-                sessionRepAccumulator.reset()
-                currentReps = 0
-                onSessionRepsChange(0)
-                currentTime = 0
-            } else {
-                currentReps = sessionReps
-            }
+        // Attempt activation (detector reset + APSLE) is owned by parent onTimerRunningChange.
+        // Keep local time/display aligned when resuming mid-attempt after remount.
+        if (sessionInProgress) {
+            currentReps = sessionReps
+        } else {
+            currentTime = 0
+            currentReps = 0
         }
 
         while (!hasEmittedCompletion) {
@@ -1027,7 +1027,7 @@ private fun ExerciseControlsOverlay(
         ) {
             if (!overlayCompletionGuard.tryAcquire()) return@LaunchedEffect
             hasEmittedCompletion = true
-            isTimerRunning = false
+            onTimerRunningChange(false)
             onSessionInProgressChange(false)
 
             val fallbackVitals = VitalSigns(
@@ -1078,7 +1078,7 @@ private fun ExerciseControlsOverlay(
         }
         if (!overlayCompletionGuard.tryAcquire()) return@LaunchedEffect
         hasEmittedCompletion = true
-        isTimerRunning = false
+        onTimerRunningChange(false)
         onSessionInProgressChange(false)
         shouldStopWithPostActivity = true
         val performance = buildExercisePerformance(
@@ -1441,7 +1441,7 @@ private fun ExerciseControlsOverlay(
                                 onClick = {
                                     if (!overlayCompletionGuard.tryAcquire()) return@Button
                                     hasEmittedCompletion = true
-                                    isTimerRunning = false
+                                    onTimerRunningChange(false)
                                     onSessionInProgressChange(false)
                                     shouldStopWithPostActivity = true
                                     val performance = buildExercisePerformance(
@@ -1494,7 +1494,7 @@ private fun ExerciseControlsOverlay(
                                         else -> healthConnectViewModel.connect()
                                     }
                                 }
-                                isTimerRunning = !isTimerRunning
+                                onTimerRunningChange(!isTimerRunning)
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isTimerRunning) {
@@ -1525,7 +1525,7 @@ private fun ExerciseControlsOverlay(
                     onClick = {
                         if (!overlayCompletionGuard.tryAcquire()) return@Button
                         hasEmittedCompletion = true
-                        isTimerRunning = false
+                        onTimerRunningChange(false)
                         onSessionInProgressChange(false)
                         // Stop vitals monitoring with post-activity vitals
                         shouldStopWithPostActivity = true
