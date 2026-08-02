@@ -1,6 +1,7 @@
 package citu.edu.stathis.mobile.features.exercise.data
 
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
+import citu.edu.stathis.mobile.features.tasks.presentation.DebugSessionLog
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 import kotlin.math.atan2
@@ -54,14 +55,25 @@ class ExerciseDetector {
     private var lyingLegRaiseInUpPosition: Boolean = false
     private var lyingLegRaiseStableFrames: Int = 0
     private var lyingLegRaiseLastRepTimeMs: Long = 0L
-    private val lyingLegRaiseMinRepIntervalMs: Long = 800L
-    private val lyingLegRaiseMinKneeAngle: Float = 150f
-    private val lyingLegRaiseRaiseFactor: Float = 0.18f
-    private val lyingLegRaiseLowerFactor: Float = 0.08f
-    private val lyingLegRaiseMaxAnkleAsymmetryFactor: Float = 0.12f
-    private val lyingLegRaiseMaxHipDriftFactor: Float = 0.08f
+    private val lyingLegRaiseMinRepIntervalMs: Long = 600L
+    /** Soft knee quality for counting (feedback can be stricter). */
+    private val lyingLegRaiseCountKneeAngle: Float = 130f
+    /** Fraction of resting leg length ankles must rise to count as raised. */
+    private val lyingLegRaiseRaiseFactor: Float = 0.28f
+    private val lyingLegRaiseLowerFactor: Float = 0.12f
+    private val lyingLegRaiseMaxAnkleAsymmetryFactor: Float = 0.22f
+    private val lyingLegRaiseMaxHipDriftFactor: Float = 0.18f
     private var lyingLegRaiseBaselineHipY: Float? = null
+    private var lyingLegRaiseBaselineShoulderY: Float? = null
+    private var lyingLegRaiseRestingAnkleY: Float? = null
+    private var lyingLegRaiseRestingLegSpan: Float = 0f
     private var lyingLegRaisePrevAnkleY: Float? = null
+    /** True if the raise phase had acceptable dual-leg / knee quality at least once. */
+    private var lyingLegRaiseRaiseQualityOk: Boolean = false
+    // #region agent log
+    private var lyingLegRaiseDebugFrame: Int = 0
+    private var lyingLegRaiseLastLoggedState: ExerciseState? = null
+    // #endregion
 
     // --- Sit-up ---
     private var situpState: ExerciseState = ExerciseState.WAITING
@@ -461,6 +473,10 @@ class ExerciseDetector {
 
     /**
      * Testable LLR state machine. Image Y grows downward (MediaPipe): raised legs ⇒ smaller ankle Y.
+     *
+     * Phase transitions follow geometry only (like squat/push-up/glute). Soft form quality is
+     * required only when counting, so minor knee bend / asymmetry during motion does not abort
+     * an otherwise complete raise→lower cycle.
      */
     internal fun analyzeLyingLegRaiseMetrics(
         leftHipY: Float,
@@ -492,37 +508,62 @@ class ExerciseDetector {
         val avgHipY = (leftHipY + rightHipY) / 2f
         val avgAnkleY = (leftAnkleY + rightAnkleY) / 2f
         val avgShoulderY = (leftShoulderY + rightShoulderY) / 2f
-        val avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2f
-        // Prefer hip–shoulder span so threshold stays stable when ankles approach hips.
-        val bodySpan = abs(avgHipY - avgShoulderY).coerceAtLeast(80f)
-        val raiseThreshold = bodySpan * lyingLegRaiseRaiseFactor
-        val lowerThreshold = bodySpan * lyingLegRaiseLowerFactor
-        val maxAsymmetry = bodySpan * lyingLegRaiseMaxAnkleAsymmetryFactor
-        val maxHipDrift = bodySpan * lyingLegRaiseMaxHipDriftFactor
+        val torsoSpan = abs(avgHipY - avgShoulderY).coerceAtLeast(1f)
+        val instantLegSpan = abs(avgAnkleY - avgHipY).coerceAtLeast(torsoSpan)
 
-        if (lyingLegRaiseBaselineHipY == null &&
-            lyingLegRaiseState == ExerciseState.WAITING
-        ) {
-            lyingLegRaiseBaselineHipY = avgHipY
+        // Capture resting pose while waiting / after a completed lower.
+        val looksRested =
+            lyingLegRaiseState == ExerciseState.WAITING ||
+                lyingLegRaiseState == ExerciseState.UP
+        if (looksRested && avgAnkleY >= avgHipY - torsoSpan * 0.05f) {
+            if (lyingLegRaiseBaselineHipY == null) {
+                lyingLegRaiseBaselineHipY = avgHipY
+            }
+            if (lyingLegRaiseBaselineShoulderY == null) {
+                lyingLegRaiseBaselineShoulderY = avgShoulderY
+            }
+            lyingLegRaiseRestingAnkleY = avgAnkleY
+            lyingLegRaiseRestingLegSpan =
+                max(lyingLegRaiseRestingLegSpan, instantLegSpan).coerceAtLeast(torsoSpan * 1.2f)
         }
 
-        val leftRaised = leftAnkleY < leftHipY - raiseThreshold
-        val rightRaised = rightAnkleY < rightHipY - raiseThreshold
+        val romSpan =
+            if (lyingLegRaiseRestingLegSpan > 0f) lyingLegRaiseRestingLegSpan
+            else instantLegSpan.coerceAtLeast(100f)
+        val raiseThreshold = romSpan * lyingLegRaiseRaiseFactor
+        val lowerThreshold = romSpan * lyingLegRaiseLowerFactor
+        val maxAsymmetry = romSpan * lyingLegRaiseMaxAnkleAsymmetryFactor
+        val maxHipDrift = romSpan * lyingLegRaiseMaxHipDriftFactor
+        val maxShoulderDrift = romSpan * lyingLegRaiseMaxHipDriftFactor
+
+        val restAnkle = lyingLegRaiseRestingAnkleY
+        val leftRaised =
+            restAnkle != null && leftAnkleY < restAnkle - raiseThreshold &&
+                leftAnkleY < leftHipY - raiseThreshold * 0.35f
+        val rightRaised =
+            restAnkle != null && rightAnkleY < restAnkle - raiseThreshold &&
+                rightAnkleY < rightHipY - raiseThreshold * 0.35f
         val bothRaised = leftRaised && rightRaised
         val bothLowered =
-            leftAnkleY >= leftHipY - lowerThreshold && rightAnkleY >= rightHipY - lowerThreshold
-        val legsStraight =
-            leftKneeAngle >= lyingLegRaiseMinKneeAngle && rightKneeAngle >= lyingLegRaiseMinKneeAngle
+            restAnkle != null &&
+                leftAnkleY >= restAnkle - lowerThreshold &&
+                rightAnkleY >= restAnkle - lowerThreshold
+
+        val kneesOkForCount =
+            leftKneeAngle >= lyingLegRaiseCountKneeAngle &&
+                rightKneeAngle >= lyingLegRaiseCountKneeAngle
         val anklesSymmetric = abs(leftAnkleY - rightAnkleY) <= maxAsymmetry
         val hipsStable =
             lyingLegRaiseBaselineHipY == null ||
                 abs(avgHipY - lyingLegRaiseBaselineHipY!!) <= maxHipDrift
+        val torsoStable =
+            lyingLegRaiseBaselineShoulderY == null ||
+                abs(avgShoulderY - lyingLegRaiseBaselineShoulderY!!) <= maxShoulderDrift
 
-        // Reject only extreme teleports. CameraX KEEP_ONLY_LATEST drops frames, so a
-        // legitimate raise can appear as a large single-step delta (~1–2× bodySpan).
+        // Reject only extreme teleports (CameraX may drop frames mid-raise).
         val prevAnkle = lyingLegRaisePrevAnkleY
         lyingLegRaisePrevAnkleY = avgAnkleY
-        if (prevAnkle != null && abs(avgAnkleY - prevAnkle) > bodySpan * 2.5f) {
+        if (prevAnkle != null && abs(avgAnkleY - prevAnkle) > romSpan * 2.5f) {
             feedback.add("Movement too abrupt — slow the raise.")
             lyingLegRaiseStableFrames = 0
             return ExerciseResult(
@@ -534,24 +575,34 @@ class ExerciseDetector {
             )
         }
 
-        if (!legsStraight) {
+        if (!kneesOkForCount) {
             feedback.add("Keep your legs straighter for better control.")
         }
         if (!anklesSymmetric) {
             feedback.add("Raise both legs together.")
         }
-        if (!hipsStable) {
+        if (!hipsStable || !torsoStable) {
             feedback.add("Keep your hips and torso on the floor.")
         }
 
-        val formOk = legsStraight && anklesSymmetric && hipsStable
+        // Soft quality sampled during the raise — does not block entering the raised phase.
+        val raiseQuality =
+            kneesOkForCount && anklesSymmetric && hipsStable && torsoStable
         val canCount =
             nowMs - lyingLegRaiseLastRepTimeMs >= lyingLegRaiseMinRepIntervalMs
+        val stateBefore = lyingLegRaiseState
+        val leftTravel =
+            if (restAnkle != null) restAnkle - leftAnkleY else leftHipY - leftAnkleY
+        val rightTravel =
+            if (restAnkle != null) restAnkle - rightAnkleY else rightHipY - rightAnkleY
 
         when (lyingLegRaiseState) {
             ExerciseState.WAITING, ExerciseState.UP -> {
-                if (bothRaised && formOk) {
+                if (bothRaised) {
                     lyingLegRaiseStableFrames++
+                    if (raiseQuality) {
+                        lyingLegRaiseRaiseQualityOk = true
+                    }
                     if (lyingLegRaiseStableFrames >= requiredStableFrames) {
                         lyingLegRaiseState = ExerciseState.DOWN
                         lyingLegRaiseInUpPosition = true
@@ -562,20 +613,28 @@ class ExerciseDetector {
                 }
             }
             ExerciseState.DOWN -> {
-                if (bothLowered && formOk) {
+                if (bothRaised && raiseQuality) {
+                    lyingLegRaiseRaiseQualityOk = true
+                }
+                if (bothLowered) {
                     lyingLegRaiseStableFrames++
                     if (lyingLegRaiseStableFrames >= requiredStableFrames) {
                         lyingLegRaiseState = ExerciseState.UP
-                        if (lyingLegRaiseInUpPosition && canCount) {
+                        // Count only a full cycle that achieved raise ROM + soft quality
+                        // at some point during the raised phase (not necessarily on lower).
+                        if (lyingLegRaiseInUpPosition &&
+                            lyingLegRaiseRaiseQualityOk &&
+                            canCount
+                        ) {
                             lyingLegRaiseRepCount++
                             repCompletedThisFrame = true
                             lyingLegRaiseLastRepTimeMs = nowMs
                         }
                         lyingLegRaiseInUpPosition = false
+                        lyingLegRaiseRaiseQualityOk = false
                         lyingLegRaiseStableFrames = 0
                     }
                 } else if (!bothRaised && !bothLowered) {
-                    // Holding mid-range or partial — do not count
                     lyingLegRaiseStableFrames = 0
                 } else {
                     lyingLegRaiseStableFrames = 0
@@ -584,8 +643,66 @@ class ExerciseDetector {
             ExerciseState.INVALID -> {
                 lyingLegRaiseState = ExerciseState.WAITING
                 lyingLegRaiseStableFrames = 0
+                lyingLegRaiseRaiseQualityOk = false
             }
         }
+
+        // #region agent log
+        lyingLegRaiseDebugFrame++
+        val stateChanged = lyingLegRaiseLastLoggedState != lyingLegRaiseState
+        val shouldLog =
+            repCompletedThisFrame ||
+                stateChanged ||
+                (lyingLegRaiseDebugFrame % 15 == 0 && (bothRaised || bothLowered || !raiseQuality))
+        if (shouldLog) {
+            lyingLegRaiseLastLoggedState = lyingLegRaiseState
+            val blockReason = when {
+                repCompletedThisFrame -> "counted"
+                !bothRaised &&
+                    (stateBefore == ExerciseState.WAITING || stateBefore == ExerciseState.UP) ->
+                    "not_raised_enough"
+                bothRaised &&
+                    (stateBefore == ExerciseState.WAITING || stateBefore == ExerciseState.UP) ->
+                    "raising_ok"
+                stateBefore == ExerciseState.DOWN && bothLowered &&
+                    lyingLegRaiseInUpPosition && !lyingLegRaiseRaiseQualityOk ->
+                    "quality_never_ok"
+                stateBefore == ExerciseState.DOWN && bothLowered && !canCount ->
+                    "interval_block"
+                stateBefore == ExerciseState.DOWN && !bothLowered && !bothRaised ->
+                    "mid_range"
+                stateBefore == ExerciseState.DOWN && !bothLowered ->
+                    "not_lowered_enough"
+                else -> "other"
+            }
+            DebugSessionLog.log(
+                hypothesisId = "H-postfix",
+                location = "ExerciseDetector.analyzeLyingLegRaiseMetrics",
+                message = if (repCompletedThisFrame) "rep_counted" else "llr_frame",
+                data = mapOf(
+                    "frame" to lyingLegRaiseDebugFrame,
+                    "stateBefore" to stateBefore.name,
+                    "stateAfter" to lyingLegRaiseState.name,
+                    "reps" to lyingLegRaiseRepCount,
+                    "stable" to lyingLegRaiseStableFrames,
+                    "romSpan" to romSpan.roundToInt(),
+                    "raiseThr" to raiseThreshold.roundToInt(),
+                    "lowerThr" to lowerThreshold.roundToInt(),
+                    "leftTravel" to leftTravel.roundToInt(),
+                    "rightTravel" to rightTravel.roundToInt(),
+                    "bothRaised" to bothRaised,
+                    "bothLowered" to bothLowered,
+                    "raiseQuality" to raiseQuality,
+                    "raiseQualityOk" to lyingLegRaiseRaiseQualityOk,
+                    "canCount" to canCount,
+                    "lKnee" to leftKneeAngle.roundToInt(),
+                    "rKnee" to rightKneeAngle.roundToInt(),
+                    "block" to blockReason
+                ),
+                runId = "post-fix"
+            )
+        }
+        // #endregion
 
         return ExerciseResult(
             lyingLegRaiseState,
@@ -640,7 +757,14 @@ class ExerciseDetector {
         lyingLegRaiseInUpPosition = false
         lyingLegRaiseStableFrames = 0
         lyingLegRaiseBaselineHipY = null
+        lyingLegRaiseBaselineShoulderY = null
+        lyingLegRaiseRestingAnkleY = null
+        lyingLegRaiseRestingLegSpan = 0f
         lyingLegRaisePrevAnkleY = null
+        lyingLegRaiseRaiseQualityOk = false
+        // #region agent log
+        lyingLegRaiseLastLoggedState = null
+        // #endregion
     }
 
     private fun resetSitupStateInternals() {
@@ -673,7 +797,11 @@ class ExerciseDetector {
         lyingLegRaiseStableFrames = 0
         lyingLegRaiseLastRepTimeMs = 0L
         lyingLegRaiseBaselineHipY = null
+        lyingLegRaiseBaselineShoulderY = null
+        lyingLegRaiseRestingAnkleY = null
+        lyingLegRaiseRestingLegSpan = 0f
         lyingLegRaisePrevAnkleY = null
+        lyingLegRaiseRaiseQualityOk = false
 
         situpState = ExerciseState.WAITING
         situpRepCount = 0

@@ -1,14 +1,14 @@
 package citu.edu.stathis.mobile.features.tasks.presentation
 
-import org.json.JSONObject
 import java.io.BufferedOutputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 
 /**
  * Debug-session NDJSON logger (session b7147e). Posts to the Cursor debug ingest server.
- * Also mirrors to logcat. Safe no-op on failure.
+ * Safe no-op on JVM unit tests / offline devices.
  */
 object DebugSessionLog {
     private const val ENDPOINT =
@@ -25,26 +25,35 @@ object DebugSessionLog {
         data: Map<String, Any?> = emptyMap(),
         runId: String = "verify1"
     ) {
-        val payload = JSONObject()
-            .put("sessionId", SESSION)
-            .put("hypothesisId", hypothesisId)
-            .put("location", location)
-            .put("message", message)
-            .put("timestamp", System.currentTimeMillis())
-            .put("runId", runId)
-            .put("data", JSONObject(data))
-        android.util.Log.i("DbgSession_$SESSION", "$hypothesisId|$location|$message|$data")
-        executor.execute {
-            // Prefer 127.0.0.1 — works on device when `adb reverse tcp:7316 tcp:7316` is set.
-            val ok = post(ENDPOINT, payload) || post(EMULATOR_ENDPOINT, payload)
-            android.util.Log.i(
-                "DbgSession_$SESSION",
-                if (ok) "ingest_ok|$message" else "ingest_fail|$message"
-            )
+        try {
+            val dataJson = data.entries.joinToString(",") { (k, v) ->
+                val value = when (v) {
+                    null -> "null"
+                    is Number, is Boolean -> v.toString()
+                    else -> "\"${v.toString().replace("\"", "'").replace("\n", " ")}\""
+                }
+                "\"$k\":$value"
+            }
+            val payload =
+                """{"sessionId":"$SESSION","hypothesisId":"$hypothesisId","location":"$location","message":"$message","timestamp":${System.currentTimeMillis()},"runId":"$runId","data":{$dataJson}}"""
+            try {
+                android.util.Log.i("DbgSession_$SESSION", "$hypothesisId|$location|$message|$data")
+            } catch (_: Throwable) {
+                // JVM unit tests — no Android Log
+            }
+            try {
+                File("C:/Users/ASUS/Stathis/debug-b7147e.log").appendText(payload + "\n")
+            } catch (_: Throwable) {
+            }
+            executor.execute {
+                post(ENDPOINT, payload) || post(EMULATOR_ENDPOINT, payload)
+            }
+        } catch (_: Throwable) {
+            // never break exercise detection for debug logging
         }
     }
 
-    private fun post(url: String, payload: JSONObject): Boolean {
+    private fun post(url: String, payload: String): Boolean {
         return try {
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -55,13 +64,12 @@ object DebugSessionLog {
                 setRequestProperty("X-Debug-Session-Id", SESSION)
             }
             BufferedOutputStream(conn.outputStream).use { out ->
-                out.write(payload.toString().toByteArray(Charsets.UTF_8))
+                out.write(payload.toByteArray(Charsets.UTF_8))
             }
             val code = conn.responseCode
             conn.disconnect()
             code in 200..299
-        } catch (e: Exception) {
-            android.util.Log.w("DbgSession_$SESSION", "ingest_error|$url|${e.javaClass.simpleName}")
+        } catch (_: Exception) {
             false
         }
     }
