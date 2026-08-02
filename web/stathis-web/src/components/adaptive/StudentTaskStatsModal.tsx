@@ -249,7 +249,7 @@ export function StudentTaskStatsModal({
                 )}
                 <StatChip
                   label="Last submission"
-                  value={formatDate(primary?.submissionDate || primary?.completedAt)}
+                  value={formatDate(primary?.submissionDate)}
                 />
               </div>
             </div>
