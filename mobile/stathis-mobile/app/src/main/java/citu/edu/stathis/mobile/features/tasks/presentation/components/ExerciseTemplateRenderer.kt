@@ -51,6 +51,7 @@ import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
 import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
+import citu.edu.stathis.mobile.features.exercise.domain.SessionAccuracyTracker
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
@@ -80,6 +81,14 @@ private fun parseClassroomAndTaskId(encoded: String?): Pair<String?, String?> {
     if (encoded.isNullOrBlank()) return null to null
     val parts = encoded.split('|', limit = 2)
     return if (parts.size == 2) parts[0] to parts[1] else encoded to null
+}
+
+/** Visibility / ML confidence messages are not exercise-form cues. */
+private fun isDetectionIssue(message: String): Boolean {
+    val normalized = message.lowercase()
+    return normalized.contains("visible") ||
+        normalized.contains("detection confidence") ||
+        normalized.contains("low detection")
 }
 
 private fun buildExercisePerformance(
@@ -716,7 +725,8 @@ private fun MinimalProgressIndicator(
     goal: Int,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     animateProgress: Boolean = true,
-    modifier: Modifier = Modifier
+    accentColor: Color = Color.Unspecified,
+    modifier: Modifier = Modifier.width(76.dp)
 ) {
     val progress = if (goal > 0) (current.toFloat() / goal).coerceAtMost(1f) else 0f
     val animatedProgress = if (animateProgress) {
@@ -728,9 +738,14 @@ private fun MinimalProgressIndicator(
     } else {
         progress
     }
+    val tint = if (accentColor == Color.Unspecified) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        accentColor
+    }
 
     Row(
-        modifier = modifier.width(76.dp),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -738,7 +753,7 @@ private fun MinimalProgressIndicator(
             imageVector = icon,
             contentDescription = label,
             modifier = Modifier.size(12.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = tint
         )
 
         Text(
@@ -758,9 +773,110 @@ private fun MinimalProgressIndicator(
                 .weight(1f)
                 .height(3.dp)
                 .clip(RoundedCornerShape(1.5.dp)),
-            color = MaterialTheme.colorScheme.primary,
+            color = tint,
             trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
         )
+    }
+}
+
+@Composable
+private fun LiveAccuracyBadge(
+    accuracy: Int,
+    goalAccuracy: Int,
+    modifier: Modifier = Modifier
+) {
+    val meetingGoal = accuracy >= goalAccuracy && accuracy > 0
+    val accent = when {
+        accuracy <= 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+        meetingGoal -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
+    }
+    val statusLabel = when {
+        accuracy <= 0 -> "No form yet"
+        meetingGoal -> "On target"
+        else -> "Below goal"
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Accuracy",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "$accuracy%",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = accent
+        )
+        Text(
+            text = "Goal $goalAccuracy% · $statusLabel",
+            style = MaterialTheme.typography.labelSmall,
+            color = accent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun LiveFormCuesCard(
+    formIssues: List<String>,
+    accuracy: Int,
+    goalAccuracy: Int,
+    modifier: Modifier = Modifier
+) {
+    val belowGoal = accuracy > 0 && accuracy < goalAccuracy
+    if (formIssues.isEmpty() && !belowGoal) return
+
+    val hasIssues = formIssues.isNotEmpty()
+    val containerColor = if (hasIssues) {
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)
+    } else {
+        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f)
+    }
+    val contentColor = if (hasIssues) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = 420.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(
+                text = if (hasIssues) "Form cues" else "Accuracy below goal",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            if (hasIssues) {
+                formIssues.take(3).forEach { issue ->
+                    Text(
+                        text = "• $issue",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            } else {
+                Text(
+                    text = "Current $accuracy% — aim for at least $goalAccuracy% with cleaner form.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentColor
+                )
+            }
+        }
     }
 }
 
@@ -791,6 +907,7 @@ private fun ExerciseControlsOverlay(
         if (currentReps != sessionReps) currentReps = sessionReps
     }
     var currentTime by remember { mutableIntStateOf(0) }
+    /** Form accuracy % — defaults to 0 until assessable form samples exist. */
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
     var isTimerRunning by remember { mutableStateOf(false) }
     /** Idempotent completion for auto-goal, Finish, and Complete-during-reverify. */
@@ -800,6 +917,7 @@ private fun ExerciseControlsOverlay(
     var shouldStopWithPostActivity by remember { mutableStateOf(false) }
     val weightKg by exerciseSyncViewModel.weightKg.collectAsState()
     val (parsedClassroomId, parsedTaskId) = remember(classroomId) { parseClassroomAndTaskId(classroomId) }
+    val formAccuracyTracker = remember { SessionAccuracyTracker() }
 
     // Pose detection state
     val exerciseDetector = remember { ExerciseDetector() }
@@ -821,8 +939,10 @@ private fun ExerciseControlsOverlay(
             applyLiveReps(feedback.repCount)
             exerciseState = feedback.exerciseState
             exerciseConfidence = feedback.confidence
-            exerciseFeedback = feedback.formIssues
-            currentAccuracy = (feedback.confidence * 100f).coerceAtMost(100f)
+            exerciseFeedback = feedback.formIssues.filterNot { isDetectionIssue(it) }
+            // Accuracy measures exercise form, not pose-detection confidence.
+            formAccuracyTracker.record(feedback.formScore)
+            currentAccuracy = formAccuracyTracker.currentAccuracyPercent()
         }
     }
 
@@ -881,9 +1001,8 @@ private fun ExerciseControlsOverlay(
         exerciseState = result.state
         exerciseConfidence = result.confidence ?: 0f
         exerciseFeedback = result.feedback
-
-        // Update accuracy based on confidence
-        currentAccuracy = (exerciseConfidence * 100f).coerceAtMost(100f)
+        formAccuracyTracker.record(result.formScore)
+        currentAccuracy = formAccuracyTracker.currentAccuracyPercent()
     } }
 
     val healthConnectViewModel: HealthConnectViewModel = hiltViewModel()
@@ -993,9 +1112,11 @@ private fun ExerciseControlsOverlay(
             if (ExerciseGoalCompletion.shouldClearCountersOnStart(sessionReps)) {
                 exerciseDetector.resetExercise()
                 sessionRepAccumulator.reset()
+                formAccuracyTracker.reset()
                 currentReps = 0
                 onSessionRepsChange(0)
                 currentTime = 0
+                currentAccuracy = 0f
             } else {
                 currentReps = sessionReps
             }
@@ -1105,7 +1226,14 @@ private fun ExerciseControlsOverlay(
         modifier = modifier.fillMaxSize()
     ) {
         if (identityPhase == IdentityPhase.VERIFIED) {
-        // Minimal progress overlay at the very top edge
+        val accuracyPercent = currentAccuracy.toInt()
+        val accuracyAccent = when {
+            accuracyPercent <= 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+            accuracyPercent >= template.goalAccuracy -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.error
+        }
+
+        // Progress + live accuracy overlay
         Card(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -1113,16 +1241,16 @@ private fun ExerciseControlsOverlay(
                 .fillMaxWidth()
                 .widthIn(max = 420.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Exercise type and difficulty
                 Text(
                     text = "${template.exerciseType.replace("_", " ")} - ${template.exerciseDifficulty}",
                     style = MaterialTheme.typography.bodySmall,
@@ -1132,64 +1260,80 @@ private fun ExerciseControlsOverlay(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // Progress indicators in a single row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MinimalProgressIndicator(
-                        label = "R",
-                        current = currentReps,
-                        goal = template.goalReps,
-                        icon = Icons.Default.Repeat
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MinimalProgressIndicator(
+                            label = "R",
+                            current = currentReps,
+                            goal = template.goalReps,
+                            icon = Icons.Default.Repeat
+                        )
+                        MinimalProgressIndicator(
+                            label = "T",
+                            current = currentTime,
+                            goal = template.goalTime,
+                            icon = Icons.Default.Timer
+                        )
+                    }
 
-                    MinimalProgressIndicator(
-                        label = "T",
-                        current = currentTime,
-                        goal = template.goalTime,
-                        icon = Icons.Default.Timer
-                    )
-
-                    MinimalProgressIndicator(
-                        label = "A",
-                        current = currentAccuracy.toInt(),
-                        goal = template.goalAccuracy,
-                        icon = Icons.Default.GpsFixed,
-                        animateProgress = false
+                    LiveAccuracyBadge(
+                        accuracy = accuracyPercent,
+                        goalAccuracy = template.goalAccuracy
                     )
                 }
 
-                // Pose status
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = when (exerciseState) {
-                            ExerciseState.WAITING -> Icons.Default.Person
-                            ExerciseState.UP -> Icons.Default.TrendingUp
-                            ExerciseState.DOWN -> Icons.Default.TrendingDown
-                            ExerciseState.INVALID -> Icons.Default.Warning
-                        },
-                        contentDescription = "Pose Detection",
-                        tint = when (exerciseState) {
-                            ExerciseState.WAITING -> MaterialTheme.colorScheme.onSurfaceVariant
-                            ExerciseState.UP -> MaterialTheme.colorScheme.primary
-                            ExerciseState.DOWN -> MaterialTheme.colorScheme.secondary
-                            ExerciseState.INVALID -> MaterialTheme.colorScheme.error
-                        },
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "${(exerciseConfidence * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.width(36.dp),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (exerciseState) {
+                                ExerciseState.WAITING -> Icons.Default.Person
+                                ExerciseState.UP -> Icons.Default.TrendingUp
+                                ExerciseState.DOWN -> Icons.Default.TrendingDown
+                                ExerciseState.INVALID -> Icons.Default.Warning
+                            },
+                            contentDescription = "Pose Detection",
+                            tint = when (exerciseState) {
+                                ExerciseState.WAITING -> MaterialTheme.colorScheme.onSurfaceVariant
+                                ExerciseState.UP -> MaterialTheme.colorScheme.primary
+                                ExerciseState.DOWN -> MaterialTheme.colorScheme.secondary
+                                ExerciseState.INVALID -> MaterialTheme.colorScheme.error
+                            },
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = when (exerciseState) {
+                                ExerciseState.WAITING -> "Pose: waiting"
+                                ExerciseState.UP -> "Pose: up"
+                                ExerciseState.DOWN -> "Pose: down"
+                                ExerciseState.INVALID -> "Pose: invalid form"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    MinimalProgressIndicator(
+                        label = "A",
+                        current = accuracyPercent,
+                        goal = template.goalAccuracy,
+                        icon = Icons.Default.GpsFixed,
+                        animateProgress = false,
+                        accentColor = accuracyAccent,
+                        modifier = Modifier.width(96.dp)
                     )
                 }
             }
@@ -1199,7 +1343,7 @@ private fun ExerciseControlsOverlay(
         Card(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 104.dp, end = 8.dp),
+                .padding(top = 220.dp, end = 8.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
             ),
@@ -1346,6 +1490,18 @@ private fun ExerciseControlsOverlay(
                     }
                 }
             }
+        }
+
+        // Live form accuracy cues while the student is performing
+        if (identityPhase == IdentityPhase.VERIFIED && isTimerRunning) {
+            LiveFormCuesCard(
+                formIssues = exerciseFeedback,
+                accuracy = currentAccuracy.toInt(),
+                goalAccuracy = template.goalAccuracy,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 12.dp, end = 12.dp, bottom = 100.dp)
+            )
         }
 
         // Controls: Verify first; after success â†’ Cancel / Start|Stop / Complete
