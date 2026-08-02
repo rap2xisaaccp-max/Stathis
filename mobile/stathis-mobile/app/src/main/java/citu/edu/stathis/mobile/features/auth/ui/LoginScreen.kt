@@ -245,7 +245,7 @@ fun LoginScreen(navController: NavHostController, viewModel: LoginViewModel = hi
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     TextButton(
-                        onClick = { /* TODO: Navigate to sign up */ }
+                        onClick = { navController.navigate("register") }
                     ) {
                         Text(
                             text = stringResource(R.string.login_sign_up),
