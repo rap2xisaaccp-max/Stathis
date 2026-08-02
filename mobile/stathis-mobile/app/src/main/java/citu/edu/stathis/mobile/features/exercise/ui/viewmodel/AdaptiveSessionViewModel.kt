@@ -64,6 +64,7 @@ class AdaptiveSessionViewModel @Inject constructor(
     }
 
     fun onExerciseFeedback(feedback: OnDeviceFeedback) {
+        // Engine serializes via Mutex; launches may overlap but only one claim proceeds.
         viewModelScope.launch {
             val flags = feedback.backendFlags
             val severity =

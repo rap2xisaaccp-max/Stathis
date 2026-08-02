@@ -26,6 +26,10 @@ class ModalityHighlightTargetsTest {
     fun sagAndPikeShareCoreLineFocus() {
         val sag = ModalityHighlightTargets.forError(FormErrorCode.SAG)
         val pike = ModalityHighlightTargets.forError(FormErrorCode.PIKE)
+        val lungeKnees = ModalityHighlightTargets.forError(FormErrorCode.KNEES_IN, "STATIC_LUNGES")
+        val squatKnees = ModalityHighlightTargets.forError(FormErrorCode.KNEES_IN, "SQUATS")
+        // Exercise-aware paths must resolve without throwing; targets may differ by anatomy.
+        assertTrue(lungeKnees.joints.isNotEmpty() || squatKnees.joints.isNotEmpty())
         assertEquals(sag.joints, pike.joints)
         assertTrue(sag.joints.contains(ModalityHighlightTargets.LEFT_HIP))
         assertTrue(sag.joints.contains(ModalityHighlightTargets.LEFT_SHOULDER))

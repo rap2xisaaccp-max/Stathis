@@ -1,12 +1,16 @@
 package edu.cit.stathis.task.service;
 
 import edu.cit.stathis.task.dto.TaskProgressDTO;
+import edu.cit.stathis.task.entity.Task;
 import edu.cit.stathis.task.entity.TaskCompletion;
 import edu.cit.stathis.task.repository.TaskCompletionRepository;
+import edu.cit.stathis.task.repository.TaskRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -17,9 +21,41 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TaskCompletionService {
     private final TaskCompletionRepository taskCompletionRepository;
+    private final TaskRepository taskRepository;
+
+    private void requireTaskStarted(String taskId) {
+        Task task = taskRepository.findByPhysicalId(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        // #region agent log
+        try {
+            java.nio.file.Path logPath = java.nio.file.Paths.get("debug-b7147e.log");
+            String line = String.format(
+                    "{\"sessionId\":\"b7147e\",\"hypothesisId\":\"H-E\",\"location\":\"TaskCompletionService.requireTaskStarted\",\"message\":\"completion_gate\",\"timestamp\":%d,\"runId\":\"post-fix\",\"data\":{\"taskId\":\"%s\",\"isStarted\":%s,\"isActive\":%s}}%n",
+                    System.currentTimeMillis(),
+                    task.getPhysicalId() != null ? task.getPhysicalId().replace("\"", "") : "",
+                    task.isStarted(),
+                    task.isActive());
+            java.nio.file.Files.writeString(
+                    logPath,
+                    line,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+        }
+        // #endregion
+        if (!task.isStarted()) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Task has not been started by the teacher yet");
+        }
+        if (!task.isActive()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Task is no longer active");
+        }
+    }
 
     @Transactional
     public TaskCompletion createTaskCompletion(String studentId, String taskId) {
+        requireTaskStarted(taskId);
         // Idempotent: duplicate creates were producing multiple rows per student/task,
         // which broke findByStudentIdAndTaskId and rolled back completeExercise.
         java.util.List<TaskCompletion> existing =
@@ -47,6 +83,7 @@ public class TaskCompletionService {
 
     @Transactional
     public TaskCompletion updateTaskProgress(String studentId, String taskId, TaskProgressDTO progressDTO) {
+        requireTaskStarted(taskId);
         TaskCompletion taskCompletion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task completion not found for student: " + studentId + " and task: " + taskId));
         taskCompletion.setLessonCompleted(progressDTO.isLessonCompleted());
@@ -100,6 +137,7 @@ public class TaskCompletionService {
 
     @Transactional
     public void submitForReview(String studentId, String taskId) {
+        requireTaskStarted(taskId);
         TaskCompletion taskCompletion = taskCompletionRepository.findByStudentIdAndTaskId(studentId, taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task completion not found for student: " + studentId + " and task: " + taskId));
         taskCompletion.setSubmittedForReview(true);
