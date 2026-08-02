@@ -975,7 +975,29 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         <h3 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">
           Learning profile summary
         </h3>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+            <CardHeader className="pb-2">
+              <CardDescription>Preferred modality (overall)</CardDescription>
+              <CardTitle className="text-lg">
+                {(data.profile?.totalInterventions ?? 0) < 1
+                  ? 'Insufficient data'
+                  : data.profile?.preferredModality?.replaceAll('_', ' ') || 'Learning'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              Derived from measured post-feedback improvement across all valid coaching responses.
+              {data.profile?.updatedAt && (
+                <span className="mt-1 block text-[11px]">
+                  Updated{' '}
+                  {new Date(data.profile.updatedAt).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </span>
+              )}
+            </CardContent>
+          </Card>
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
               <CardDescription>Closed-loop success</CardDescription>
@@ -1000,15 +1022,6 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
             <CardContent className="text-sm text-muted-foreground">
               Higher positive values mean recent coaching responses reduced form severity
               more. Not classroom score points.
-              {data.profile?.updatedAt && (
-                <span className="mt-1 block text-[11px]">
-                  Profile updated{' '}
-                  {new Date(data.profile.updatedAt).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
-                </span>
-              )}
             </CardContent>
           </Card>
         </div>
