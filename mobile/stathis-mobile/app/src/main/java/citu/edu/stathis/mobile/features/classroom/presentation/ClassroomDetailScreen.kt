@@ -30,43 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import citu.edu.stathis.mobile.features.tasks.navigation.navigateToTaskList
 import androidx.navigation.NavController
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomViewModel
-
-/**
- * Calculates the classroom progress percentage based on completed tasks.
- * A task counts as completed when the student has any attempt/completion
- * recorded via API progress or local completion caches.
- */
-private fun calculateProgressPercentage(
-    tasks: List<citu.edu.stathis.mobile.features.tasks.data.model.Task>,
-    taskProgressMap: Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>? = null
-): String {
-    if (tasks.isEmpty()) return "0%"
-
-    val activeTasks = tasks.filter { task -> task.isActive ?: true }
-    if (activeTasks.isEmpty()) return "0%"
-
-    val completed = activeTasks.count { task -> isTaskCompletedForProgress(task, taskProgressMap) }
-    val percentage = ((completed.toFloat() / activeTasks.size) * 100).toInt()
-    return "${percentage}%"
-}
-
-private fun isTaskCompletedForProgress(
-    task: citu.edu.stathis.mobile.features.tasks.data.model.Task,
-    taskProgressMap: Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>?
-): Boolean {
-    val progress = taskProgressMap?.get(task.physicalId)
-    val hasQuizAttempts = (progress?.quizAttempts ?: 0) > 0 || progress?.quizCompleted == true
-    val hasLessonAttempts = progress?.lessonCompleted == true ||
-        citu.edu.stathis.mobile.features.tasks.presentation.LessonAttemptsCache.getAttempts(task.physicalId) > 0
-    val hasExerciseAttempts = progress?.exerciseCompleted == true ||
-        (progress?.exerciseAttempts ?: 0) > 0 ||
-        progress?.completedExercises?.isNotEmpty() == true
-    return hasQuizAttempts ||
-        hasLessonAttempts ||
-        hasExerciseAttempts ||
-        progress?.isCompleted == true ||
-        citu.edu.stathis.mobile.features.tasks.presentation.TaskCompletionCache.isCompleted(task.physicalId)
-}
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskProgressCalculator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -426,7 +390,7 @@ private fun QuickStatsSection(
         item {
             StatCard(
                 title = "Progress",
-                value = calculateProgressPercentage(classroomTasks, taskProgressMap),
+                value = TaskProgressCalculator.progressPercentageLabel(classroomTasks, taskProgressMap),
                 icon = Icons.Default.TrendingUp,
                 color = MaterialTheme.colorScheme.tertiary
             )
@@ -496,14 +460,11 @@ private fun ProgressOverviewSection(
     modifier: Modifier = Modifier
 ) {
     // Filter out deactivated tasks for student-centric progress calculation
-    val activeTasks = classroomTasks.filter { task ->
-        val active = task.isActive ?: true
-        active
-    }
+    val activeTasks = TaskProgressCalculator.activeTasks(classroomTasks)
     val activeTotalTasks = activeTasks.size
     
     val completedTasks = activeTasks.count { task ->
-        isTaskCompletedForProgress(task, taskProgressMap)
+        TaskProgressCalculator.isTaskCompleted(task, taskProgressMap)
     }
     val remainingTasks = (activeTotalTasks - completedTasks).coerceAtLeast(0)
     val progressPercentage = if (activeTotalTasks > 0) completedTasks.toFloat() / activeTotalTasks else 0f
