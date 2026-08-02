@@ -35,6 +35,7 @@ import {
   Check,
   ExternalLink,
   RefreshCw,
+  Eye,
 } from 'lucide-react';
 import {
   buildMasteryByExerciseChartData,
@@ -46,6 +47,10 @@ import {
   MASTERY_CHART_Y_DOMAIN,
   TIMELINE_CATEGORY_NAMES,
 } from '@/components/adaptive/adaptive-insights-charts';
+import {
+  StudentTaskStatsModal,
+  ProgressSnapshotItem,
+} from '@/components/adaptive/StudentTaskStatsModal';
 import {
   closedLoopSuccessCopy,
   formErrorLabel,
@@ -319,7 +324,10 @@ export function AdaptiveLearningInsights({
 
   return (
     <div className="space-y-4">
-      <StudentProgressSnapshotCard progressItems={progressItems} />
+      <StudentProgressSnapshotCard
+        studentId={studentId}
+        progressItems={progressItems}
+      />
 
       {showResearch && (
         <>
@@ -772,73 +780,93 @@ function FeedbackEffectivenessCard({
 }
 
 function StudentProgressSnapshotCard({
+  studentId,
   progressItems,
 }: {
-  progressItems?: Array<{
-    taskId: string;
-    taskName: string;
-    taskType?: string | null;
-    completed?: boolean;
-    score?: number | null;
-    maxScore?: number | null;
-    attempts?: number | null;
-    reps?: number | null;
-    goalReps?: number | null;
-  }>;
+  studentId: string;
+  progressItems?: ProgressSnapshotItem[];
 }) {
+  const [selectedTask, setSelectedTask] = useState<ProgressSnapshotItem | null>(
+    null
+  );
+  const [statsOpen, setStatsOpen] = useState(false);
+
   const items = (progressItems || [])
     .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON')
     .slice(0, 6);
 
+  const openTaskStats = (item: ProgressSnapshotItem) => {
+    setSelectedTask(item);
+    setStatsOpen(true);
+  };
+
   return (
-    <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
-      <CardHeader>
-        <CardTitle className="text-base">Student progress snapshot</CardTitle>
-        <CardDescription>
-          Classroom task scores and attempts (same live backend data as the Scores tab).
-          These are separate from APSLE Form Mastery below.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No scored quiz/exercise progress yet for this classroom.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {items.map((item) => (
-              <div
-                key={`${item.taskId}-${item.taskType}`}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{item.taskName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(item.taskType || 'TASK').replaceAll('_', ' ')}
-                    {item.attempts != null ? ` · ${item.attempts} attempts` : ''}
-                    {item.reps != null
-                      ? ` · ${item.reps}${item.goalReps != null ? `/${item.goalReps}` : ''} reps`
-                      : ''}
-                  </p>
+    <>
+      <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-base">Student progress snapshot</CardTitle>
+          <CardDescription>
+            Task scores and attempts from Student Progress (same live backend data as
+            the Scores tab). Use view to inspect accuracy and attempt history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No scored quiz/exercise progress yet for this classroom.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {items.map((item) => (
+                <div
+                  key={`${item.taskId}-${item.taskType}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{item.taskName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(item.taskType || 'TASK').replaceAll('_', ' ')}
+                      {item.attempts != null ? ` · ${item.attempts} attempts` : ''}
+                      {item.reps != null
+                        ? ` · ${item.reps}${item.goalReps != null ? `/${item.goalReps}` : ''} reps`
+                        : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.completed && (
+                      <Badge variant="secondary">Done</Badge>
+                    )}
+                    <span className="font-medium">
+                      {item.score != null
+                        ? `${item.score}/${item.maxScore ?? 100}`
+                        : '—'}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="View task statistics"
+                      aria-label={`View statistics for ${item.taskName}`}
+                      onClick={() => openTaskStats(item)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {item.completed ? (
-                    <Badge variant="secondary">Done</Badge>
-                  ) : (
-                    <Badge variant="outline">Open</Badge>
-                  )}
-                  <span className="font-medium">
-                    {item.score != null
-                      ? `${item.score}/${item.maxScore ?? 100}`
-                      : '—'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <StudentTaskStatsModal
+        open={statsOpen}
+        onOpenChange={setStatsOpen}
+        studentId={studentId}
+        task={selectedTask}
+      />
+    </>
   );
 }
 
