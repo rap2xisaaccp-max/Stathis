@@ -1,5 +1,7 @@
 package edu.cit.stathis.adaptive.service;
 
+import edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog;
+import edu.cit.stathis.adaptive.coaching.InstructionIntensity;
 import edu.cit.stathis.adaptive.dto.AdaptiveRecommendationDTO;
 import edu.cit.stathis.adaptive.dto.AdaptiveRecommendationRequestDTO;
 import edu.cit.stathis.adaptive.entity.StudentLearningProfile;
@@ -44,10 +46,13 @@ public class AdaptivePolicyService {
     String exerciseType =
         request.getExerciseType() != null ? request.getExerciseType() : "UNKNOWN";
 
+    InstructionIntensity intensity = InstructionIntensity.REMINDER;
     if (Boolean.TRUE.equals(request.getStaticControl())) {
       return buildRecommendation(
           FeedbackModality.VERBAL_TEXT,
           errorCode,
+          exerciseType,
+          intensity,
           PolicySource.STATIC_CONTROL,
           0.0,
           "STATIC");
@@ -60,6 +65,7 @@ public class AdaptivePolicyService {
             : Map.of();
     int total =
         profile.getTotalInterventions() == null ? 0 : profile.getTotalInterventions();
+    FeedbackModality preferred = resolvePreferredForExercise(profile, exerciseType);
 
     EpsilonGreedyPolicy policy =
         new EpsilonGreedyPolicy(EpsilonGreedyPolicy.DEFAULT_EPSILON, random);
@@ -68,12 +74,14 @@ public class AdaptivePolicyService {
             effectiveness,
             exerciseType,
             errorCode,
-            profile.getPreferredModality(),
+            preferred,
             total);
 
     return buildRecommendation(
         decision.modality(),
         errorCode,
+        exerciseType,
+        intensity,
         decision.policySource(),
         decision.expectedDelta(),
         "ADAPTIVE");
@@ -82,14 +90,16 @@ public class AdaptivePolicyService {
   private AdaptiveRecommendationDTO buildRecommendation(
       FeedbackModality modality,
       FormErrorCode errorCode,
+      String exerciseType,
+      InstructionIntensity intensity,
       PolicySource source,
       double expectedDelta,
       String arm) {
     return AdaptiveRecommendationDTO.builder()
         .modality(modality)
         .errorCode(errorCode)
-        .messageCode(errorCode.name())
-        .messageText(defaultMessage(errorCode))
+        .messageCode(CoachingInstructionCatalog.messageCode(exerciseType, errorCode, intensity))
+        .messageText(CoachingInstructionCatalog.messageText(exerciseType, errorCode, intensity))
         .policySource(source)
         .expectedDelta(expectedDelta)
         .experimentArm(arm)
@@ -97,18 +107,44 @@ public class AdaptivePolicyService {
         .build();
   }
 
+  /** Prefer learned/exploring per-exercise modality; fall back to global preferred. */
+  @SuppressWarnings("unchecked")
+  static FeedbackModality resolvePreferredForExercise(
+      StudentLearningProfile profile, String exerciseType) {
+    Map<String, Object> byExercise = profile.getPreferredModalityByExerciseJson();
+    if (byExercise != null && !byExercise.isEmpty()) {
+      String normalized = CoachingInstructionCatalog.normalizeExercise(exerciseType);
+      Object row = byExercise.get(exerciseType);
+      if (row == null) {
+        row = byExercise.get(normalized);
+      }
+      if (row == null) {
+        for (Map.Entry<String, Object> e : byExercise.entrySet()) {
+          if (e.getKey() != null
+              && CoachingInstructionCatalog.normalizeExercise(e.getKey()).equals(normalized)) {
+            row = e.getValue();
+            break;
+          }
+        }
+      }
+      if (row instanceof Map<?, ?> map) {
+        Object modality = map.get("modality");
+        if (modality != null) {
+          try {
+            return FeedbackModality.valueOf(String.valueOf(modality));
+          } catch (IllegalArgumentException ignored) {
+            // fall through
+          }
+        }
+      }
+    }
+    return profile.getPreferredModality() != null
+        ? profile.getPreferredModality()
+        : FeedbackModality.VERBAL_TEXT;
+  }
+
+  /** @deprecated Prefer {@link CoachingInstructionCatalog#messageText}. Kept for tests. */
   public static String defaultMessage(FormErrorCode errorCode) {
-    return switch (errorCode) {
-      case DEPTH_LOW -> "Go deeper to at least parallel.";
-      case KNEES_IN -> "Push knees outward over toes.";
-      case CHEST_UP -> "Keep chest up and back straight.";
-      case PIKE -> "Keep a straight line from head to heels.";
-      case SAG -> "Avoid sagging hips.";
-      case LOW_ROM -> "Increase trunk flexion.";
-      case LOW_VISIBILITY, BODY_NOT_VISIBLE -> "Keep major body parts visible in frame.";
-      case LOW_CONFIDENCE -> "Hold still so form can be detected.";
-      case LEGS_BENT -> "Keep your legs straighter for better control.";
-      default -> "Adjust your form and try again.";
-    };
+    return CoachingInstructionCatalog.messageText("UNKNOWN", errorCode, InstructionIntensity.REMINDER);
   }
 }

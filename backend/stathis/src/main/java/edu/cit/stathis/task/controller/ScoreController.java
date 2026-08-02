@@ -1,5 +1,6 @@
 package edu.cit.stathis.task.controller;
 
+import edu.cit.stathis.task.dto.ScoreAttemptResponseDTO;
 import edu.cit.stathis.task.dto.ScoreDTO;
 import edu.cit.stathis.task.dto.ScoreResponseDTO;
 import edu.cit.stathis.task.entity.Score;
@@ -70,6 +71,17 @@ public class ScoreController {
             @PathVariable String studentId,
             @PathVariable String taskId) {
         return ResponseEntity.ok(scoreService.getScoresByStudentAndTask(studentId, taskId));
+    }
+
+    @GetMapping("/student/{studentId}/task/{taskId}/attempts")
+    @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
+    @Operation(
+            summary = "Get attempt history for a student on a task",
+            description = "Returns per-attempt statistics including accuracy, score, and reps")
+    public ResponseEntity<List<ScoreAttemptResponseDTO>> getAttemptsByStudentAndTask(
+            @PathVariable String studentId,
+            @PathVariable String taskId) {
+        return ResponseEntity.ok(scoreService.getAttemptsByStudentAndTask(studentId, taskId));
     }
 
     @GetMapping("/quiz")

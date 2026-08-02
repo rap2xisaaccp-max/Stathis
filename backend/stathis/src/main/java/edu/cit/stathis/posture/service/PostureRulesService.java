@@ -37,18 +37,40 @@ public class PostureRulesService {
       return new RulesResult(new ArrayList<>(flags), messages, 0.0);
     }
 
-    switch (predictedClass) {
+    String normalized = predictedClass == null ? "" : predictedClass.trim().toLowerCase().replace(' ', '_').replace('-', '_');
+    switch (normalized) {
       case "squat":
+      case "squats":
         applySquatRules(lastFrame, flags, messages, flagSeverities);
         break;
       case "push_up":
+      case "push_ups":
+      case "pushup":
+      case "pushups":
         applyPushUpRules(lastFrame, flags, messages, flagSeverities);
         break;
       case "plank":
         applyPlankRules(lastFrame, flags, messages, flagSeverities);
         break;
       case "sit_up":
+      case "sit_ups":
         applySitUpRules(lastFrame, flags, messages, flagSeverities);
+        break;
+      case "glute_bridge":
+      case "glute_bridges":
+        applyGluteBridgeRules(lastFrame, flags, messages, flagSeverities);
+        break;
+      case "static_lunge":
+      case "static_lunges":
+      case "lunge":
+      case "lunges":
+        applyStaticLungeRules(lastFrame, flags, messages, flagSeverities);
+        break;
+      case "lying_leg_raise":
+      case "lying_leg_raises":
+      case "leg_raise":
+      case "leg_raises":
+        applyLyingLegRaiseRules(lastFrame, flags, messages, flagSeverities);
         break;
       default:
         break;
@@ -176,6 +198,87 @@ public class PostureRulesService {
       messages.add("Increase trunk flexion.");
       double excess = (delta + 0.1) / 0.25;
       severities.put("low_rom", clamp01(0.4 + excess * 0.6));
+    }
+  }
+
+  /** Bridge: hip height relative to shoulders/knees; sagging hips when bridge is incomplete. */
+  private void applyGluteBridgeRules(
+      float[][] lm, Set<String> flags, List<String> messages, Map<String, Double> severities) {
+    float[] shoulder = midpoint(lm[11], lm[12]);
+    float[] hip = midpoint(lm[23], lm[24]);
+    float[] knee = midpoint(lm[25], lm[26]);
+    // In image coords y increases downward; higher hips => smaller y.
+    float lift = knee[1] - hip[1];
+    if (lift < 0.05f) {
+      flags.add("low_rom");
+      messages.add("Lift your hips higher toward the ceiling.");
+      severities.put("low_rom", clamp01(0.45 + (0.05 - lift) * 4.0));
+    }
+    float sag = hip[1] - shoulder[1];
+    if (sag > 0.12f) {
+      flags.add("sag");
+      messages.add("Keep your hips lifted evenly.");
+      severities.put("sag", clamp01(0.5 + (sag - 0.12) * 3.0));
+    }
+  }
+
+  /** Lunge: front-knee tracking and depth via knee angles. */
+  private void applyStaticLungeRules(
+      float[][] lm, Set<String> flags, List<String> messages, Map<String, Double> severities) {
+    float[] lHip = lm[23];
+    float[] rHip = lm[24];
+    float[] lKnee = lm[25];
+    float[] rKnee = lm[26];
+    float[] lAnkle = lm[27];
+    float[] rAnkle = lm[28];
+    float[] hipCenter = midpoint(lHip, rHip);
+    float[] shoulderCenter = midpoint(lm[11], lm[12]);
+
+    float frontKneeAngle = Math.min(angle(lHip, lKnee, lAnkle), angle(rHip, rKnee, rAnkle));
+    if (frontKneeAngle > 155f) {
+      flags.add("depth_low");
+      messages.add("Lower until both knees bend smoothly.");
+      severities.put("depth_low", clamp01(0.4 + (frontKneeAngle - 155.0) / 25.0));
+    }
+
+    boolean kneesInLeft = Math.abs(lKnee[0] - hipCenter[0]) < Math.abs(lAnkle[0] - hipCenter[0]) * 0.85f;
+    boolean kneesInRight = Math.abs(rKnee[0] - hipCenter[0]) < Math.abs(rAnkle[0] - hipCenter[0]) * 0.85f;
+    if (kneesInLeft || kneesInRight) {
+      flags.add("knees_in");
+      messages.add("Keep your front knee tracking over your toes.");
+      severities.put("knees_in", 0.6);
+    }
+
+    float torsoLean = angleToVertical(vector(shoulderCenter, hipCenter));
+    if (torsoLean > 35f) {
+      flags.add("chest_up");
+      messages.add("Keep your torso upright during the lunge.");
+      severities.put("chest_up", clamp01(0.4 + (torsoLean - 35.0) / 45.0));
+    }
+  }
+
+  /** Leg raise: knee bend and limited hip flexion range. */
+  private void applyLyingLegRaiseRules(
+      float[][] lm, Set<String> flags, List<String> messages, Map<String, Double> severities) {
+    float[] lHip = lm[23];
+    float[] rHip = lm[24];
+    float[] lKnee = lm[25];
+    float[] rKnee = lm[26];
+    float[] lAnkle = lm[27];
+    float[] rAnkle = lm[28];
+    float kneeAngle = Math.min(angle(lHip, lKnee, lAnkle), angle(rHip, rKnee, rAnkle));
+    if (kneeAngle < 155f) {
+      flags.add("legs_bent");
+      messages.add("Keep your legs straighter as you raise them.");
+      severities.put("legs_bent", clamp01(0.45 + (155.0 - kneeAngle) / 40.0));
+    }
+    float[] hip = midpoint(lHip, rHip);
+    float[] ankle = midpoint(lAnkle, rAnkle);
+    float raise = hip[1] - ankle[1];
+    if (raise < 0.08f) {
+      flags.add("low_rom");
+      messages.add("Raise your legs higher with control.");
+      severities.put("low_rom", clamp01(0.4 + (0.08 - raise) * 5.0));
     }
   }
 

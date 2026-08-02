@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
@@ -81,19 +83,42 @@ public class TaskService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     public Optional<Task> getTaskByPhysicalId(String physicalId) {
-        return taskRepository.findByPhysicalId(physicalId);
+        Optional<Task> task = taskRepository.findByPhysicalId(physicalId);
+        if (task.isPresent() && isCurrentUserStudent()) {
+            Task t = task.get();
+            if (!t.isStarted() || !t.isActive()) {
+                return Optional.empty();
+            }
+        }
+        return task;
     }
 
     @Transactional(readOnly = true)
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     public List<Task> getTasksByClassroom(String classroomPhysicalId) {
+        // Students must not see unstarted tasks via the classroom list API
+        if (isCurrentUserStudent()) {
+            return taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+        }
         return taskRepository.findByClassroomPhysicalId(classroomPhysicalId);
     }
 
     @Transactional(readOnly = true)
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     public List<Task> getActiveTasksByClassroom(String classroomPhysicalId) {
+        if (isCurrentUserStudent()) {
+            return taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+        }
         return taskRepository.findActiveTasksByClassroom(classroomPhysicalId);
+    }
+
+    private boolean isCurrentUserStudent() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_STUDENT".equals(a.getAuthority()));
     }
 
     @Transactional(readOnly = true)

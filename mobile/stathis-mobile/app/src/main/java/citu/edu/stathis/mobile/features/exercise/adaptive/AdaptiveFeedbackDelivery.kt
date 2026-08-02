@@ -45,7 +45,8 @@ class AdaptiveFeedbackDelivery @Inject constructor(
                 interventionId = feedback.interventionId,
                 modality = feedback.modality,
                 errorCode = feedback.errorCode,
-                message = feedback.message
+                message = feedback.message,
+                exerciseType = feedback.exerciseType
             )
 
         if (planned.speak) {

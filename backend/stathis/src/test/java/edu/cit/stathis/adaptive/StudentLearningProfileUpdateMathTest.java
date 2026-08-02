@@ -14,11 +14,13 @@ import edu.cit.stathis.adaptive.entity.StudentLearningProfile;
 import edu.cit.stathis.adaptive.enums.FeedbackModality;
 import edu.cit.stathis.adaptive.enums.FormErrorCode;
 import edu.cit.stathis.adaptive.enums.PolicySource;
+import edu.cit.stathis.adaptive.repository.ExerciseMasteryRepository;
 import edu.cit.stathis.adaptive.repository.LearningProfileHistoryRepository;
 import edu.cit.stathis.adaptive.repository.StudentLearningProfileRepository;
 import edu.cit.stathis.adaptive.service.ProfileEffectivenessMath;
 import edu.cit.stathis.adaptive.service.StudentLearningProfileService;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +38,7 @@ class StudentLearningProfileUpdateMathTest {
 
   @Mock private StudentLearningProfileRepository profileRepository;
   @Mock private LearningProfileHistoryRepository historyRepository;
+  @Mock private ExerciseMasteryRepository masteryRepository;
 
   @InjectMocks private StudentLearningProfileService profileService;
 
@@ -170,6 +173,12 @@ class StudentLearningProfileUpdateMathTest {
             .getModalityEffectivenessJson()
             .containsKey("SQUAT|CHEST_UP|VISUAL_HIGHLIGHT"));
     assertEquals(FeedbackModality.VISUAL_HIGHLIGHT, updated.getPreferredModality());
+    assertNotNull(updated.getPreferredModalityByExerciseJson());
+    assertTrue(updated.getPreferredModalityByExerciseJson().containsKey("SQUAT"));
+    @SuppressWarnings("unchecked")
+    Map<String, Object> squatPref =
+        (Map<String, Object>) updated.getPreferredModalityByExerciseJson().get("SQUAT");
+    assertEquals("EXPLORING", squatPref.get("source"));
   }
 
   @Test
@@ -188,6 +197,7 @@ class StudentLearningProfileUpdateMathTest {
     when(profileRepository.findByStudentId("STUDENT-1")).thenReturn(Optional.of(existing));
     when(profileRepository.save(any(StudentLearningProfile.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
+    when(masteryRepository.findByStudentId("STUDENT-1")).thenReturn(Collections.emptyList());
 
     profileService.applyResponse(
         FeedbackIntervention.builder()

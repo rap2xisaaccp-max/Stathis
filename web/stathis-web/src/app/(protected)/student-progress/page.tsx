@@ -349,7 +349,10 @@ export default function StudentProgressPage() {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="grid gap-8"
             >
-              <ClassroomAdaptiveCard classroomId={selectedClassroom || undefined} />
+              {(searchParams.get('research') === '1' ||
+                process.env.NEXT_PUBLIC_APSLE_SHOW_RCT === 'true') && (
+                <ClassroomAdaptiveCard classroomId={selectedClassroom || undefined} />
+              )}
 
               {/* Filters and search */}
               <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">

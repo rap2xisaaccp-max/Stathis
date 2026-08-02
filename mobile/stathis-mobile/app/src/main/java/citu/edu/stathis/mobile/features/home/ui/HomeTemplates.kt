@@ -136,6 +136,7 @@ fun PracticeExerciseSessionScreen(exerciseId: String, navController: NavHostCont
         onSessionFinished = { },
         onFinishSession = { navController.popBackStack() },
         onCancel = { navController.popBackStack() },
+        sessionContext = citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs.CONTEXT_PRACTICE,
         modifier = Modifier.fillMaxSize()
     )
 }

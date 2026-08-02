@@ -20,8 +20,34 @@ object ModalityHighlightTargets {
         val bones: List<Pair<Int, Int>>
     )
 
-    fun forError(errorCode: FormErrorCode): Target =
-        when (errorCode) {
+    fun forError(errorCode: FormErrorCode, exerciseType: String? = null): Target {
+        val exercise = CoachingInstructionCatalog.normalizeExercise(exerciseType)
+        // Exercise-aware overrides where anatomy differs.
+        if (exercise == "PUSH_UP" && (errorCode == FormErrorCode.SAG || errorCode == FormErrorCode.PIKE)) {
+            return Target(
+                joints = setOf(LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE),
+                bones =
+                    listOf(
+                        LEFT_SHOULDER to LEFT_HIP,
+                        RIGHT_SHOULDER to RIGHT_HIP,
+                        LEFT_HIP to LEFT_ANKLE,
+                        RIGHT_HIP to RIGHT_ANKLE
+                    )
+            )
+        }
+        if (exercise == "LYING_LEG_RAISES" && errorCode == FormErrorCode.LEGS_BENT) {
+            return Target(
+                joints = setOf(LEFT_HIP, RIGHT_HIP, LEFT_KNEE, RIGHT_KNEE, LEFT_ANKLE, RIGHT_ANKLE),
+                bones =
+                    listOf(
+                        LEFT_HIP to LEFT_KNEE,
+                        LEFT_KNEE to LEFT_ANKLE,
+                        RIGHT_HIP to RIGHT_KNEE,
+                        RIGHT_KNEE to RIGHT_ANKLE
+                    )
+            )
+        }
+        return when (errorCode) {
             FormErrorCode.DEPTH_LOW ->
                 Target(
                     joints = setOf(LEFT_HIP, RIGHT_HIP, LEFT_KNEE, RIGHT_KNEE, LEFT_ANKLE, RIGHT_ANKLE),
@@ -107,4 +133,5 @@ object ModalityHighlightTargets {
                         )
                 )
         }
+    }
 }

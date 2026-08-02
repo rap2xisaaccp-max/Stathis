@@ -19,10 +19,11 @@ public final class ExerciseMasteryMath {
     return clamp(prior + deltaBoost - penalty, 0.0, 1.0);
   }
 
+  /**
+   * Three teacher-facing bands only (Beginner / Intermediate / Advanced).
+   * High mastery maps to Advanced — Expert is no longer recommended.
+   */
   public static String recommendDifficulty(double mastery) {
-    if (mastery >= 0.85) {
-      return "EXPERT";
-    }
     if (mastery >= 0.65) {
       return "ADVANCED";
     }
@@ -32,9 +33,25 @@ public final class ExerciseMasteryMath {
     return "BEGINNER";
   }
 
+  /** Collapse legacy EXPERT labels onto Advanced for recommendations. */
+  public static String normalizeDifficulty(String difficulty) {
+    if (difficulty == null || difficulty.isBlank()) {
+      return "BEGINNER";
+    }
+    String d = difficulty.trim().toUpperCase();
+    if ("EXPERT".equals(d)) {
+      return "ADVANCED";
+    }
+    if ("ADVANCED".equals(d) || "INTERMEDIATE".equals(d) || "BEGINNER".equals(d)) {
+      return d;
+    }
+    return "BEGINNER";
+  }
+
   /**
-   * Soft goal-reps suggestion from recommended difficulty. When {@code currentGoalReps} is set,
-   * nudges toward the baseline by at most ±4 so teachers are not asked to jump abruptly.
+   * Soft goal-reps suggestion aligned with template picker (10 / 20 / 30).
+   * When {@code currentGoalReps} is set, nudges toward the baseline by at most ±10
+   * so teachers are not asked to jump across the full ladder in one step.
    */
   public static int recommendGoalReps(String difficulty, Integer currentGoalReps) {
     int baseline = baselineGoalReps(difficulty);
@@ -43,20 +60,29 @@ public final class ExerciseMasteryMath {
     }
     int delta = baseline - currentGoalReps;
     int step = (int) Math.round(delta / 2.0);
-    step = Math.max(-4, Math.min(4, step));
-    return Math.max(5, currentGoalReps + step);
+    step = Math.max(-10, Math.min(10, step));
+    int nudged = currentGoalReps + step;
+    // Snap soft suggestions onto the teacher template options when close.
+    return snapToTemplateGoalReps(nudged);
   }
 
   public static int baselineGoalReps(String difficulty) {
-    if (difficulty == null) {
-      return 8;
-    }
-    return switch (difficulty.trim().toUpperCase()) {
-      case "EXPERT" -> 20;
-      case "ADVANCED" -> 15;
-      case "INTERMEDIATE" -> 12;
-      default -> 8;
+    return switch (normalizeDifficulty(difficulty)) {
+      case "ADVANCED" -> 30;
+      case "INTERMEDIATE" -> 20;
+      default -> 10;
     };
+  }
+
+  /** Prefer the create-template goal options: 10, 20, 30. */
+  public static int snapToTemplateGoalReps(int reps) {
+    if (reps < 15) {
+      return 10;
+    }
+    if (reps < 25) {
+      return 20;
+    }
+    return 30;
   }
 
   public static String buildRationale(

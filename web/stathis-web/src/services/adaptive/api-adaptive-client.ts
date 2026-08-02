@@ -1,10 +1,19 @@
 import { serverApiClient } from '@/lib/api/server-client';
 
+export interface PreferredModalityByExerciseEntry {
+  modality?: string;
+  n?: number;
+  meanDelta?: number;
+  confidence?: number;
+  source?: 'DEFAULT' | 'EXPLORING' | 'LEARNED' | string;
+}
+
 export interface StudentLearningProfileDTO {
   physicalId: string;
   studentId: string;
   preferredModality?: string | null;
   modalityEffectivenessJson?: Record<string, any> | null;
+  preferredModalityByExercise?: Record<string, PreferredModalityByExerciseEntry> | null;
   learningRateEstimate?: number | null;
   consistencyScore?: number | null;
   fatigueSensitivity?: number | null;
@@ -21,7 +30,9 @@ export interface ExerciseMasteryDTO {
   commonErrorsJson?: Record<string, number> | null;
   sessionsCount?: number | null;
   medianTimeToCorrectionMs?: number | null;
+  /** BEGINNER | INTERMEDIATE | ADVANCED */
   recommendedDifficulty?: string | null;
+  /** Soft suggestion aligned to 10 / 20 / 30 */
   recommendedGoalReps?: number | null;
   recommendationRationale?: string | null;
   requiresTeacherApproval?: boolean;
@@ -33,10 +44,12 @@ export interface DifficultyRecommendationDTO {
   exerciseType: string;
   masteryLevel: number;
   sessionsCount?: number | null;
-  recommendedDifficulty: string;
-  recommendedGoalReps: number;
-  rationale: string;
-  requiresTeacherApproval: boolean;
+  /** BEGINNER | INTERMEDIATE | ADVANCED (never EXPERT) */
+  recommendedDifficulty?: string | null;
+  /** Soft suggestion aligned to 10 / 20 / 30 */
+  recommendedGoalReps?: number | null;
+  rationale?: string | null;
+  requiresTeacherApproval?: boolean;
   topErrors?: string[];
 }
 
@@ -55,6 +68,7 @@ export interface AdaptiveInsightsDTO {
   studentId: string;
   profile?: StudentLearningProfileDTO | null;
   mastery?: ExerciseMasteryDTO[];
+  preferredModalityByExercise?: Record<string, PreferredModalityByExerciseEntry> | null;
   modalityMeanDelta?: Record<string, number>;
   topRecurringErrors?: Record<string, number>;
   totalInterventions: number;
@@ -66,10 +80,14 @@ export interface AdaptiveInsightsDTO {
     errorCode: string;
     modality: string;
     messageText?: string;
+    messageCode?: string;
     baselineSeverity: number;
     policySource: string;
     experimentArm?: string;
     deliveredAt?: string;
+    responseSuccess?: boolean | null;
+    responseDelta?: number | null;
+    correctionDelivered?: string | null;
   }>;
   profileHistory?: ProfileHistoryPointDTO[];
 }

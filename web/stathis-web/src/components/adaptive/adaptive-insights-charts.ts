@@ -3,17 +3,31 @@ import {
   ExerciseMasteryDTO,
   ProfileHistoryPointDTO,
 } from '@/services/adaptive/api-adaptive-client';
+import {
+  formErrorDisplay,
+  formErrorLabel,
+  formatModalityLabel as formatModalityDisplay,
+} from '@/components/adaptive/form-error-labels';
 
-export function formatModalityLabel(modality: string): string {
-  return modality.replaceAll('_', ' ');
-}
+export { formatModalityDisplay as formatModalityLabel };
+
+export const MASTERY_CHART_Y_DOMAIN: [number, number] = [0, 100];
+
+export const TIMELINE_CATEGORY_NAMES: Record<string, string> = {
+  masteryPct: 'APSLE Form Mastery',
+  consistencyPct: 'Coaching success',
+};
+
+export const MASTERY_CATEGORY_NAMES: Record<string, string> = {
+  masteryPct: 'APSLE Form Mastery',
+};
 
 export function buildModalityEffectivenessChartData(
   modalityMeanDelta: Record<string, number> | null | undefined
 ): Array<{ modality: string; delta: number }> {
   return Object.entries(modalityMeanDelta || {})
     .map(([modality, delta]) => ({
-      modality: formatModalityLabel(modality),
+      modality: formatModalityDisplay(modality),
       delta: Number(delta) || 0,
     }))
     .sort((a, b) => b.delta - a.delta);
@@ -22,14 +36,19 @@ export function buildModalityEffectivenessChartData(
 export function buildRecurringErrorsChartData(
   topRecurringErrors: Record<string, number> | null | undefined,
   limit = 8
-): Array<{ error: string; count: number }> {
+): Array<{ error: string; count: number; code: string }> {
   return Object.entries(topRecurringErrors || {})
     .map(([error, count]) => ({
-      error: formatModalityLabel(error),
+      code: error,
+      error: formErrorLabel(error),
       count: Number(count) || 0,
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
+}
+
+export function recurringErrorTeacherLabel(code: string): string {
+  return formErrorDisplay(code);
 }
 
 export function buildMasteryByExerciseChartData(
@@ -43,7 +62,7 @@ export function buildMasteryByExerciseChartData(
       return (b.masteryLevel || 0) - (a.masteryLevel || 0);
     })
     .map((item) => ({
-      exercise: formatModalityLabel(item.exerciseType || 'UNKNOWN'),
+      exercise: (item.exerciseType || 'UNKNOWN').replaceAll('_', ' '),
       masteryPct: Math.round((item.masteryLevel || 0) * 100),
     }));
 }

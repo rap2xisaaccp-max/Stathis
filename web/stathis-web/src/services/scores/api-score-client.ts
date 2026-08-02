@@ -9,20 +9,23 @@ import {
   getScoresByTaskId,
   getScoresByStudentId,
   getScoresByStudentAndTaskId,
+  getAttemptsByStudentAndTaskId,
   getQuizScore,
   getAverageQuizScore,
   getExerciseScore,
   getAverageExerciseScore,
   ScoreResponseDTO,
   ScoreBodyDTO,
-  ManualGradeDTO
+  ManualGradeDTO,
+  ScoreAttemptResponseDTO
 } from './api-score';
 
 // Re-export types for client usage
 export type {
   ScoreResponseDTO,
   ScoreBodyDTO,
-  ManualGradeDTO
+  ManualGradeDTO,
+  ScoreAttemptResponseDTO
 };
 
 /**
@@ -105,6 +108,21 @@ export async function getStudentTaskScores(studentId: string, taskId: string): P
     return await getScoresByStudentAndTaskId(studentId, taskId);
   } catch (error) {
     console.error('Error fetching student task scores:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get per-attempt statistics for a student on a task
+ */
+export async function getStudentTaskAttempts(
+  studentId: string,
+  taskId: string
+): Promise<ScoreAttemptResponseDTO[]> {
+  try {
+    return await getAttemptsByStudentAndTaskId(studentId, taskId);
+  } catch (error) {
+    console.error('Error fetching student task attempts:', error);
     throw error;
   }
 }
