@@ -50,7 +50,7 @@ data class QuizTemplate(
 // Exercise Template Models
 data class ExerciseContent(
     val exerciseType: String, // "PUSH_UP", "SQUATS"
-    val exerciseDifficulty: String, // "BEGINNER", "EXPERT"
+    val exerciseDifficulty: String, // "BEGINNER" | "INTERMEDIATE" | "ADVANCED" (legacy may be EXPERT)
     val goalReps: Int,
     val goalAccuracy: Int, // Percentage
     val goalTime: Int // Seconds

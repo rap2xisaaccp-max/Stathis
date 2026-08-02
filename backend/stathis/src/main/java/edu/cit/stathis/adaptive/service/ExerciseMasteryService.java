@@ -107,9 +107,10 @@ public class ExerciseMasteryService {
               + "coaching responses that improve form — session count alone is not enough.");
     }
     String difficulty =
-        mastery.getRecommendedDifficulty() != null
-            ? mastery.getRecommendedDifficulty()
-            : ExerciseMasteryMath.recommendDifficulty(level);
+        ExerciseMasteryMath.normalizeDifficulty(
+            mastery.getRecommendedDifficulty() != null
+                ? mastery.getRecommendedDifficulty()
+                : ExerciseMasteryMath.recommendDifficulty(level));
     int goalReps = ExerciseMasteryMath.recommendGoalReps(difficulty, null);
     return new SoftRecommendation(
         difficulty,
@@ -139,7 +140,9 @@ public class ExerciseMasteryService {
         ExerciseMasteryMath.updateMastery(
             mastery.getMasteryLevel(), response.getDelta(), response.isSuccess());
     mastery.setMasteryLevel(updated);
-    mastery.setRecommendedDifficulty(ExerciseMasteryMath.recommendDifficulty(updated));
+    mastery.setRecommendedDifficulty(
+        ExerciseMasteryMath.normalizeDifficulty(
+            ExerciseMasteryMath.recommendDifficulty(updated)));
     mastery.setLastSessionAt(OffsetDateTime.now());
 
     if (response.isSuccess()
@@ -168,7 +171,8 @@ public class ExerciseMasteryService {
     mastery.setLastSessionAt(OffsetDateTime.now());
     // Keep difficulty label aligned with current mastery even if no new responses arrived.
     mastery.setRecommendedDifficulty(
-        ExerciseMasteryMath.recommendDifficulty(mastery.getMasteryLevel()));
+        ExerciseMasteryMath.normalizeDifficulty(
+            ExerciseMasteryMath.recommendDifficulty(mastery.getMasteryLevel())));
     return masteryRepository.save(mastery);
   }
 }

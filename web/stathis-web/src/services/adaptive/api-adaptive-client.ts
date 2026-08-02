@@ -30,7 +30,9 @@ export interface ExerciseMasteryDTO {
   commonErrorsJson?: Record<string, number> | null;
   sessionsCount?: number | null;
   medianTimeToCorrectionMs?: number | null;
+  /** BEGINNER | INTERMEDIATE | ADVANCED */
   recommendedDifficulty?: string | null;
+  /** Soft suggestion aligned to 10 / 20 / 30 */
   recommendedGoalReps?: number | null;
   recommendationRationale?: string | null;
   requiresTeacherApproval?: boolean;
@@ -42,7 +44,9 @@ export interface DifficultyRecommendationDTO {
   exerciseType: string;
   masteryLevel: number;
   sessionsCount?: number | null;
+  /** BEGINNER | INTERMEDIATE | ADVANCED (never EXPERT) */
   recommendedDifficulty?: string | null;
+  /** Soft suggestion aligned to 10 / 20 / 30 */
   recommendedGoalReps?: number | null;
   rationale?: string | null;
   requiresTeacherApproval?: boolean;

@@ -587,7 +587,9 @@ public class StudentTaskService {
                 .title(exerciseTemplate.getTitle())
                 .description(exerciseTemplate.getDescription())
                 .exerciseType(exerciseTemplate.getExerciseType())
-                .exerciseDifficulty(exerciseTemplate.getExerciseDifficulty())
+                .exerciseDifficulty(exerciseTemplate.getExerciseDifficulty() != null
+                        ? exerciseTemplate.getExerciseDifficulty().canonical()
+                        : edu.cit.stathis.task.enums.ExerciseDifficulty.BEGINNER)
                 .goalReps(exerciseTemplate.getGoalReps())
                 .goalAccuracy(exerciseTemplate.getGoalAccuracy())
                 .goalTime(exerciseTemplate.getGoalTime())

@@ -15,6 +15,11 @@ import {
   DifficultyRecommendationDTO,
 } from '@/services/adaptive/api-adaptive-client';
 import {
+  formatExerciseDifficulty,
+  normalizeExerciseDifficulty,
+  snapGoalRepsToTemplateOptions,
+} from '@/lib/exercise-difficulty';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -161,12 +166,16 @@ function MasteryRecommendationRow({
           {insufficient ? (
             <Badge variant="outline">More Coaching Data Needed</Badge>
           ) : item.recommendedDifficulty ? (
-            <Badge variant="secondary">Suggest {item.recommendedDifficulty}</Badge>
+            <Badge variant="secondary">
+              Suggest {formatExerciseDifficulty(item.recommendedDifficulty)}
+            </Badge>
           ) : (
             <Badge variant="outline">Difficulty —</Badge>
           )}
           {!insufficient && item.recommendedGoalReps != null ? (
-            <Badge variant="outline">~{item.recommendedGoalReps} reps</Badge>
+            <Badge variant="outline">
+              ~{snapGoalRepsToTemplateOptions(item.recommendedGoalReps)} reps
+            </Badge>
           ) : null}
           {!insufficient && (item.requiresTeacherApproval ?? true) && (
             <Badge variant="outline">Teacher approval</Badge>
@@ -1196,10 +1205,16 @@ function AdaptiveRecommendationsCard({
           sessionsCount: item.sessionsCount,
           recommendedDifficulty: insufficient
             ? null
-            : item.recommendedDifficulty || rec?.recommendedDifficulty || null,
+            : (() => {
+                const raw =
+                  item.recommendedDifficulty || rec?.recommendedDifficulty || null;
+                return raw ? normalizeExerciseDifficulty(raw) : null;
+              })(),
           recommendedGoalReps: insufficient
             ? null
-            : item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null,
+            : snapGoalRepsToTemplateOptions(
+                item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null
+              ),
           recommendationRationale: insufficient
             ? MORE_COACHING_DATA_NEEDED
             : item.recommendationRationale || rec?.rationale || null,
@@ -1217,8 +1232,10 @@ function AdaptiveRecommendationsCard({
       exerciseType: rec.exerciseType,
       masteryLevel: rec.masteryLevel,
       sessionsCount: rec.sessionsCount,
-      recommendedDifficulty: rec.recommendedDifficulty ?? null,
-      recommendedGoalReps: rec.recommendedGoalReps ?? null,
+      recommendedDifficulty: rec.recommendedDifficulty
+        ? normalizeExerciseDifficulty(rec.recommendedDifficulty)
+        : null,
+      recommendedGoalReps: snapGoalRepsToTemplateOptions(rec.recommendedGoalReps ?? null),
       recommendationRationale: rec.rationale,
       requiresTeacherApproval: rec.requiresTeacherApproval,
       topErrors: rec.topErrors || [],

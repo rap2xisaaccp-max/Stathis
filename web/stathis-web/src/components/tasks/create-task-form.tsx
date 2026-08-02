@@ -61,6 +61,7 @@ import {
   SelectLabel
 } from "@/components/ui/select";
 import { toast } from 'sonner';
+import { formatExerciseDifficulty } from '@/lib/exercise-difficulty';
 import { 
   getTeacherLessonTemplates, 
   getTeacherQuizTemplates, 
@@ -1064,7 +1065,7 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
                     </div>
                     <div>
                       <h4 className="font-semibold">Difficulty Level</h4>
-                      <p className="text-lg font-medium capitalize text-primary">{difficulty}</p>
+                      <p className="text-lg font-medium capitalize text-primary">{formatDifficulty(String(difficulty))}</p>
                     </div>
                   </div>
                 </div>
@@ -1110,14 +1111,7 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
     return typeMap[type] || type;
   };
   
-  const formatDifficulty = (difficulty: string) => {
-    const difficultyMap: Record<string, string> = {
-      'BEGINNER': 'Beginner',
-      'INTERMEDIATE': 'Intermediate',
-      'ADVANCED': 'Advanced'
-    };
-    return difficultyMap[difficulty] || difficulty;
-  };
+  const formatDifficulty = (difficulty: string) => formatExerciseDifficulty(difficulty);
   
   const formatTime = (seconds: string) => {
     if (!seconds) return 'Not specified';

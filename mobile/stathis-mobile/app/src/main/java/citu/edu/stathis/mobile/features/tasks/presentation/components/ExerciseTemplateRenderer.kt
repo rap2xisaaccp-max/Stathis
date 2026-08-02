@@ -542,7 +542,7 @@ private fun ExerciseHeader(
                     )
                 ) {
                     Text(
-                        text = template.exerciseDifficulty,
+                        text = formatExerciseDifficulty(template.exerciseDifficulty),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.tertiary,
                         fontWeight = FontWeight.Bold,
@@ -1178,7 +1178,7 @@ private fun ExerciseControlsOverlay(
             ) {
                 // Exercise type and difficulty
                 Text(
-                    text = "${template.exerciseType.replace("_", " ")} - ${template.exerciseDifficulty}",
+                    text = "${template.exerciseType.replace("_", " ")} - ${formatExerciseDifficulty(template.exerciseDifficulty)}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -1622,6 +1622,15 @@ private fun ExerciseControlsOverlay(
                 }
             }
         }
+    }
+}
+
+/** Teacher-facing bands only; legacy EXPERT displays as Advanced. */
+private fun formatExerciseDifficulty(raw: String?): String {
+    return when (raw?.trim()?.uppercase()) {
+        "INTERMEDIATE" -> "Intermediate"
+        "ADVANCED", "EXPERT" -> "Advanced"
+        else -> "Beginner"
     }
 }
 
