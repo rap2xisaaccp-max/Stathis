@@ -1,9 +1,12 @@
 package edu.cit.stathis.task.service;
 
+import edu.cit.stathis.task.dto.ScoreAttemptResponseDTO;
 import edu.cit.stathis.task.dto.ScoreDTO;
 import edu.cit.stathis.task.dto.ScoreResponseDTO;
 import edu.cit.stathis.task.entity.Score;
+import edu.cit.stathis.task.entity.ScoreAttempt;
 import edu.cit.stathis.task.entity.Task;
+import edu.cit.stathis.task.repository.ScoreAttemptRepository;
 import edu.cit.stathis.task.repository.ScoreRepository;
 import edu.cit.stathis.task.repository.TaskRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -23,6 +26,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ScoreService {
     private final ScoreRepository scoreRepository;
+    private final ScoreAttemptRepository scoreAttemptRepository;
     private final TaskRepository taskRepository;
 
     @Transactional
@@ -78,6 +82,21 @@ public class ScoreService {
     @Transactional(readOnly = true)
     public List<ScoreResponseDTO> getScoresByStudentAndTask(String studentId, String taskId) {
         return mapAll(scoreRepository.findByStudentIdAndTaskId(studentId, taskId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ScoreAttemptResponseDTO> getAttemptsByStudentAndTask(String studentId, String taskId) {
+        List<ScoreAttempt> attempts =
+                scoreAttemptRepository.findByStudentIdAndTaskIdOrderByAttemptNumberAsc(studentId, taskId);
+        if (!attempts.isEmpty()) {
+            return attempts.stream().map(this::toAttemptResponse).collect(Collectors.toList());
+        }
+        // Fallback: surface latest aggregate Score as a single synthetic attempt so teachers
+        // can still see accuracy for data recorded before attempt history existed.
+        return scoreRepository.findByStudentIdAndTaskId(studentId, taskId).stream()
+                .filter(s -> s.getAttempts() > 0 || s.isCompleted())
+                .map(this::toSyntheticAttempt)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -212,6 +231,48 @@ public class ScoreService {
                 .submissionDate(submissionDate)
                 .startedAt(score.getStartedAt() != null ? score.getStartedAt().toString() : null)
                 .completedAt(score.getCompletedAt() != null ? score.getCompletedAt().toString() : null)
+                .build();
+    }
+
+    private ScoreAttemptResponseDTO toAttemptResponse(ScoreAttempt attempt) {
+        return ScoreAttemptResponseDTO.builder()
+                .physicalId(attempt.getPhysicalId())
+                .scorePhysicalId(attempt.getScorePhysicalId())
+                .studentId(attempt.getStudentId())
+                .taskId(attempt.getTaskId())
+                .quizTemplateId(attempt.getQuizTemplateId())
+                .exerciseTemplateId(attempt.getExerciseTemplateId())
+                .attemptNumber(attempt.getAttemptNumber())
+                .score(attempt.getScore())
+                .maxScore(attempt.getMaxScore())
+                .accuracy(attempt.getAccuracy())
+                .reps(attempt.getReps())
+                .goalReps(attempt.getGoalReps())
+                .caloriesBurned(attempt.getCaloriesBurned())
+                .timeTaken(attempt.getTimeTaken())
+                .completedAt(attempt.getCompletedAt() != null ? attempt.getCompletedAt().toString() : null)
+                .createdAt(attempt.getCreatedAt() != null ? attempt.getCreatedAt().toString() : null)
+                .build();
+    }
+
+    private ScoreAttemptResponseDTO toSyntheticAttempt(Score score) {
+        return ScoreAttemptResponseDTO.builder()
+                .physicalId(score.getPhysicalId() + "-LATEST")
+                .scorePhysicalId(score.getPhysicalId())
+                .studentId(score.getStudentId())
+                .taskId(score.getTaskId())
+                .quizTemplateId(score.getQuizTemplateId())
+                .exerciseTemplateId(score.getExerciseTemplateId())
+                .attemptNumber(Math.max(1, score.getAttempts()))
+                .score(effectiveScore(score))
+                .maxScore(score.getMaxScore())
+                .accuracy(score.getAccuracy())
+                .reps(score.getReps())
+                .goalReps(score.getGoalReps())
+                .caloriesBurned(score.getCaloriesBurned())
+                .timeTaken(score.getTimeTaken())
+                .completedAt(score.getCompletedAt() != null ? score.getCompletedAt().toString() : null)
+                .createdAt(score.getUpdatedAt() != null ? score.getUpdatedAt().toString() : null)
                 .build();
     }
 
