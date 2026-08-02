@@ -29,6 +29,7 @@ import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.BodyTemperatureRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.RespiratoryRateRecord
+import citu.edu.stathis.mobile.features.tasks.presentation.DebugSessionLog
 import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseGoalCompletion
 import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseRepAccumulator
 import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSubmissionGuard
@@ -169,6 +170,20 @@ fun ExerciseTemplateRenderer(
         detectorResetKey += 1
         sessionRepAccumulator.reset()
         sessionReps = 0
+        // #region agent log
+        DebugSessionLog.log(
+            hypothesisId = "H-A",
+            location = "ExerciseTemplateRenderer.kt:beginCountingAttempt",
+            message = "start_attempt",
+            data = mapOf(
+                "detectorResetKey" to detectorResetKey,
+                "sessionReps" to sessionReps,
+                "accTotal" to sessionRepAccumulator.total(),
+                "adaptiveWasLive" to adaptiveSessionLive,
+                "sessionCountingActiveBefore" to sessionCountingActive
+            )
+        )
+        // #endregion
         if (!adaptiveSessionLive) {
             val (classroomPhysicalId, taskPhysicalId) = parseClassroomAndTaskId(classroomId)
             adaptiveSessionViewModel.startSession(
@@ -179,6 +194,14 @@ fun ExerciseTemplateRenderer(
                 sessionContext = sessionContext
             )
             adaptiveSessionLive = true
+            // #region agent log
+            DebugSessionLog.log(
+                hypothesisId = "H-C",
+                location = "ExerciseTemplateRenderer.kt:beginCountingAttempt",
+                message = "apsle_startSession",
+                data = mapOf("exerciseType" to template.exerciseType)
+            )
+            // #endregion
         }
     }
 
@@ -311,6 +334,21 @@ fun ExerciseTemplateRenderer(
                     if (sessionCountingActive && identityPhase == IdentityPhase.VERIFIED) {
                         latestExerciseFeedback = feedback
                         adaptiveSessionViewModel.onExerciseFeedback(feedback)
+                    } else {
+                        // #region agent log
+                        if (feedback.repCount > 0) {
+                            DebugSessionLog.log(
+                                hypothesisId = "H-C",
+                                location = "ExerciseTemplateRenderer.kt:onExerciseFeedback",
+                                message = "feedback_ignored_prestart_or_unverified",
+                                data = mapOf(
+                                    "sessionCountingActive" to sessionCountingActive,
+                                    "identityPhase" to identityPhase.name,
+                                    "repCount" to feedback.repCount
+                                )
+                            )
+                        }
+                        // #endregion
                     }
                 },
                 enableExerciseTracking = sessionCountingActive && isRecognized,
@@ -839,6 +877,20 @@ private fun ExerciseControlsOverlay(
     var exerciseFeedback by remember { mutableStateOf<List<String>>(emptyList()) }
 
     fun applyLiveReps(detectorReps: Int) {
+        // #region agent log
+        if (detectorReps > 0 && sessionReps == 0) {
+            DebugSessionLog.log(
+                hypothesisId = "H-A",
+                location = "ExerciseControlsOverlay.kt:applyLiveReps",
+                message = "first_nonzero_apply",
+                data = mapOf(
+                    "detectorReps" to detectorReps,
+                    "accBefore" to sessionRepAccumulator.total(),
+                    "isTimerRunning" to isTimerRunning
+                )
+            )
+        }
+        // #endregion
         val total = sessionRepAccumulator.applyDetectorReps(detectorReps)
         currentReps = total
         onSessionRepsChange(total)

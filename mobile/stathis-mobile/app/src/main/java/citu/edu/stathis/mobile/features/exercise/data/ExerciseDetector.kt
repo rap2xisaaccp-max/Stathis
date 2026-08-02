@@ -518,10 +518,11 @@ class ExerciseDetector {
             lyingLegRaiseBaselineHipY == null ||
                 abs(avgHipY - lyingLegRaiseBaselineHipY!!) <= maxHipDrift
 
-        // Reject one-frame spikes (impossible ROM jump relative to body span).
+        // Reject only extreme teleports. CameraX KEEP_ONLY_LATEST drops frames, so a
+        // legitimate raise can appear as a large single-step delta (~1–2× bodySpan).
         val prevAnkle = lyingLegRaisePrevAnkleY
         lyingLegRaisePrevAnkleY = avgAnkleY
-        if (prevAnkle != null && abs(avgAnkleY - prevAnkle) > bodySpan * 0.55f) {
+        if (prevAnkle != null && abs(avgAnkleY - prevAnkle) > bodySpan * 2.5f) {
             feedback.add("Movement too abrupt — slow the raise.")
             lyingLegRaiseStableFrames = 0
             return ExerciseResult(
