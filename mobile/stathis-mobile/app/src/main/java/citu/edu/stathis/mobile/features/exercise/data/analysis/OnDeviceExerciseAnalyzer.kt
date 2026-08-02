@@ -28,7 +28,8 @@ class OnDeviceExerciseAnalyzer @Inject constructor() {
             repCount = exerciseResult.repCount,
             formIssues = exerciseResult.feedback,
             confidence = exerciseResult.confidence ?: 0.0f,
-            angleData = emptyMap()
+            angleData = emptyMap(),
+            formScore = exerciseResult.formScore
         )
     }
 
