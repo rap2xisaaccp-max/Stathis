@@ -1,6 +1,7 @@
 package citu.edu.stathis.mobile.features.exercise.data
 
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
+import citu.edu.stathis.mobile.features.exercise.domain.FormAccuracy
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 import kotlin.math.atan2
@@ -96,7 +97,7 @@ class ExerciseDetector {
         val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 4f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(squatState, feedback, repCompletedThisFrame, confidence, squatRepCount)
+            return ExerciseResult(squatState, feedback, repCompletedThisFrame, confidence, squatRepCount, formScore = null)
         }
 
         val isStandingReady = avgHipY < avgKneeY - squatStandThreshold && hipAngle >= 155f
@@ -148,7 +149,34 @@ class ExerciseDetector {
             }
         }
 
-        return ExerciseResult(squatState, feedback, repCompletedThisFrame, confidence, squatRepCount)
+        when (squatState) {
+            ExerciseState.DOWN -> {
+                if (avgKneeAngle > 130f) feedback.add("Squat deeper — bend your knees more.")
+                if (hipAngle > 155f) feedback.add("Hinge at the hips and sit back into the squat.")
+            }
+            ExerciseState.UP -> {
+                if (avgKneeAngle < 150f) feedback.add("Stand tall and fully extend your knees.")
+            }
+            else -> Unit
+        }
+
+        val formScore = assessActiveFormScore(
+            state = squatState,
+            phaseScore = when (squatState) {
+                ExerciseState.DOWN -> min(
+                    FormAccuracy.nearIdeal(avgKneeAngle, 100f, 20f, 55f),
+                    FormAccuracy.atMost(hipAngle, 145f, 170f)
+                )
+                ExerciseState.UP -> min(
+                    FormAccuracy.atLeast(avgKneeAngle, 160f, 130f),
+                    FormAccuracy.atLeast(hipAngle, 155f, 125f)
+                )
+                else -> 0f
+            },
+            formIssueCount = feedback.size
+        )
+
+        return ExerciseResult(squatState, feedback, repCompletedThisFrame, confidence, squatRepCount, formScore)
     }
 
     fun analyzePushup(pose: Pose): ExerciseResult {
@@ -173,7 +201,7 @@ class ExerciseDetector {
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftElbow.inFrameLikelihood + rightElbow.inFrameLikelihood + leftWrist.inFrameLikelihood + rightWrist.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount)
+            return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount, formScore = null)
         }
 
         when (pushupState) {
@@ -215,7 +243,27 @@ class ExerciseDetector {
             }
         }
 
-        return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount)
+        when (pushupState) {
+            ExerciseState.DOWN -> {
+                if (avgElbowAngle > 110f) feedback.add("Lower your chest closer to the ground.")
+            }
+            ExerciseState.UP -> {
+                if (avgElbowAngle < 150f) feedback.add("Fully extend your arms at the top.")
+            }
+            else -> Unit
+        }
+
+        val formScore = assessActiveFormScore(
+            state = pushupState,
+            phaseScore = when (pushupState) {
+                ExerciseState.DOWN -> FormAccuracy.nearIdeal(avgElbowAngle, 90f, 20f, 50f)
+                ExerciseState.UP -> FormAccuracy.atLeast(avgElbowAngle, 155f, 120f)
+                else -> 0f
+            },
+            formIssueCount = feedback.size
+        )
+
+        return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount, formScore)
     }
 
     fun analyzeSitup(pose: Pose): ExerciseResult {
@@ -239,7 +287,7 @@ class ExerciseDetector {
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(situpState, feedback, repCompletedThisFrame, confidence, situpRepCount)
+            return ExerciseResult(situpState, feedback, repCompletedThisFrame, confidence, situpRepCount, formScore = null)
         }
 
         when (situpState) {
@@ -279,7 +327,28 @@ class ExerciseDetector {
             ExerciseState.INVALID -> situpState = ExerciseState.WAITING
         }
 
-        return ExerciseResult(situpState, feedback, repCompletedThisFrame, confidence, situpRepCount)
+        when (situpState) {
+            ExerciseState.DOWN -> {
+                if (torsoAngle < 130f) feedback.add("Curl up higher — bring your shoulders toward your knees.")
+            }
+            ExerciseState.UP -> {
+                if (torsoAngle > 130f) feedback.add("Lower your torso with control before the next rep.")
+            }
+            else -> Unit
+        }
+
+        val formScore = assessActiveFormScore(
+            state = situpState,
+            phaseScore = when (situpState) {
+                // DOWN here means the crunch/up phase in this detector
+                ExerciseState.DOWN -> FormAccuracy.atLeast(torsoAngle, 145f, 115f)
+                ExerciseState.UP -> FormAccuracy.atMost(torsoAngle, 115f, 145f)
+                else -> 0f
+            },
+            formIssueCount = feedback.size
+        )
+
+        return ExerciseResult(situpState, feedback, repCompletedThisFrame, confidence, situpRepCount, formScore)
     }
 
     fun analyzeGluteBridge(pose: Pose): ExerciseResult {
@@ -308,7 +377,7 @@ class ExerciseDetector {
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(gluteBridgeState, feedback, repCompletedThisFrame, confidence, gluteBridgeRepCount)
+            return ExerciseResult(gluteBridgeState, feedback, repCompletedThisFrame, confidence, gluteBridgeRepCount, formScore = null)
         }
 
         when (gluteBridgeState) {
@@ -347,7 +416,28 @@ class ExerciseDetector {
             ExerciseState.INVALID -> gluteBridgeState = ExerciseState.WAITING
         }
 
-        return ExerciseResult(gluteBridgeState, feedback, repCompletedThisFrame, confidence, gluteBridgeRepCount)
+        when (gluteBridgeState) {
+            ExerciseState.DOWN -> {
+                if (hipAngle < 145f) feedback.add("Drive your hips higher into a full bridge.")
+            }
+            ExerciseState.UP -> {
+                if (hipAngle > 145f) feedback.add("Lower your hips with control before the next bridge.")
+            }
+            else -> Unit
+        }
+
+        val formScore = assessActiveFormScore(
+            state = gluteBridgeState,
+            phaseScore = when (gluteBridgeState) {
+                // DOWN = raised bridge phase in this detector
+                ExerciseState.DOWN -> FormAccuracy.atLeast(hipAngle, 155f, 130f)
+                ExerciseState.UP -> FormAccuracy.atMost(hipAngle, 135f, 160f)
+                else -> 0f
+            },
+            formIssueCount = feedback.size
+        )
+
+        return ExerciseResult(gluteBridgeState, feedback, repCompletedThisFrame, confidence, gluteBridgeRepCount, formScore)
     }
 
 
@@ -403,7 +493,41 @@ class ExerciseDetector {
         }
 
         val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
-        return ExerciseResult(staticLungeState, feedback, repCompletedThisFrame, confidence, staticLungeRepCount)
+        if (confidence < defaultConfidenceThreshold) {
+            feedback.add("Low detection confidence")
+            return ExerciseResult(staticLungeState, feedback, repCompletedThisFrame, confidence, staticLungeRepCount, formScore = null)
+        }
+
+        when (staticLungeState) {
+            ExerciseState.DOWN -> {
+                if (bentLegAngle > 120f) feedback.add("Bend the front knee deeper into the lunge.")
+                if (straightLegAngle < 140f) feedback.add("Keep the back leg more extended.")
+            }
+            ExerciseState.UP -> {
+                if (bentLegAngle < 150f || straightLegAngle < 150f) {
+                    feedback.add("Return to a tall stance between lunges.")
+                }
+            }
+            else -> Unit
+        }
+
+        val formScore = assessActiveFormScore(
+            state = staticLungeState,
+            phaseScore = when (staticLungeState) {
+                ExerciseState.DOWN -> min(
+                    FormAccuracy.nearIdeal(bentLegAngle, 95f, 20f, 50f),
+                    FormAccuracy.atLeast(straightLegAngle, 145f, 120f)
+                )
+                ExerciseState.UP -> min(
+                    FormAccuracy.atLeast(bentLegAngle, 155f, 130f),
+                    FormAccuracy.atLeast(straightLegAngle, 155f, 130f)
+                )
+                else -> 0f
+            },
+            formIssueCount = feedback.size
+        )
+
+        return ExerciseResult(staticLungeState, feedback, repCompletedThisFrame, confidence, staticLungeRepCount, formScore)
     }
 
     fun analyzeLyingLegRaise(pose: Pose): ExerciseResult {
@@ -454,7 +578,48 @@ class ExerciseDetector {
         }
 
         val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
-        return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount)
+        if (confidence < defaultConfidenceThreshold) {
+            feedback.add("Low detection confidence")
+            return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore = null)
+        }
+
+        when (lyingLegRaiseState) {
+            ExerciseState.DOWN -> {
+                if (avgAnkleY >= avgHipY - raiseThreshold * 0.7f) {
+                    feedback.add("Raise your legs higher while keeping them controlled.")
+                }
+            }
+            else -> Unit
+        }
+
+        val formScore = assessActiveFormScore(
+            state = lyingLegRaiseState,
+            phaseScore = when (lyingLegRaiseState) {
+                // DOWN = legs raised phase in this detector
+                ExerciseState.DOWN -> min(
+                    FormAccuracy.atLeast(avgKneeAngle, 160f, 130f),
+                    FormAccuracy.atLeast((avgHipY - avgAnkleY) / bodySpan, 0.2f, 0.05f)
+                )
+                ExerciseState.UP -> FormAccuracy.atLeast(avgKneeAngle, 160f, 130f)
+                else -> 0f
+            },
+            formIssueCount = feedback.size
+        )
+
+        return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore)
+    }
+
+    /**
+     * Form accuracy is only sampled while the student is in an active exercise phase.
+     * Waiting / invalid frames leave session accuracy at its default of 0.
+     */
+    private fun assessActiveFormScore(
+        state: ExerciseState,
+        phaseScore: Float,
+        formIssueCount: Int
+    ): Float? {
+        if (state != ExerciseState.UP && state != ExerciseState.DOWN) return null
+        return FormAccuracy.combine(phaseScore, formIssueCount)
     }
 
     private fun angle(first: PoseLandmark, center: PoseLandmark, second: PoseLandmark): Float {
