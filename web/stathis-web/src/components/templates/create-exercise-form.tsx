@@ -87,8 +87,8 @@ export function CreateExerciseForm({ onSuccess, onCancel }: CreateExerciseFormPr
       title: '',
       description: '',
       exerciseType: '',
-      exerciseDifficulty: '',
-      goalReps: '',
+      exerciseDifficulty: undefined,
+      goalReps: undefined,
       goalAccuracy: '',
       goalTime: ''
     }
