@@ -3,21 +3,23 @@ import {
   ExerciseMasteryDTO,
   ProfileHistoryPointDTO,
 } from '@/services/adaptive/api-adaptive-client';
-import { formErrorDisplay, formErrorLabel } from '@/components/adaptive/form-error-labels';
+import {
+  formErrorDisplay,
+  formErrorLabel,
+  formatModalityLabel as formatModalityDisplay,
+} from '@/components/adaptive/form-error-labels';
 
-export function formatModalityLabel(modality: string): string {
-  return modality.replaceAll('_', ' ');
-}
+export { formatModalityDisplay as formatModalityLabel };
 
 export const MASTERY_CHART_Y_DOMAIN: [number, number] = [0, 100];
 
 export const TIMELINE_CATEGORY_NAMES: Record<string, string> = {
-  masteryPct: 'Mastery',
-  consistencyPct: 'Consistency',
+  masteryPct: 'APSLE Form Mastery',
+  consistencyPct: 'Coaching success',
 };
 
 export const MASTERY_CATEGORY_NAMES: Record<string, string> = {
-  masteryPct: 'Mastery',
+  masteryPct: 'APSLE Form Mastery',
 };
 
 export function buildModalityEffectivenessChartData(
@@ -25,7 +27,7 @@ export function buildModalityEffectivenessChartData(
 ): Array<{ modality: string; delta: number }> {
   return Object.entries(modalityMeanDelta || {})
     .map(([modality, delta]) => ({
-      modality: formatModalityLabel(modality),
+      modality: formatModalityDisplay(modality),
       delta: Number(delta) || 0,
     }))
     .sort((a, b) => b.delta - a.delta);
@@ -60,7 +62,7 @@ export function buildMasteryByExerciseChartData(
       return (b.masteryLevel || 0) - (a.masteryLevel || 0);
     })
     .map((item) => ({
-      exercise: formatModalityLabel(item.exerciseType || 'UNKNOWN'),
+      exercise: (item.exerciseType || 'UNKNOWN').replaceAll('_', ' '),
       masteryPct: Math.round((item.masteryLevel || 0) * 100),
     }));
 }

@@ -50,6 +50,9 @@ const FORM_ERROR_LABELS: Record<string, FormErrorLabel> = {
   },
 };
 
+export const MORE_COACHING_DATA_NEEDED =
+  'APSLE needs more successful coaching responses before recommending an exercise difficulty. Completing sessions alone is not enough.';
+
 export function formErrorLabel(code: string | null | undefined): string {
   if (!code) return 'Unknown form error';
   const key = code.trim().toUpperCase();
@@ -62,15 +65,25 @@ export function formErrorExplanation(code: string | null | undefined): string {
   return FORM_ERROR_LABELS[key]?.explanation || '';
 }
 
-/** Teacher-facing primary label with raw code secondary, e.g. "Body alignment sag (SAG)". */
+/** Teacher label only — no raw APSLE codes in the UI. */
 export function formErrorDisplay(code: string | null | undefined): string {
-  if (!code) return 'Unknown form error';
-  const key = code.trim().toUpperCase();
-  const label = formErrorLabel(key);
-  if (label.toUpperCase() === key.replaceAll('_', ' ')) {
-    return label;
+  return formErrorLabel(code);
+}
+
+/** Teacher-facing coaching method names (internal enum values unchanged). */
+export function formatModalityLabel(modality: string | null | undefined): string {
+  if (!modality) return '—';
+  const key = modality.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  switch (key) {
+    case 'VERBAL_TTS':
+      return 'Voice Coaching';
+    case 'VERBAL_TEXT':
+      return 'Text Coaching';
+    case 'VISUAL_HIGHLIGHT':
+      return 'Visual Guidance';
+    default:
+      return modality.replaceAll('_', ' ');
   }
-  return `${label} (${key})`;
 }
 
 export function preferredModalityCopy(opts: {
@@ -80,11 +93,11 @@ export function preferredModalityCopy(opts: {
 }): { title: string; detail: string } {
   const n = opts.n ?? 0;
   const source = (opts.source || 'DEFAULT').toUpperCase();
-  const modality = opts.modality?.replaceAll('_', ' ') || '—';
+  const modality = formatModalityLabel(opts.modality);
   const detail =
     n === 1
-      ? 'Based on 1 measured coaching response'
-      : `Based on ${n} measured coaching responses`;
+      ? 'Based on 1 successful coaching response.'
+      : `Based on ${n} successful coaching responses.`;
 
   if (source === 'LEARNED') {
     return { title: `Preferred: ${modality}`, detail };
@@ -94,14 +107,48 @@ export function preferredModalityCopy(opts: {
   }
   return {
     title: 'Still learning preferred coaching style',
-    detail: n > 0 ? detail : 'Not enough measured coaching responses yet',
+    detail: n > 0 ? detail : 'Not enough successful coaching responses yet.',
   };
 }
 
-export function formatLearningTrend(value: number | null | undefined): string {
+/** Plain-language Learning Progress label (numeric APSLE value stays in tooltip). */
+export function formatLearningProgressLabel(
+  value: number | null | undefined
+): string {
   if (value == null || Number.isNaN(value)) return '—';
+  if (value > 0) return 'Improving';
+  if (value < 0) return 'Needs attention';
+  return 'Stable';
+}
+
+export function formatLearningProgressTooltip(
+  value: number | null | undefined
+): string {
+  if (value == null || Number.isNaN(value)) {
+    return 'No recent learning progress estimate yet.';
+  }
   const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)} severity`;
+  return `APSLE learning progress estimate: ${sign}${value.toFixed(2)}`;
+}
+
+export function learningProgressDescription(
+  value: number | null | undefined
+): string {
+  if (value == null || Number.isNaN(value)) {
+    return 'Learning progress will appear after successful coaching responses.';
+  }
+  if (value > 0) {
+    return "Recent coaching sessions are helping reduce the student's form errors.";
+  }
+  if (value < 0) {
+    return "Recent coaching sessions have not yet reduced the student's form errors.";
+  }
+  return 'Little recent change in the student’s form errors.';
+}
+
+/** @deprecated Use formatLearningProgressLabel — kept for any residual imports. */
+export function formatLearningTrend(value: number | null | undefined): string {
+  return formatLearningProgressLabel(value);
 }
 
 export function closedLoopSuccessCopy(
@@ -110,8 +157,8 @@ export function closedLoopSuccessCopy(
 ): string {
   const s = successful ?? 0;
   const t = total ?? 0;
-  if (t <= 0) return 'No measured coaching interventions yet.';
-  return `${s} of ${t} measured coaching interventions improved the student’s form.`;
+  if (t <= 0) return 'No coaching sessions with measured form improvement yet.';
+  return `${s} of ${t} coaching sessions resulted in measurable improvements to the student's form.`;
 }
 
 export function isInsufficientFormCorrectionData(
@@ -119,4 +166,12 @@ export function isInsufficientFormCorrectionData(
   masteryLevel: number | null | undefined
 ): boolean {
   return (sessionsCount ?? 0) > 0 && (masteryLevel ?? 0) < 0.05;
+}
+
+export function formatImprovementDeltaTooltip(
+  value: number | null | undefined
+): string {
+  if (value == null || Number.isNaN(value)) return '';
+  const sign = value > 0 ? '+' : '';
+  return `APSLE form improvement: ${sign}${value.toFixed(2)}`;
 }

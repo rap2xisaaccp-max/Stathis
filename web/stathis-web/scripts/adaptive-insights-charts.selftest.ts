@@ -12,8 +12,8 @@ import {
 assert.deepEqual(
   buildModalityEffectivenessChartData({ VERBAL_TEXT: 0.2, VISUAL_HIGHLIGHT: 0.5 }),
   [
-    { modality: 'VISUAL HIGHLIGHT', delta: 0.5 },
-    { modality: 'VERBAL TEXT', delta: 0.2 },
+    { modality: 'Visual Guidance', delta: 0.5 },
+    { modality: 'Text Coaching', delta: 0.2 },
   ]
 );
 
@@ -59,8 +59,8 @@ const zeroMastery = buildMasteryByExerciseChartData([
 assert.equal(zeroMastery.length, 2);
 assert.equal(zeroMastery[0].masteryPct, 0);
 assert.deepEqual(MASTERY_CHART_Y_DOMAIN, [0, 100]);
-assert.equal(MASTERY_CATEGORY_NAMES.masteryPct, 'Mastery');
-assert.equal(TIMELINE_CATEGORY_NAMES.consistencyPct, 'Consistency');
+assert.equal(MASTERY_CATEGORY_NAMES.masteryPct, 'APSLE Form Mastery');
+assert.equal(TIMELINE_CATEGORY_NAMES.consistencyPct, 'Coaching success');
 
 assert.equal(
   hasChartableInsights({

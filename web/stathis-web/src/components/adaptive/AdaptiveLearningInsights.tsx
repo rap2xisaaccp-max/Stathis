@@ -41,15 +41,20 @@ import {
   buildMasteryTimelineChartData,
   buildModalityEffectivenessChartData,
   buildRecurringErrorsChartData,
+  formatModalityLabel,
   MASTERY_CATEGORY_NAMES,
   MASTERY_CHART_Y_DOMAIN,
   TIMELINE_CATEGORY_NAMES,
 } from '@/components/adaptive/adaptive-insights-charts';
 import {
   closedLoopSuccessCopy,
-  formErrorDisplay,
-  formatLearningTrend,
+  formErrorLabel,
+  formatImprovementDeltaTooltip,
+  formatLearningProgressLabel,
+  formatLearningProgressTooltip,
   isInsufficientFormCorrectionData,
+  learningProgressDescription,
+  MORE_COACHING_DATA_NEEDED,
   preferredModalityCopy,
 } from '@/components/adaptive/form-error-labels';
 
@@ -91,7 +96,7 @@ function suggestionText(item: {
   masteryLevel?: number;
 }): string {
   if (isInsufficientFormCorrectionData(item.sessionsCount, item.masteryLevel)) {
-    return `${item.exerciseType}: Insufficient form-correction data`;
+    return `${item.exerciseType}: More Coaching Data Needed`;
   }
   const bits: string[] = [];
   if (item.recommendedDifficulty) {
@@ -154,7 +159,7 @@ function MasteryRecommendationRow({
         <span className="font-medium">{item.exerciseType.replaceAll('_', ' ')}</span>
         <div className="flex flex-wrap items-center gap-2">
           {insufficient ? (
-            <Badge variant="outline">Insufficient form-correction data</Badge>
+            <Badge variant="outline">More Coaching Data Needed</Badge>
           ) : item.recommendedDifficulty ? (
             <Badge variant="secondary">Suggest {item.recommendedDifficulty}</Badge>
           ) : (
@@ -172,7 +177,7 @@ function MasteryRecommendationRow({
         <>
           <Progress value={Math.round((item.masteryLevel || 0) * 100)} />
           <p className="text-xs text-muted-foreground">
-            Form-correction mastery {Math.round((item.masteryLevel || 0) * 100)}% · Sessions{' '}
+            APSLE Form Mastery {Math.round((item.masteryLevel || 0) * 100)}% · Sessions{' '}
             {item.sessionsCount ?? 0}
             {item.medianTimeToCorrectionMs != null &&
               ` · Median correction ${Math.round(item.medianTimeToCorrectionMs / 1000)}s`}
@@ -180,19 +185,18 @@ function MasteryRecommendationRow({
           </p>
         </>
       )}
-      {(item.recommendationRationale ||
-        (insufficient &&
-          'Insufficient form-correction data. Soft difficulty suggestions require measured coaching responses — session count alone is not enough.')) && (
+      {(item.recommendationRationale || (insufficient && MORE_COACHING_DATA_NEEDED)) && (
         <p className="text-xs text-muted-foreground leading-relaxed">
-          {item.recommendationRationale ||
-            'Insufficient form-correction data. Soft difficulty suggestions require measured coaching responses — session count alone is not enough.'}
+          {insufficient
+            ? MORE_COACHING_DATA_NEEDED
+            : item.recommendationRationale}
         </p>
       )}
       {(item.topErrors || []).length > 0 && (
         <div className="flex flex-wrap gap-1">
           {(item.topErrors || []).map((err) => (
             <Badge key={err} variant="outline" className="text-[10px]">
-              {formErrorDisplay(err)}
+              {formErrorLabel(err)}
             </Badge>
           ))}
         </div>
@@ -221,8 +225,8 @@ function MasteryRecommendationRow({
         </div>
       )}
       <p className="text-[11px] text-muted-foreground">
-        Soft recommendation only — never auto-applied to exercise templates. Form-correction
-        mastery is separate from classroom task scores.
+        Soft recommendation only — never auto-applied to exercise templates. APSLE Form
+        Mastery is separate from classroom task scores.
       </p>
     </div>
   );
@@ -792,7 +796,7 @@ function StudentProgressSnapshotCard({
         <CardTitle className="text-base">Student progress snapshot</CardTitle>
         <CardDescription>
           Classroom task scores and attempts (same live backend data as the Scores tab).
-          These are separate from adaptive form-correction mastery below.
+          These are separate from APSLE Form Mastery below.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -849,8 +853,7 @@ function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }
       <CardHeader>
         <CardTitle className="text-base">Preferred Modality by Exercise</CardTitle>
         <CardDescription>
-          Which coaching channel reduced form severity most for each exercise. LEARNED
-          needs at least 5 measured coaching responses with a clear margin.
+          Shows which coaching method helped the student improve the most for each exercise.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -890,7 +893,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
         <CardHeader>
           <CardTitle className="text-base">Recent Adaptive Interventions</CardTitle>
           <CardDescription>
-            No closed-loop interventions logged for this student yet.
+            No recent coaching cues for this student yet.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -902,7 +905,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
       <CardHeader>
         <CardTitle className="text-base">Recent Adaptive Interventions</CardTitle>
         <CardDescription>
-          Closed-loop interventions for this student ({recent.length})
+          Recent coaching cues for this student ({recent.length})
         </CardDescription>
       </CardHeader>
       <CardContent className="max-h-80 space-y-2 overflow-y-auto pr-1">
@@ -921,6 +924,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
               : item.responseSuccess
                 ? 'Improved'
                 : 'No change';
+          const deltaTooltip = formatImprovementDeltaTooltip(item.responseDelta);
           return (
             <div
               key={item.physicalId}
@@ -929,7 +933,7 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
               <div className="min-w-0">
                 <p className="font-medium truncate">
                   {item.exerciseType.replaceAll('_', ' ')} ·{' '}
-                  {formErrorDisplay(item.errorCode)}
+                  {formErrorLabel(item.errorCode)}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
                   {item.messageText || item.correctionDelivered || 'Coaching cue delivered'}
@@ -937,11 +941,15 @@ function RecentInterventionsCard({ data }: { data: AdaptiveInsightsDTO }) {
                 </p>
               </div>
               <div className="flex flex-wrap gap-1">
-                <Badge variant="secondary">{item.modality.replaceAll('_', ' ')}</Badge>
-                <Badge variant="outline">{improved}</Badge>
-                {item.responseDelta != null && (
-                  <Badge variant="outline">{formatDelta(item.responseDelta)}</Badge>
-                )}
+                <Badge variant="secondary">{formatModalityLabel(item.modality)}</Badge>
+                <Badge
+                  variant="outline"
+                  title={
+                    item.responseSuccess && deltaTooltip ? deltaTooltip : undefined
+                  }
+                >
+                  {improved}
+                </Badge>
               </div>
             </div>
           );
@@ -982,11 +990,11 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
               <CardTitle className="text-lg">
                 {(data.profile?.totalInterventions ?? 0) < 1
                   ? 'Insufficient data'
-                  : data.profile?.preferredModality?.replaceAll('_', ' ') || 'Learning'}
+                  : formatModalityLabel(data.profile?.preferredModality) || 'Learning'}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Derived from measured post-feedback improvement across all valid coaching responses.
+              Shows the coaching method that helped this student improve most overall.
               {data.profile?.updatedAt && (
                 <span className="mt-1 block text-[11px]">
                   Updated{' '}
@@ -1014,14 +1022,16 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           </Card>
           <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader className="pb-2">
-              <CardDescription>Recent learning trend</CardDescription>
-              <CardTitle className="text-lg" title="Smoothed recent severity-reduction trend from coaching responses (not score points).">
-                {formatLearningTrend(data.profile?.learningRateEstimate)}
+              <CardDescription>Learning Progress</CardDescription>
+              <CardTitle
+                className="text-lg"
+                title={formatLearningProgressTooltip(data.profile?.learningRateEstimate)}
+              >
+                {formatLearningProgressLabel(data.profile?.learningRateEstimate)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Higher positive values mean recent coaching responses reduced form severity
-              more. Not classroom score points.
+              {learningProgressDescription(data.profile?.learningRateEstimate)}
             </CardContent>
           </Card>
         </div>
@@ -1034,11 +1044,12 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {modalityData.length > 0 ? (
           <div className="min-h-[300px]">
             <BarChart
-              title="Modality effectiveness"
-              description="Mean severity reduction from closed-loop responses"
+              title="Feedback Effectiveness"
+              description="Average form improvement for each coaching method. Higher is better."
               data={modalityData}
               index="modality"
               categories={['delta']}
+              categoryNames={{ delta: 'Average form improvement' }}
               colors={['var(--primary)']}
               className="h-full"
             />
@@ -1046,11 +1057,10 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Modality effectiveness</CardTitle>
+              <CardTitle className="text-base">Feedback Effectiveness</CardTitle>
               <CardDescription>
-                Connected to insights — no closed-loop modality samples yet (
-                {data.totalInterventions ?? 0} response pairs). Needs form coaching with a
-                recorded feedback response, not Score completion alone.
+                No coaching-method comparison yet. This chart fills in after successful
+                coaching responses during practice.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1088,8 +1098,8 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {timelineData.length > 0 ? (
           <div className="min-h-[300px]">
             <LineChart
-              title="Mastery timeline"
-              description="Form-correction mastery and coaching success rate over adaptive profile history"
+              title="Learning Progress Over Time"
+              description="APSLE Form Mastery and coaching success over time."
               data={timelineData}
               index="date"
               categories={['masteryPct', 'consistencyPct']}
@@ -1104,11 +1114,10 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Mastery timeline</CardTitle>
+              <CardTitle className="text-base">Learning Progress Over Time</CardTitle>
               <CardDescription>
-                Connected to insights — no profile history or mastery/session seed yet (
-                {(data.mastery || []).length} mastery rows). Complete an exercise so mobile
-                calls adaptive flush + recordSession.
+                Progress over time will appear after the student completes practice with
+                successful coaching responses.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1117,8 +1126,8 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         {masteryBars.length > 0 ? (
           <div className="min-h-[300px]">
             <BarChart
-              title="Mastery by exercise"
-              description="Form-correction mastery (not task score). Axis is 0–100%; 0% still lists the exercise."
+              title="APSLE Form Mastery by Exercise"
+              description="APSLE Form Mastery (not classroom task score). Axis is 0–100%; 0% still lists the exercise."
               data={masteryBars}
               index="exercise"
               categories={['masteryPct']}
@@ -1133,11 +1142,10 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
         ) : (
           <Card className="min-h-[200px] rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-base">Mastery by exercise</CardTitle>
+              <CardTitle className="text-base">APSLE Form Mastery by Exercise</CardTitle>
               <CardDescription>
-                Connected to insights — `exercise_mastery` has no rows for this student yet.
-                Graded Score completion alone does not create mastery; adaptive
-                recordSession / feedback responses do.
+                No APSLE Form Mastery records yet for this student. Classroom task scores
+                alone do not create mastery — successful coaching responses do.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1193,9 +1201,7 @@ function AdaptiveRecommendationsCard({
             ? null
             : item.recommendedGoalReps ?? rec?.recommendedGoalReps ?? null,
           recommendationRationale: insufficient
-            ? rec?.rationale ||
-              item.recommendationRationale ||
-              'Insufficient form-correction data. Soft difficulty suggestions require measured coaching responses — session count alone is not enough.'
+            ? MORE_COACHING_DATA_NEEDED
             : item.recommendationRationale || rec?.rationale || null,
           requiresTeacherApproval:
             item.requiresTeacherApproval ?? rec?.requiresTeacherApproval ?? true,

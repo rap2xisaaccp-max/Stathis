@@ -3,19 +3,30 @@ import {
   closedLoopSuccessCopy,
   formErrorDisplay,
   formErrorLabel,
-  formatLearningTrend,
+  formatLearningProgressLabel,
+  formatLearningProgressTooltip,
+  formatModalityLabel,
   isInsufficientFormCorrectionData,
   preferredModalityCopy,
 } from '../src/components/adaptive/form-error-labels';
 
 assert.equal(formErrorLabel('SAG'), 'Hips sagging');
 assert.equal(formErrorLabel('KNEES_IN'), 'Knees moving inward');
-assert.equal(formErrorDisplay('LOW_ROM'), 'Incomplete movement (LOW_ROM)');
-assert.equal(formatLearningTrend(0.24), '+0.24 severity');
-assert.equal(formatLearningTrend(-0.1), '-0.10 severity');
+assert.equal(formErrorDisplay('LOW_ROM'), 'Incomplete movement');
+assert.ok(!formErrorDisplay('SAG').includes('SAG'));
+
+assert.equal(formatModalityLabel('VERBAL_TTS'), 'Voice Coaching');
+assert.equal(formatModalityLabel('VERBAL_TEXT'), 'Text Coaching');
+assert.equal(formatModalityLabel('VISUAL_HIGHLIGHT'), 'Visual Guidance');
+
+assert.equal(formatLearningProgressLabel(0.35), 'Improving');
+assert.equal(formatLearningProgressLabel(-0.1), 'Needs attention');
+assert.equal(formatLearningProgressLabel(0), 'Stable');
+assert.match(formatLearningProgressTooltip(0.35), /\+0\.35/);
+
 assert.equal(
-  closedLoopSuccessCopy(2, 5),
-  '2 of 5 measured coaching interventions improved the student’s form.'
+  closedLoopSuccessCopy(18, 22),
+  "18 of 22 coaching sessions resulted in measurable improvements to the student's form."
 );
 
 const learned = preferredModalityCopy({
@@ -23,8 +34,8 @@ const learned = preferredModalityCopy({
   source: 'LEARNED',
   n: 5,
 });
-assert.equal(learned.title, 'Preferred: VISUAL HIGHLIGHT');
-assert.equal(learned.detail, 'Based on 5 measured coaching responses');
+assert.equal(learned.title, 'Preferred: Visual Guidance');
+assert.equal(learned.detail, 'Based on 5 successful coaching responses.');
 
 const exploring = preferredModalityCopy({
   modality: 'VERBAL_TEXT',
@@ -32,6 +43,7 @@ const exploring = preferredModalityCopy({
   n: 2,
 });
 assert.match(exploring.title, /Still learning/);
+assert.equal(exploring.detail, 'Based on 2 successful coaching responses.');
 
 assert.equal(isInsufficientFormCorrectionData(3, 0), true);
 assert.equal(isInsufficientFormCorrectionData(3, 0.04), true);
