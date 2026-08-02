@@ -971,9 +971,6 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
 
   return (
     <>
-      <PreferredModalityByExerciseCard data={data} />
-      <RecentInterventionsCard data={data} />
-
       <div>
         <h3 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">
           Learning profile summary
@@ -1016,6 +1013,9 @@ function InsightsChartsSection({ data }: { data: AdaptiveInsightsDTO }) {
           </Card>
         </div>
       </div>
+
+      <PreferredModalityByExerciseCard data={data} />
+      <RecentInterventionsCard data={data} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         {modalityData.length > 0 ? (
