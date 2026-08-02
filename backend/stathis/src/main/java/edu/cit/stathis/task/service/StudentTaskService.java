@@ -33,7 +33,6 @@ import edu.cit.stathis.classroom.service.ClassroomService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
-import edu.cit.stathis.common.debug.AgentDebugLog;
 import java.util.Map;
 
 @Service
@@ -74,7 +73,8 @@ public class StudentTaskService {
         if (!classroomService.isUserEnrolledAndVerifiedInClassroom(studentId, classroomPhysicalId)) {
             throw new RuntimeException("You are not authorized to view tasks for this classroom (not verified)");
         }
-        List<Task> tasks = taskRepository.findByClassroomPhysicalId(classroomPhysicalId);
+        // Students only see teacher-started, active tasks
+        List<Task> tasks = taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
         return tasks.stream()
             .map(task -> buildStudentTaskResponse(task, studentId))
             .collect(Collectors.toList());
@@ -84,20 +84,49 @@ public class StudentTaskService {
     public StudentTaskResponseDTO getStudentTask(String taskId, String studentId) {
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         return buildStudentTaskResponse(task, studentId);
+    }
+
+    private void requireTaskStarted(Task task) {
+        // #region agent log
+        try {
+            java.nio.file.Path logPath = java.nio.file.Paths.get("debug-b7147e.log");
+            if (!java.nio.file.Files.exists(logPath)) {
+                logPath = java.nio.file.Paths.get(System.getProperty("user.dir"), "..", "..", "debug-b7147e.log")
+                        .normalize();
+            }
+            String line = String.format(
+                    "{\"sessionId\":\"b7147e\",\"hypothesisId\":\"H-E\",\"location\":\"StudentTaskService.requireTaskStarted\",\"message\":\"gate_check\",\"timestamp\":%d,\"runId\":\"verify1\",\"data\":{\"taskId\":\"%s\",\"isStarted\":%s,\"isActive\":%s}}%n",
+                    System.currentTimeMillis(),
+                    task.getPhysicalId() != null ? task.getPhysicalId().replace("\"", "") : "",
+                    task.isStarted(),
+                    task.isActive());
+            java.nio.file.Files.writeString(
+                    logPath,
+                    line,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+        }
+        // #endregion
+        if (!task.isStarted()) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Task has not been started by the teacher yet");
+        }
+        if (!task.isActive()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Task is no longer active");
+        }
     }
 
     @Transactional(readOnly = true)
     public TaskProgressDTO getTaskProgress(String taskId, String studentId) {
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         java.util.List<TaskCompletion> completionRows =
                 taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
-        // #region agent log
-        AgentDebugLog.log("B", "StudentTaskService.getTaskProgress", "progress lookup",
-                Map.of("taskId", taskId, "studentId", studentId, "completionRowCount", completionRows.size(),
-                        "taskExerciseTemplateId", String.valueOf(task.getExerciseTemplateId())));
-        // #endregion
         TaskCompletion completion = completionRows.isEmpty() ? null : completionRows.get(0);
         Score quizScore = task.getQuizTemplateId() != null
             ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
@@ -143,6 +172,10 @@ public class StudentTaskService {
 
     @Transactional
     public Score submitQuizScore(String studentId, String taskId, String quizTemplateId, int score) {
+        Task task = taskRepository.findByPhysicalId(taskId)
+            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
+
         Score existingScore = scoreRepository.findQuizScore(studentId, taskId, quizTemplateId)
             .orElse(null);
 
@@ -156,8 +189,6 @@ public class StudentTaskService {
         }
 
         // Enforce max attempts based on Task configuration
-        Task task = taskRepository.findByPhysicalId(taskId)
-            .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
         validateAttempts(task, existingScore);
 
         // Ensure maxScore is populated from quiz template if available
@@ -288,6 +319,7 @@ public class StudentTaskService {
         // Enforce max attempts based on Task configuration
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         validateAttempts(task, existingScore);
 
         existingScore.setScore(computedScore);
@@ -342,6 +374,9 @@ public class StudentTaskService {
 
     @Transactional
     public void completeLesson(String studentId, String taskId, String lessonTemplateId) {
+        Task task = taskRepository.findByPhysicalId(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        requireTaskStarted(task);
         updateTaskCompletion(studentId, taskId, "lesson", true);
     }
 
@@ -351,30 +386,10 @@ public class StudentTaskService {
             String taskId,
             String exerciseTemplateId,
             ExerciseResultSubmissionDTO result) {
-        // #region agent log
-        AgentDebugLog.log("A", "StudentTaskService.completeExercise:entry", "completeExercise called",
-                Map.of("studentId", studentId, "taskId", taskId, "exerciseTemplateId", exerciseTemplateId,
-                        "hasBody", result != null));
-        // #endregion
-        ExerciseTemplate template;
-        try {
-            template = exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
-                    .orElseThrow(() -> new EntityNotFoundException(
-                            "Exercise template not found with ID: " + exerciseTemplateId));
-            // #region agent log
-            AgentDebugLog.log("A", "StudentTaskService.completeExercise:template", "template hydrated",
-                    Map.of("exerciseTemplateId", exerciseTemplateId,
-                            "exerciseType", template.getExerciseType() != null ? template.getExerciseType().name() : "null",
-                            "difficulty", template.getExerciseDifficulty() != null ? template.getExerciseDifficulty().name() : "null"));
-            // #endregion
-        } catch (RuntimeException ex) {
-            // #region agent log
-            AgentDebugLog.log("A", "StudentTaskService.completeExercise:templateFail", "template load failed",
-                    Map.of("exerciseTemplateId", exerciseTemplateId, "error", ex.getClass().getSimpleName(),
-                            "message", String.valueOf(ex.getMessage())));
-            // #endregion
-            throw ex;
-        }
+        ExerciseTemplate template =
+                exerciseTemplateRepository.findByPhysicalId(exerciseTemplateId)
+                        .orElseThrow(() -> new EntityNotFoundException(
+                                "Exercise template not found with ID: " + exerciseTemplateId));
 
         int reps = result != null ? Math.max(0, result.getReps()) : 0;
         double accuracy = result != null ? result.getAccuracy() : 0.0;
@@ -392,13 +407,7 @@ public class StudentTaskService {
 
         Task task = taskRepository.findByPhysicalId(taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
-        // #region agent log
-        AgentDebugLog.log("C", "StudentTaskService.completeExercise:taskMatch", "task vs path template",
-                Map.of("taskId", taskId,
-                        "taskExerciseTemplateId", String.valueOf(task.getExerciseTemplateId()),
-                        "pathExerciseTemplateId", exerciseTemplateId,
-                        "idsMatch", exerciseTemplateId != null && exerciseTemplateId.equals(task.getExerciseTemplateId())));
-        // #endregion
+        requireTaskStarted(task);
 
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
@@ -425,13 +434,13 @@ public class StudentTaskService {
 
         validateAttempts(task, existingScore);
 
-        int previousReps = existingScore.getReps() != null ? existingScore.getReps() : 0;
         double previousCalories =
                 existingScore.getCaloriesBurned() != null ? existingScore.getCaloriesBurned() : 0.0;
         int previousScore = existingScore.getScore();
 
-        // Accumulate reps and calories across repeated attempts
-        existingScore.setReps(previousReps + reps);
+        // Latest attempt only — do not sum reps across attempts into the live score row.
+        existingScore.setReps(reps);
+        // Calories remain cumulative for energy totals; reps/time/accuracy reflect this attempt.
         existingScore.setCaloriesBurned(
                 Math.round((previousCalories + sessionCalories) * 10.0) / 10.0);
         existingScore.setGoalReps(goalReps);
@@ -456,15 +465,6 @@ public class StudentTaskService {
                 sessionCalories,
                 timeTaken);
         updateTaskCompletion(studentId, taskId, "exercise", true);
-        // #region agent log
-        AgentDebugLog.log("D", "StudentTaskService.completeExercise:saved", "score and task_completions updated",
-                Map.of("scorePhysicalId", String.valueOf(savedScore.getPhysicalId()),
-                        "attempts", savedScore.getAttempts(),
-                        "scoreValue", savedScore.getScore(),
-                        "reps", savedScore.getReps() != null ? savedScore.getReps() : 0,
-                        "exerciseTemplateId", String.valueOf(savedScore.getExerciseTemplateId()),
-                        "taskId", taskId));
-        // #endregion
 
         String classroomId = result != null ? result.getClassroomId() : null;
         if (classroomId == null || classroomId.isBlank()) {
@@ -505,11 +505,6 @@ public class StudentTaskService {
         // and roll back completeExercise transactions.
         java.util.List<TaskCompletion> rows =
                 taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
-        // #region agent log
-        AgentDebugLog.log("B", "StudentTaskService.updateTaskCompletion", "resolve completion rows",
-                Map.of("studentId", studentId, "taskId", taskId, "rowCount", rows.size(),
-                        "componentType", componentType));
-        // #endregion
         TaskCompletion completion;
         if (rows.isEmpty()) {
             completion = TaskCompletion.builder()

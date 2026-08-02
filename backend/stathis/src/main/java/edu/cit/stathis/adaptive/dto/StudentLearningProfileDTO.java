@@ -14,6 +14,8 @@ public class StudentLearningProfileDTO {
   private String studentId;
   private FeedbackModality preferredModality;
   private Map<String, Object> modalityEffectivenessJson;
+  /** exerciseType → { modality, n, meanDelta, confidence, source }. */
+  private Map<String, Object> preferredModalityByExercise;
   private Double learningRateEstimate;
   private Double consistencyScore;
   private Double fatigueSensitivity;

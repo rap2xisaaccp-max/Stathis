@@ -27,4 +27,16 @@ class ExerciseScoreMergeTest {
     assertEquals(50, (int) Math.round(Math.min(1.0, 5.0 / 10.0) * 100.0));
     assertEquals(100, (int) Math.round(Math.min(1.0, 15.0 / 10.0) * 100.0));
   }
+
+  /** Score.reps stores the latest attempt only (not cumulative). */
+  static int mergeLatestAttemptReps(int previousRepsIgnored, int sessionReps) {
+    return sessionReps;
+  }
+
+  @Test
+  void latestAttemptRepsOverwritePrevious() {
+    assertEquals(8, mergeLatestAttemptReps(20, 8));
+    assertEquals(0, mergeLatestAttemptReps(12, 0));
+    assertEquals(15, mergeLatestAttemptReps(5, 15));
+  }
 }

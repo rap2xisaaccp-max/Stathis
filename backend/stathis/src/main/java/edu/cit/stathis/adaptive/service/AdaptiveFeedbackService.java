@@ -35,26 +35,68 @@ public class AdaptiveFeedbackService {
   public AdaptiveBatchIngestResultDTO ingestBatch(String studentId, AdaptiveBatchIngestDTO batch) {
     List<String> interventionIds = new ArrayList<>();
     List<String> responseIds = new ArrayList<>();
+    List<String> errors = new ArrayList<>();
+    int interventionsFailed = 0;
+    int responsesFailed = 0;
 
     if (batch.getInterventions() != null) {
       for (FeedbackInterventionRequestDTO req : batch.getInterventions()) {
-        FeedbackIntervention saved = saveIntervention(studentId, req);
-        interventionIds.add(saved.getPhysicalId());
+        try {
+          FeedbackIntervention saved = saveIntervention(studentId, req);
+          interventionIds.add(saved.getPhysicalId());
+        } catch (ResponseStatusException ex) {
+          interventionsFailed++;
+          errors.add(
+              "FI:"
+                  + (req.getPhysicalId() != null ? req.getPhysicalId() : "?")
+                  + ":"
+                  + ex.getReason());
+        } catch (RuntimeException ex) {
+          interventionsFailed++;
+          errors.add(
+              "FI:"
+                  + (req.getPhysicalId() != null ? req.getPhysicalId() : "?")
+                  + ":"
+                  + ex.getMessage());
+        }
       }
     }
 
     if (batch.getResponses() != null) {
       for (FeedbackResponseRequestDTO req : batch.getResponses()) {
-        FeedbackResponse saved = saveResponse(studentId, req);
-        responseIds.add(saved.getPhysicalId());
+        try {
+          FeedbackResponse saved = saveResponse(studentId, req);
+          responseIds.add(saved.getPhysicalId());
+        } catch (ResponseStatusException ex) {
+          responsesFailed++;
+          errors.add(
+              "FR:"
+                  + (req.getInterventionPhysicalId() != null
+                      ? req.getInterventionPhysicalId()
+                      : "?")
+                  + ":"
+                  + ex.getReason());
+        } catch (RuntimeException ex) {
+          responsesFailed++;
+          errors.add(
+              "FR:"
+                  + (req.getInterventionPhysicalId() != null
+                      ? req.getInterventionPhysicalId()
+                      : "?")
+                  + ":"
+                  + ex.getMessage());
+        }
       }
     }
 
     return AdaptiveBatchIngestResultDTO.builder()
         .interventionsSaved(interventionIds.size())
         .responsesSaved(responseIds.size())
+        .interventionsFailed(interventionsFailed)
+        .responsesFailed(responsesFailed)
         .interventionPhysicalIds(interventionIds)
         .responsePhysicalIds(responseIds)
+        .errors(errors)
         .updatedProfile(profileService.toDto(profileService.getOrCreate(studentId)))
         .build();
   }
@@ -154,8 +196,11 @@ public class AdaptiveFeedbackService {
             .build();
 
     FeedbackResponse saved = responseRepository.save(entity);
-    profileService.applyResponse(intervention, saved);
-    masteryService.applyResponse(intervention, saved);
+    // Technical camera/detection signals must not drive preferred-modality learning.
+    if (intervention.getErrorCode() == null || !intervention.getErrorCode().isTechnical()) {
+      profileService.applyResponse(intervention, saved);
+      masteryService.applyResponse(intervention, saved);
+    }
     armRollupService.recordResponse(intervention, saved);
     return saved;
   }
@@ -189,15 +234,18 @@ public class AdaptiveFeedbackService {
 
     List<FeedbackIntervention> allInterventions =
         interventionRepository.findByStudentIdOrderByDeliveredAtDesc(studentId);
+    List<FeedbackIntervention> coachableInterventions =
+        allInterventions.stream().filter(this::isCoachableIntervention).collect(Collectors.toList());
     List<FeedbackIntervention> recent =
         allInterventions.stream().limit(25).collect(Collectors.toList());
 
+    // Recurring form errors: coachable codes only (exclude camera/model technical signals).
     Map<String, Long> topErrors =
         RctEvaluationMetrics.countDistinctSessionErrors(
-            allInterventions.stream()
+            coachableInterventions.stream()
                 .map(FeedbackIntervention::getSessionId)
                 .collect(Collectors.toList()),
-            allInterventions.stream()
+            coachableInterventions.stream()
                 .map(i -> i.getErrorCode() != null ? i.getErrorCode().name() : null)
                 .collect(Collectors.toList()));
 
@@ -205,16 +253,33 @@ public class AdaptiveFeedbackService {
     List<FeedbackResponse> allResponses =
         responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId);
 
+    Map<String, FeedbackIntervention> interventionById = new HashMap<>();
+    for (FeedbackIntervention fi : allInterventions) {
+      if (fi.getPhysicalId() != null) {
+        interventionById.put(fi.getPhysicalId(), fi);
+      }
+    }
+    List<FeedbackResponse> coachableResponses =
+        allResponses.stream()
+            .filter(
+                fr -> {
+                  FeedbackIntervention fi =
+                      interventionById.get(fr.getInterventionPhysicalId());
+                  return fi != null && isCoachableIntervention(fi);
+                })
+            .collect(Collectors.toList());
+
     Map<String, Double> modalityMeanDelta =
         extractModalityMeanDelta(profile.getModalityEffectivenessJson());
     // Fallback: derive from closed-loop FR↔FI when profile buckets are empty/unreadable
-    if (modalityMeanDelta.isEmpty() && !allResponses.isEmpty()) {
-      modalityMeanDelta = modalityMeanDeltaFromResponses(allInterventions, allResponses);
+    if (modalityMeanDelta.isEmpty() && !coachableResponses.isEmpty()) {
+      modalityMeanDelta =
+          modalityMeanDeltaFromResponses(coachableInterventions, coachableResponses);
     }
 
-    // Closed-loop success: successes / response pairs (not FI count).
-    long closedPairs = allResponses.size();
-    long successes = allResponses.stream().filter(FeedbackResponse::isSuccess).count();
+    // Closed-loop success: successes / coachable response pairs (not FI count; not technical).
+    long closedPairs = coachableResponses.size();
+    long successes = coachableResponses.stream().filter(FeedbackResponse::isSuccess).count();
     List<ExerciseMasteryDTO> mastery = getMastery(studentId);
     List<ProfileHistoryPointDTO> history = profileService.listHistory(studentId);
 
@@ -246,17 +311,27 @@ public class AdaptiveFeedbackService {
                   .build());
     }
 
+    Map<String, FeedbackResponse> responseByIntervention = new HashMap<>();
+    for (FeedbackResponse response : allResponses) {
+      if (response.getInterventionPhysicalId() != null) {
+        responseByIntervention.putIfAbsent(response.getInterventionPhysicalId(), response);
+      }
+    }
+
     return AdaptiveInsightsDTO.builder()
         .studentId(studentId)
         .profile(profile)
         .mastery(mastery)
+        .preferredModalityByExercise(profile.getPreferredModalityByExercise())
         .modalityMeanDelta(modalityMeanDelta)
         .topRecurringErrors(topErrors)
         .totalInterventions(closedPairs)
         .successfulInterventions(successes)
         .overallSuccessRate(RctEvaluationMetrics.successRate(successes, closedPairs))
         .recentInterventions(
-            recent.stream().map(this::toInterventionDto).collect(Collectors.toList()))
+            recent.stream()
+                .map(fi -> toInterventionDto(fi, responseByIntervention.get(fi.getPhysicalId())))
+                .collect(Collectors.toList()))
         .profileHistory(history)
         .build();
   }
@@ -519,7 +594,19 @@ public class AdaptiveFeedbackService {
     return means;
   }
 
+  private boolean isCoachableIntervention(FeedbackIntervention intervention) {
+    if (intervention == null || intervention.getErrorCode() == null) {
+      return false;
+    }
+    return !intervention.getErrorCode().isTechnical();
+  }
+
   private FeedbackInterventionResponseDTO toInterventionDto(FeedbackIntervention entity) {
+    return toInterventionDto(entity, null);
+  }
+
+  private FeedbackInterventionResponseDTO toInterventionDto(
+      FeedbackIntervention entity, FeedbackResponse response) {
     return FeedbackInterventionResponseDTO.builder()
         .physicalId(entity.getPhysicalId())
         .studentId(entity.getStudentId())
@@ -535,6 +622,9 @@ public class AdaptiveFeedbackService {
         .baselineSeverity(entity.getBaselineSeverity())
         .policySource(entity.getPolicySource())
         .experimentArm(entity.getExperimentArm())
+        .responseSuccess(response != null ? response.isSuccess() : null)
+        .responseDelta(response != null ? response.getDelta() : null)
+        .correctionDelivered(entity.getMessageText())
         .build();
   }
 

@@ -52,6 +52,14 @@ public class StudentLearningProfile {
   @Column(name = "modality_effectiveness_json", columnDefinition = "jsonb")
   private Map<String, Object> modalityEffectivenessJson;
 
+  /**
+   * Per-exercise preferred modality evidence:
+   * exerciseType → { modality, n, meanDelta, confidence, source: DEFAULT|EXPLORING|LEARNED }.
+   */
+  @Type(JsonType.class)
+  @Column(name = "preferred_modality_by_exercise_json", columnDefinition = "jsonb")
+  private Map<String, Object> preferredModalityByExerciseJson;
+
   @Column(name = "learning_rate_estimate")
   private Double learningRateEstimate;
 

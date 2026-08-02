@@ -11,7 +11,10 @@ import lombok.*;
 public class AdaptiveBatchIngestResultDTO {
   private int interventionsSaved;
   private int responsesSaved;
+  private int interventionsFailed;
+  private int responsesFailed;
   private List<String> interventionPhysicalIds;
   private List<String> responsePhysicalIds;
+  private List<String> errors;
   private StudentLearningProfileDTO updatedProfile;
 }

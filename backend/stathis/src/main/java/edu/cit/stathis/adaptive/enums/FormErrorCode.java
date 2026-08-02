@@ -16,6 +16,11 @@ public enum FormErrorCode {
   BODY_NOT_VISIBLE,
   UNKNOWN;
 
+  /** Camera/detection quality — not physical-skill coaching for modality learning. */
+  public boolean isTechnical() {
+    return this == LOW_CONFIDENCE || this == LOW_VISIBILITY || this == BODY_NOT_VISIBLE;
+  }
+
   public static FormErrorCode fromFlag(String flagOrMessage) {
     if (flagOrMessage == null || flagOrMessage.isBlank()) {
       return UNKNOWN;
