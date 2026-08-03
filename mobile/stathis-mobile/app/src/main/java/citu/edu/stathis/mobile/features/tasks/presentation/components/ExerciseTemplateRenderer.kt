@@ -47,6 +47,9 @@ import kotlinx.coroutines.flow.firstOrNull
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
+import com.google.mlkit.vision.pose.Pose
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseDetector
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseResult
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import citu.edu.stathis.mobile.features.tasks.presentation.ExerciseSyncViewModel
 import citu.edu.stathis.mobile.features.exercise.domain.ExerciseCalorieCalculator
@@ -1067,6 +1070,8 @@ private fun ExerciseControlsOverlay(
     }
 
     // Function to handle pose detection
+    val exerciseDetector = remember { ExerciseDetector() }
+    var latestPose by remember { mutableStateOf<Pose?>(null) }
     val handlePoseDetection = remember(template.exerciseType) { { pose: Pose ->
         latestPose = pose
         val result: ExerciseResult = when (resolveExerciseType(template.exerciseType)) {

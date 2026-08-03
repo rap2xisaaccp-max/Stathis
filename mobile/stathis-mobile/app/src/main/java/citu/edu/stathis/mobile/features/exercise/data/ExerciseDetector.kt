@@ -634,6 +634,7 @@ class ExerciseDetector {
         val avgShoulderY = (leftShoulderY + rightShoulderY) / 2f
         val torsoSpan = abs(avgHipY - avgShoulderY).coerceAtLeast(1f)
         val instantLegSpan = abs(avgAnkleY - avgHipY).coerceAtLeast(torsoSpan)
+        val avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2f
 
         // Capture resting pose while waiting / after a completed lower.
         val looksRested =
@@ -828,7 +829,6 @@ class ExerciseDetector {
         }
 
 
-        val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
             return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore = null)
@@ -849,7 +849,7 @@ class ExerciseDetector {
                 // DOWN = legs raised phase in this detector
                 ExerciseState.DOWN -> min(
                     FormAccuracy.atLeast(avgKneeAngle, 160f, 130f),
-                    FormAccuracy.atLeast((avgHipY - avgAnkleY) / bodySpan, 0.2f, 0.05f)
+                    FormAccuracy.atLeast((avgHipY - avgAnkleY) / torsoSpan, 0.2f, 0.05f)
                 )
                 ExerciseState.UP -> FormAccuracy.atLeast(avgKneeAngle, 160f, 130f)
                 else -> 0f
