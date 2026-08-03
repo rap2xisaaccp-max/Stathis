@@ -59,6 +59,11 @@ function averageAttemptAccuracy(attempts: ScoreAttemptResponseDTO[]): number | n
   return validAccuracies.reduce((sum, accuracy) => sum + accuracy, 0) / validAccuracies.length;
 }
 
+function averageAttemptValue(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
@@ -182,12 +187,19 @@ export function StudentTaskStatsModal({
     (attempts.length > 0 ? attempts[attempts.length - 1]?.accuracy : null) ??
     null;
 
+  const averageScore = averageAttemptValue(attempts.map((attempt) => attempt.score));
+  const averageMaxScore = averageAttemptValue(
+    attempts.map((attempt) => attempt.maxScore ?? task?.maxScore ?? 100)
+  );
+
   const displayScore =
-    primary != null
-      ? `${primary.score}/${primary.maxScore || task?.maxScore || 100}`
-      : task?.score != null
-        ? `${task.score}/${task.maxScore ?? 100}`
-        : '—';
+    averageScore != null && averageMaxScore != null
+      ? `${averageScore.toFixed(1)}/${averageMaxScore.toFixed(1)}`
+      : primary != null
+        ? `${primary.score}/${primary.maxScore || task?.maxScore || 100}`
+        : task?.score != null
+          ? `${task.score}/${task.maxScore ?? 100}`
+          : '—';
 
   const displayAttempts = primary?.attempts ?? task?.attempts ?? attempts.length ?? 0;
   const displayReps =
