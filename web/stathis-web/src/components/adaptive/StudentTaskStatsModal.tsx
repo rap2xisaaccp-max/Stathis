@@ -49,6 +49,16 @@ function formatAccuracy(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`;
 }
 
+function averageAttemptAccuracy(attempts: ScoreAttemptResponseDTO[]): number | null {
+  const validAccuracies = attempts
+    .map((attempt) => attempt.accuracy)
+    .filter((value): value is number => value != null && !Number.isNaN(value));
+
+  if (validAccuracies.length === 0) return null;
+
+  return validAccuracies.reduce((sum, accuracy) => sum + accuracy, 0) / validAccuracies.length;
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
@@ -165,7 +175,9 @@ export function StudentTaskStatsModal({
   const isLoading = scoresQuery.isLoading || attemptsQuery.isLoading;
   const isError = scoresQuery.isError || attemptsQuery.isError;
 
+  const averageAccuracy = averageAttemptAccuracy(attempts);
   const latestAccuracy =
+    averageAccuracy ??
     primary?.accuracy ??
     (attempts.length > 0 ? attempts[attempts.length - 1]?.accuracy : null) ??
     null;
