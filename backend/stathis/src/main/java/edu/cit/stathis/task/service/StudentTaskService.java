@@ -495,8 +495,13 @@ public class StudentTaskService {
         if (goalReps <= 0) {
             return 0;
         }
-        // Score = completed reps / target reps × 100 (capped at 100)
-        return (int) Math.round(Math.min(1.0, (double) reps / goalReps) * 100.0);
+        // Combine reps completion ratio with form accuracy reported by mobile clients.
+        // repsRatio = min(1.0, reps / goalReps)
+        // accNorm = clamp(accuracy, 0..100) / 100
+        // final score = repsRatio * accNorm * 100 (capped at 100)
+        double repsRatio = Math.min(1.0, (double) reps / goalReps);
+        double accNorm = Math.max(0.0, Math.min(100.0, accuracy)) / 100.0;
+        return (int) Math.round(Math.min(1.0, repsRatio * accNorm) * 100.0);
     }
 
     @Transactional

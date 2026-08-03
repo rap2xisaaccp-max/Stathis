@@ -165,10 +165,16 @@ export function StudentTaskStatsModal({
   const isLoading = scoresQuery.isLoading || attemptsQuery.isLoading;
   const isError = scoresQuery.isError || attemptsQuery.isError;
 
-  const latestAccuracy =
-    primary?.accuracy ??
-    (attempts.length > 0 ? attempts[attempts.length - 1]?.accuracy : null) ??
-    null;
+  const latestAccuracy = (() => {
+    // Prefer authoritative primary score accuracy when present
+    if (primary?.accuracy != null && !Number.isNaN(primary.accuracy)) return primary.accuracy;
+    // Otherwise compute average accuracy across recorded attempts (total accuracy of each attempt)
+    if (!attempts || attempts.length === 0) return null;
+    const vals = attempts.map((a) => a.accuracy).filter((v) => v != null && !Number.isNaN(v)) as number[];
+    if (vals.length === 0) return null;
+    const sum = vals.reduce((s, v) => s + v, 0);
+    return sum / vals.length;
+  })();
 
   const displayScore =
     primary != null
