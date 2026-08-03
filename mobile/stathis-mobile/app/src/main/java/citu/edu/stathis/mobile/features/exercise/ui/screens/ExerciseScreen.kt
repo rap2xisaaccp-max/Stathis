@@ -754,7 +754,7 @@ fun ExerciseScreen(
                         }
                     }
 
-                    if (exerciseState.messages.isNotEmpty()) {
+                    if (showExerciseFeedbackOverlay && exerciseState.messages.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         exerciseState.messages.forEach { message ->
                             Text(
