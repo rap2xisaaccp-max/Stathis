@@ -36,6 +36,10 @@ import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.Classro
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.EnrollmentState
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomsState
 import citu.edu.stathis.mobile.features.tasks.navigation.navigateToTaskList
+import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskProgressCalculator
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskCompletionCache
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,7 +47,8 @@ import kotlinx.coroutines.launch
 fun LearnScreen(
     navController: NavHostController,
     viewModel: ClassroomViewModel = hiltViewModel(),
-    dashboardViewModel: DashboardViewModel = hiltViewModel()
+    dashboardViewModel: DashboardViewModel = hiltViewModel(),
+    taskViewModel: TaskViewModel = hiltViewModel()
 ) {
     val classroomsState by viewModel.classroomsState.collectAsState()
     val verifiedMap by viewModel.verifiedMap.collectAsState()
@@ -51,11 +56,53 @@ fun LearnScreen(
     val progressState by dashboardViewModel.progressState.collectAsState()
     val tasksState by dashboardViewModel.tasksState.collectAsState()
 
+    val allTasks = when (val state = tasksState) {
+        is TasksState.Success -> state.tasks
+        else -> emptyList()
+    }
+
+    var taskProgressMap by remember {
+        mutableStateOf<Map<String, TaskProgressResponse?>>(emptyMap())
+    }
+
     LaunchedEffect(Unit) {
         // Load enrolled classrooms for the student
         viewModel.loadStudentClassrooms()
         // Initialize dashboard to fetch progress, tasks, vitals, etc.
         dashboardViewModel.initializeDashboard()
+    }
+
+    LaunchedEffect(allTasks) {
+        if (allTasks.isEmpty()) {
+            taskProgressMap = emptyMap()
+            return@LaunchedEffect
+        }
+        val map = mutableMapOf<String, TaskProgressResponse?>()
+        allTasks.forEach { task ->
+            runCatching {
+                map[task.physicalId] = taskViewModel.getTaskProgress(task.physicalId, suppressError = true)
+            }
+        }
+        taskProgressMap = map
+    }
+
+    val completionUpdates by TaskCompletionCache.completionUpdates.collectAsState()
+    LaunchedEffect(completionUpdates, allTasks) {
+        if (completionUpdates > 0 && allTasks.isNotEmpty()) {
+            val map = mutableMapOf<String, TaskProgressResponse?>()
+            allTasks.forEach { task ->
+                runCatching {
+                    map[task.physicalId] = taskViewModel.getTaskProgress(task.physicalId, suppressError = true)
+                }
+            }
+            taskProgressMap = map
+        }
+    }
+
+    val overallProgressLabel = when (tasksState) {
+        is TasksState.Success, is TasksState.Empty ->
+            TaskProgressCalculator.progressPercentageLabel(allTasks, taskProgressMap)
+        else -> "--"
     }
 
     var enrollDialog by remember { mutableStateOf(false) }
@@ -116,7 +163,7 @@ fun LearnScreen(
 
     // Stats Row
     LearnStatsRow(
-        progressState = progressState,
+        progressValue = overallProgressLabel,
         tasksState = tasksState
     )
 
@@ -181,10 +228,16 @@ fun LearnScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             enrolled.forEach { classroom ->
+                                val classroomTasks = allTasks.filter {
+                                    it.classroomPhysicalId == classroom.physicalId
+                                }
                                 ClassroomCard(
                                     classroom = classroom,
                                     isUnlocked = true,
-                                    progress = 0.0f,
+                                    progress = TaskProgressCalculator.progressFraction(
+                                        classroomTasks,
+                                        taskProgressMap
+                                    ),
                                     onClick = { 
                                         if (verifiedMap[classroom.physicalId] == true) {
                                             navController.navigate("classroom_detail/${classroom.physicalId}")
@@ -284,7 +337,7 @@ fun LearnScreen(
 
 @Composable
 private fun LearnStatsRow(
-    progressState: ProgressState,
+    progressValue: String,
     tasksState: TasksState
 ) {
     Row(
@@ -295,14 +348,7 @@ private fun LearnStatsRow(
     ) {
         LearnStatCard(
             title = "Progress",
-            value = when (progressState) {
-                is ProgressState.Success -> {
-                    val pct = ((progressState.progress.completedTasks.toFloat() /
-                        (progressState.progress.totalTasks.takeIf { it > 0 } ?: 1)) * 100).toInt()
-                    "$pct%"
-                }
-                else -> "--"
-            },
+            value = progressValue,
             icon = Icons.Default.TrendingUp,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f)

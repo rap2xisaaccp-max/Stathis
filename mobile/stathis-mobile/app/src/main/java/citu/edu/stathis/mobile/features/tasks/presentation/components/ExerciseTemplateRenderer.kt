@@ -1964,7 +1964,8 @@ private fun ExerciseResults(
                         actual = performance.actualAccuracy.toInt(),
                         goal = performance.goalAccuracy,
                         isGood = performance.actualAccuracy >= performance.goalAccuracy,
-                        suffix = "%"
+                        suffix = "%",
+                        showGoal = false
                     )
 
                     PerformanceItem(
@@ -2045,7 +2046,8 @@ private fun PerformanceItem(
     actual: Int,
     goal: Int,
     isGood: Boolean,
-    suffix: String = ""
+    suffix: String = "",
+    showGoal: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -2074,11 +2076,13 @@ private fun PerformanceItem(
                 }
             )
 
-            Text(
-                text = " / $goal$suffix",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (showGoal) {
+                Text(
+                    text = " / $goal$suffix",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.width(8.dp))
 
