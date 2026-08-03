@@ -828,36 +828,14 @@ class ExerciseDetector {
         }
 
 
-        val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
-        if (confidence < defaultConfidenceThreshold) {
-            feedback.add("Low detection confidence")
-            return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore = null)
-        }
-
-        when (lyingLegRaiseState) {
-            ExerciseState.DOWN -> {
-                if (avgAnkleY >= avgHipY - raiseThreshold * 0.7f) {
-                    feedback.add("Raise your legs higher while keeping them controlled.")
-                }
-            }
-            else -> Unit
-        }
-
-        val formScore = assessActiveFormScore(
-            state = lyingLegRaiseState,
-            phaseScore = when (lyingLegRaiseState) {
-                // DOWN = legs raised phase in this detector
-                ExerciseState.DOWN -> min(
-                    FormAccuracy.atLeast(avgKneeAngle, 160f, 130f),
-                    FormAccuracy.atLeast((avgHipY - avgAnkleY) / bodySpan, 0.2f, 0.05f)
-                )
-                ExerciseState.UP -> FormAccuracy.atLeast(avgKneeAngle, 160f, 130f)
-                else -> 0f
-            },
-            formIssueCount = feedback.size
+        // #endregion
+        return ExerciseResult(
+            lyingLegRaiseState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            lyingLegRaiseRepCount
         )
-
-        return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore)
     }
 
     /**

@@ -1066,27 +1066,6 @@ private fun ExerciseControlsOverlay(
         )
     }
 
-    // Function to handle pose detection
-    val handlePoseDetection = remember(template.exerciseType) { { pose: Pose ->
-        latestPose = pose
-        val result: ExerciseResult = when (resolveExerciseType(template.exerciseType)) {
-            ExerciseType.SQUAT -> exerciseDetector.analyzeSquat(pose)
-            ExerciseType.PUSHUP -> exerciseDetector.analyzePushup(pose)
-            ExerciseType.SIT_UP -> exerciseDetector.analyzeSitup(pose)
-            ExerciseType.GLUTE_BRIDGE -> exerciseDetector.analyzeGluteBridge(pose)
-            ExerciseType.STATIC_LUNGE -> exerciseDetector.analyzeStaticLunge(pose)
-            ExerciseType.LYING_LEG_RAISE -> exerciseDetector.analyzeLyingLegRaise(pose)
-            else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
-        }
-
-        applyLiveReps(result.repCount)
-        exerciseState = result.state
-        exerciseConfidence = result.confidence ?: 0f
-        exerciseFeedback = result.feedback
-        formAccuracyTracker.record(result.formScore)
-        currentAccuracy = formAccuracyTracker.currentAccuracyPercent()
-    } }
-
     val healthConnectViewModel: HealthConnectViewModel = hiltViewModel()
     val connectionState by healthConnectViewModel.connectionState.collectAsState()
     val vitalSigns by healthConnectViewModel.vitalSigns.collectAsState()
@@ -1188,22 +1167,13 @@ private fun ExerciseControlsOverlay(
         }
 
 
-        // First Start of an attempt: clear only when parent has no progress.
-        // If overlay remounted mid-session, parent sessionReps/sessionInProgress survive â€” do not wipe.
-        if (!sessionInProgress) {
-            onSessionInProgressChange(true)
-            if (ExerciseGoalCompletion.shouldClearCountersOnStart(sessionReps)) {
-                exerciseDetector.resetExercise()
-                sessionRepAccumulator.reset()
-                formAccuracyTracker.reset()
-                currentReps = 0
-                onSessionRepsChange(0)
-                currentTime = 0
-                currentAccuracy = 0f
-            } else {
-                currentReps = sessionReps
-            }
-
+        // Attempt activation (detector reset + APSLE) is owned by parent onTimerRunningChange.
+        // Keep local time/display aligned when resuming mid-attempt after remount.
+        if (sessionInProgress) {
+            currentReps = sessionReps
+        } else {
+            currentTime = 0
+            currentReps = 0
         }
 
         while (!hasEmittedCompletion) {

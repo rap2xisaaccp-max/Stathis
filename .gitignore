@@ -78,3 +78,5 @@ app/build/
 *.swo
 *.tmp
 *.bak
+
+.gradle-local/
