@@ -804,8 +804,7 @@ function StudentProgressSnapshotCard({
   const [statsOpen, setStatsOpen] = useState(false);
 
   const items = (progressItems || [])
-    .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON')
-    .slice(0, 6);
+    .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON');
 
   const openTaskStats = (item: ProgressSnapshotItem) => {
     setSelectedTask(item);
@@ -828,7 +827,7 @@ function StudentProgressSnapshotCard({
               No scored quiz/exercise progress yet for this classroom.
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
               {items.map((item) => (
                 <div
                   key={`${item.taskId}-${item.taskType}`}
