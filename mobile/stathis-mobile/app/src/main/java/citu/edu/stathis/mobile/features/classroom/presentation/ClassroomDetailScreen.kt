@@ -80,6 +80,7 @@ fun ClassroomDetailScreen(
 
     LaunchedEffect(classroomId) { 
         viewModel.loadClassroomTasks(classroomId)
+        viewModel.loadClassroomDetails(classroomId)
     }
     LaunchedEffect(verifiedMapState.value.isEmpty()) {
         if (verifiedMapState.value.isEmpty()) viewModel.loadStudentClassrooms()
@@ -92,6 +93,26 @@ fun ClassroomDetailScreen(
     val classroomTasks = when (currentTasksState) {
         is citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.TasksState.Success -> currentTasksState.tasks
         else -> emptyList()
+    }
+    // Shared progress map for tasks in this classroom (taskId -> TaskProgressResponse?)
+    // Obtain TaskViewModel in composable scope (hiltViewModel is @Composable)
+    val taskViewModel: citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel = hiltViewModel()
+
+    // Shared progress map for tasks in this classroom (taskId -> TaskProgressResponse?)
+    var progressMap by remember { mutableStateOf<Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>(emptyMap()) }
+    LaunchedEffect(classroomTasks) {
+        if (classroomTasks.isNotEmpty()) {
+            val map = mutableMapOf<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>()
+            classroomTasks.forEach { task ->
+                runCatching {
+                    val p = taskViewModel.getTaskProgress(task.physicalId, suppressError = true)
+                    map[task.physicalId] = p
+                }
+            }
+            progressMap = map
+        } else {
+            progressMap = emptyMap()
+        }
     }
     
     if (verificationStatus == null) {
@@ -201,20 +222,22 @@ fun ClassroomDetailScreen(
                     )
                 }
 
-                // Quick Stats
+                // Quick Stats (use shared progressMap so top card matches detailed view)
                 item {
                     QuickStatsSection(
                         classroom = classroom,
                         classroomTasks = classroomTasks,
+                        taskProgressMap = progressMap,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
 
-                // Progress Overview
+                // Progress Overview (use shared progress map)
                 item {
                     ProgressOverviewSection(
                         classroom = classroom,
                         classroomTasks = classroomTasks,
+                        taskProgressMap = progressMap,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
@@ -363,6 +386,7 @@ private fun ClassroomHeroSection(
 private fun QuickStatsSection(
     classroom: citu.edu.stathis.mobile.features.classroom.data.model.Classroom?,
     classroomTasks: List<citu.edu.stathis.mobile.features.tasks.data.model.Task>,
+    taskProgressMap: Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>,
     modifier: Modifier = Modifier
 ) {
     LazyRow(
@@ -389,7 +413,7 @@ private fun QuickStatsSection(
         item {
             StatCard(
                 title = "Progress",
-                value = calculateProgressPercentage(classroomTasks),
+                value = calculateProgressPercentage(classroomTasks, taskProgressMap),
                 icon = Icons.Default.TrendingUp,
                 color = MaterialTheme.colorScheme.tertiary
             )
@@ -455,24 +479,10 @@ private fun StatCard(
 private fun ProgressOverviewSection(
     classroom: citu.edu.stathis.mobile.features.classroom.data.model.Classroom?,
     classroomTasks: List<citu.edu.stathis.mobile.features.tasks.data.model.Task>,
-    modifier: Modifier = Modifier,
-    taskViewModel: citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    taskProgressMap: Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>,
+    modifier: Modifier = Modifier
 ) {
     val totalTasks = classroomTasks.size
-    // Build progress map from student perspective
-    var progressMap by remember { mutableStateOf<Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>(emptyMap()) }
-    LaunchedEffect(classroomTasks) {
-        if (classroomTasks.isNotEmpty()) {
-            val map = mutableMapOf<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>()
-            classroomTasks.forEach { task ->
-                runCatching {
-                    val p = taskViewModel.getTaskProgress(task.physicalId, suppressError = true)
-                    map[task.physicalId] = p
-                }
-            }
-            progressMap = map
-        }
-    }
 
     // Filter out deactivated / unstarted tasks for student-centric progress calculation
     val activeTasks = classroomTasks.filter { task ->
@@ -483,13 +493,13 @@ private fun ProgressOverviewSection(
     val activeTotalTasks = activeTasks.size
     
     val completedTasks = activeTasks.count { task ->
-        val progress = progressMap[task.physicalId]
+        val progress = taskProgressMap[task.physicalId]
         val lessonAttempts = citu.edu.stathis.mobile.features.tasks.presentation.LessonAttemptsCache.getAttempts(task.physicalId)
         (progress?.quizAttempts ?: 0) > 0 || (progress?.lessonCompleted == true) || (progress?.exerciseCompleted == true) || (lessonAttempts > 0)
     }
     val remainingTasks = (activeTotalTasks - completedTasks).coerceAtLeast(0)
     val progressPercentage = if (activeTotalTasks > 0) completedTasks.toFloat() / activeTotalTasks else 0f
-    
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),

@@ -171,6 +171,12 @@ fun LearnScreen(
                         val classroomNameById = currentState.classrooms.associate { it.physicalId to it.name }
 
                         // Enrolled Classrooms Section
+                        // Build a map of classroom progress from the dashboard progress state
+                        val classroomProgressMap: Map<String, citu.edu.stathis.mobile.features.progress.data.model.ClassroomProgressSummary> = when (progressState) {
+                            is ProgressState.Success -> (progressState as ProgressState.Success).progress.classroomProgress.associateBy { it.classroomId }
+                            else -> emptyMap()
+                        }
+
                         if (enrolled.isNotEmpty()) {
                             Text(
                                 text = "Enrolled",
@@ -181,10 +187,11 @@ fun LearnScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             enrolled.forEach { classroom ->
+                                val pct = classroomProgressMap[classroom.physicalId]?.completionPercentage ?: 0f
                                 ClassroomCard(
                                     classroom = classroom,
                                     isUnlocked = true,
-                                    progress = 0.0f,
+                                    progress = pct,
                                     onClick = { 
                                         if (verifiedMap[classroom.physicalId] == true) {
                                             navController.navigate("classroom_detail/${classroom.physicalId}")
@@ -213,10 +220,11 @@ fun LearnScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             pending.forEach { classroom ->
+                                val pctPending = classroomProgressMap[classroom.physicalId]?.completionPercentage ?: 0f
                                 ClassroomCard(
                                     classroom = classroom,
                                     isUnlocked = false,
-                                    progress = 0.0f,
+                                    progress = pctPending,
                                     onClick = { /* blocked */ },
                                     onViewTasks = { /* blocked */ },
                                     modifier = Modifier.padding(horizontal = 16.dp)
