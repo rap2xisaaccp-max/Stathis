@@ -23,10 +23,11 @@ import timber.log.Timber
 @Singleton
 class AdaptiveFeedbackEngine @Inject constructor(
     private val adaptiveApi: AdaptiveApi,
-    private val delivery: AdaptiveFeedbackDelivery
+    private val delivery: AdaptiveFeedbackDelivery,
+    // Injected OfflineQueue with default binding to in-memory AdaptiveOfflineQueue via Hilt.
+    private val offlineQueue: OfflineQueue = AdaptiveOfflineQueue(maxRetries = 5)
 ) {
     private val pendingResponses = ConcurrentLinkedQueue<PendingIntervention>()
-    private val offlineQueue = AdaptiveOfflineQueue(maxRetries = 5)
     private val signalMutex = Mutex()
 
     @Volatile private var sessionId: String = ""
@@ -43,7 +44,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
     @Volatile private var sessionRecorded: Boolean = false
 
     /** Exposed for tests / diagnostics. */
-    fun offlineQueueForTests(): AdaptiveOfflineQueue = offlineQueue
+    fun offlineQueueForTests(): AdaptiveOfflineQueue =
+        if (offlineQueue is AdaptiveOfflineQueue) offlineQueue else throw IllegalStateException("offlineQueue is not AdaptiveOfflineQueue")
 
     /** Exposed for diagnostics / UI status. */
     fun lifecyclePhase(): InterventionPhase = interventionLifecycle.phase

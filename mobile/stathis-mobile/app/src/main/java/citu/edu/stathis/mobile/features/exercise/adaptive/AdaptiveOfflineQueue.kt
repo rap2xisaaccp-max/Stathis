@@ -4,23 +4,13 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Offline-first intervention/response upload queue.
+ * Offline-first intervention/response upload queue (in-memory).
  *
- * Failed flushes are re-queued with a retry counter. Items exceeding [maxRetries] are dropped
- * into [deadLetterCount] so the session can continue without unbounded memory growth.
+ * Implements OfflineQueue so callers may be switched to a persistent implementation via DI.
  */
 class AdaptiveOfflineQueue(
     private val maxRetries: Int = 5
-) {
-    data class QueuedIntervention(
-        val payload: InterventionRequestDto,
-        val attempts: Int = 0
-    )
-
-    data class QueuedResponse(
-        val payload: ResponseRequestDto,
-        val attempts: Int = 0
-    )
+) : OfflineQueue {
 
     private val interventions = ConcurrentLinkedQueue<QueuedIntervention>()
     private val responses = ConcurrentLinkedQueue<QueuedResponse>()
@@ -30,7 +20,7 @@ class AdaptiveOfflineQueue(
     val pendingInterventionCount: Int get() = interventions.size
     val pendingResponseCount: Int get() = responses.size
 
-    fun enqueueIntervention(payload: InterventionRequestDto) {
+    override fun enqueueIntervention(payload: InterventionRequestDto) {
         val id = payload.physicalId
         if (!id.isNullOrBlank() && interventions.any { it.payload.physicalId == id }) {
             return // idempotent: retries reuse the same FI physicalId
@@ -38,7 +28,7 @@ class AdaptiveOfflineQueue(
         interventions.add(QueuedIntervention(payload))
     }
 
-    fun enqueueResponse(payload: ResponseRequestDto) {
+    override fun enqueueResponse(payload: ResponseRequestDto) {
         val fi = payload.interventionPhysicalId
         if (fi.isNotBlank() && responses.any { it.payload.interventionPhysicalId == fi }) {
             return // one FR per FI
@@ -47,7 +37,7 @@ class AdaptiveOfflineQueue(
     }
 
     /** Snapshot and clear current pending items for an upload attempt. */
-    fun drain(): Pair<List<QueuedIntervention>, List<QueuedResponse>> {
+    override fun drain(): Pair<List<QueuedIntervention>, List<QueuedResponse>> {
         val drainedInterventions = mutableListOf<QueuedIntervention>()
         while (true) {
             drainedInterventions.add(interventions.poll() ?: break)
@@ -63,7 +53,7 @@ class AdaptiveOfflineQueue(
      * Re-queue failed items with incremented attempt counts.
      * @return number of items accepted back into the live queue
      */
-    fun requeueAfterFailure(
+    override fun requeueAfterFailure(
         failedInterventions: List<QueuedIntervention>,
         failedResponses: List<QueuedResponse>
     ): Int {
@@ -89,10 +79,10 @@ class AdaptiveOfflineQueue(
         return accepted
     }
 
-    fun clear() {
+    override fun clear() {
         interventions.clear()
         responses.clear()
     }
 
-    fun isEmpty(): Boolean = interventions.isEmpty() && responses.isEmpty()
+    override fun isEmpty(): Boolean = interventions.isEmpty() && responses.isEmpty()
 }

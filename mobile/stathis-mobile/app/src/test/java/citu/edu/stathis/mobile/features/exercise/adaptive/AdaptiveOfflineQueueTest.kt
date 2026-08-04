@@ -67,7 +67,7 @@ class AdaptiveOfflineQueueTest {
         val queue = AdaptiveOfflineQueue(maxRetries = 2)
         var batch =
             listOf(
-                AdaptiveOfflineQueue.QueuedIntervention(
+                QueuedIntervention(
                     payload =
                         InterventionRequestDto(
                             sessionId = "SES-1",
