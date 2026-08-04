@@ -10,6 +10,7 @@ import edu.cit.stathis.adaptive.repository.FeedbackInterventionRepository;
 import edu.cit.stathis.adaptive.repository.FeedbackResponseRepository;
 import edu.cit.stathis.classroom.entity.Classroom;
 import edu.cit.stathis.classroom.repository.ClassroomRepository;
+import edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -128,7 +129,7 @@ public class AdaptiveFeedbackService {
             .sessionId(req.getSessionId())
             .taskId(req.getTaskId())
             .classroomId(req.getClassroomId())
-            .exerciseType(req.getExerciseType())
+            .exerciseType(CoachingInstructionCatalog.normalizeExercise(req.getExerciseType()))
             .errorCode(req.getErrorCode() != null ? req.getErrorCode() : FormErrorCode.UNKNOWN)
             .modality(
                 req.getModality() != null ? req.getModality() : FeedbackModality.VERBAL_TEXT)

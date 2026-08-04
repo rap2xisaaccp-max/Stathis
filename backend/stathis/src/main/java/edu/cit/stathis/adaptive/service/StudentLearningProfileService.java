@@ -81,16 +81,30 @@ public class StudentLearningProfileService {
             : new HashMap<>();
 
     String modalityKey = intervention.getModality().name();
-    String compositeKey =
+    // Normalize exercise type for internal aggregated composite keys, but also keep raw composite key for
+    // backward compatibility with existing data and tests.
+    String normalizedExercise = edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog.normalizeExercise(intervention.getExerciseType());
+    String rawExercise = intervention.getExerciseType() != null ? intervention.getExerciseType() : normalizedExercise;
+
+    String compositeKeyNormalized =
         ProfileEffectivenessMath.compositeKey(
-            intervention.getExerciseType(),
+            normalizedExercise,
+            intervention.getErrorCode().name(),
+            modalityKey);
+    String compositeKeyRaw =
+        ProfileEffectivenessMath.compositeKey(
+            rawExercise,
             intervention.getErrorCode().name(),
             modalityKey);
 
     ProfileEffectivenessMath.updateBucket(
         effectiveness, modalityKey, response.getDelta(), response.isSuccess());
     ProfileEffectivenessMath.updateBucket(
-        effectiveness, compositeKey, response.getDelta(), response.isSuccess());
+        effectiveness, compositeKeyNormalized, response.getDelta(), response.isSuccess());
+    if (!compositeKeyNormalized.equals(compositeKeyRaw)) {
+      ProfileEffectivenessMath.updateBucket(
+          effectiveness, compositeKeyRaw, response.getDelta(), response.isSuccess());
+    }
 
     profile.setModalityEffectivenessJson(effectiveness);
 
@@ -114,8 +128,51 @@ public class StudentLearningProfileService {
 
     profile.setPreferredModality(
         ProfileEffectivenessMath.derivePreferredModality(effectiveness));
-    profile.setPreferredModalityByExerciseJson(
-        ProfileEffectivenessMath.derivePreferredByExercise(effectiveness));
+
+    // Compute per-exercise preferred modalities but preserve existing LEARNED rows unless
+    // sufficient new evidence supports a change (hysteresis to avoid oscillation).
+    Map<String, Object> newByExercise = ProfileEffectivenessMath.derivePreferredByExercise(effectiveness);
+    Map<String, Object> oldByExercise = profile.getPreferredModalityByExerciseJson() != null
+        ? new HashMap<>(profile.getPreferredModalityByExerciseJson())
+        : new HashMap<>();
+
+    final int REASSIGN_MIN_ADDITIONAL_N = 3; // require at least this many extra samples to switch a learned modality
+    for (Map.Entry<String, Object> e : new HashMap<>(newByExercise).entrySet()) {
+      String ex = e.getKey();
+      Object newRowObj = e.getValue();
+      if (!(newRowObj instanceof Map)) continue;
+      @SuppressWarnings("unchecked")
+      Map<String, Object> newRow = (Map<String, Object>) newRowObj;
+      String newMod = String.valueOf(newRow.getOrDefault("modality", "VERBAL_TEXT"));
+      int newN = ((Number) newRow.getOrDefault("n", 0)).intValue();
+
+      Object oldRowObj = oldByExercise.get(ex);
+      if (oldRowObj instanceof Map) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> oldRow = (Map<String, Object>) oldRowObj;
+        String oldSource = String.valueOf(oldRow.getOrDefault("source", "DEFAULT"));
+        String oldMod = String.valueOf(oldRow.getOrDefault("modality", "VERBAL_TEXT"));
+        int oldN = ((Number) oldRow.getOrDefault("n", 0)).intValue();
+        if ("LEARNED".equals(oldSource) && !oldMod.equals(newMod)) {
+          // Not enough new evidence to switch learned modality?
+          if (newN < oldN + REASSIGN_MIN_ADDITIONAL_N) {
+            // Preserve old learned row
+            newByExercise.put(ex, oldRow);
+          }
+        }
+      }
+    }
+
+    // Ensure preferredByExercise keys align with the raw exercise string provided in the intervention
+    String rawExerciseKey = intervention.getExerciseType() != null ? intervention.getExerciseType() : normalizedExercise;
+    if (!rawExerciseKey.equals(normalizedExercise) && newByExercise.containsKey(normalizedExercise)) {
+      if (!newByExercise.containsKey(rawExerciseKey)) {
+        newByExercise.put(rawExerciseKey, newByExercise.get(normalizedExercise));
+      }
+      newByExercise.remove(normalizedExercise);
+    }
+
+    profile.setPreferredModalityByExerciseJson(newByExercise);
 
     StudentLearningProfile saved = profileRepository.save(profile);
     maybeSnapshot(saved, "response:" + response.getPhysicalId());

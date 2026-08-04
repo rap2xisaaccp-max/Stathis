@@ -45,6 +45,8 @@ public class AdaptivePolicyService {
         request.getErrorCode() != null ? request.getErrorCode() : FormErrorCode.UNKNOWN;
     String exerciseType =
         request.getExerciseType() != null ? request.getExerciseType() : "UNKNOWN";
+    // Normalize exercise type so policy composite keys match stored evidence
+    exerciseType = edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog.normalizeExercise(exerciseType);
 
     InstructionIntensity intensity = InstructionIntensity.REMINDER;
     if (Boolean.TRUE.equals(request.getStaticControl())) {
