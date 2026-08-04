@@ -70,6 +70,13 @@ import {
   ProgressSnapshotItem,
 } from '@/components/adaptive/StudentTaskStatsModal';
 
+const CANONICAL_EXERCISE_TYPES: { value: string; label: string }[] = [
+  { value: 'PUSH_UPS', label: 'Push ups' },
+  { value: 'SQUATS', label: 'Squats' },
+  { value: 'GLUTE_BRIDGE', label: 'Glute bridge' },
+  { value: 'LYING_LEG_RAISES', label: 'Lying leg raises' },
+  { value: 'STATIC_LUNGES', label: 'Static lunges' },
+];
 
 function formatPct(value: number | null | undefined, n?: number): string {
   if (n === 0) return 'Insufficient data';
@@ -809,12 +816,15 @@ function StudentProgressSnapshotCard({
     .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON');
 
   const availableTypes = Array.from(
-    new Set(items.map((i) => (i.taskType || 'TASK').toUpperCase()))
+    new Set([
+      ...CANONICAL_EXERCISE_TYPES.map((t) => t.value),
+      ...items.map((i) => (i.taskType || 'TASK').toUpperCase()),
+    ])
   ).sort();
 
   const filteredItems = items.filter((item) => {
-    const typeLabel = (item.taskType || 'TASK').toUpperCase();
-    const matchesType = typeFilter === 'All' ? true : typeLabel === typeFilter;
+    const typeKey = (item.taskType || 'TASK').toUpperCase();
+    const matchesType = typeFilter === 'All' ? true : typeKey === typeFilter;
     const matchesQuery = query.trim()
       ? (`${item.taskName} ${(item.taskType || '')}`.toLowerCase().includes(query.trim().toLowerCase()))
       : true;
@@ -851,11 +861,14 @@ function StudentProgressSnapshotCard({
                   className="rounded-md border px-2 py-1 text-sm"
                 >
                   <option value="All">All exercise types</option>
-                  {availableTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {t.replaceAll('_', ' ')}
-                    </option>
-                  ))}
+                  {availableTypes.map((t) => {
+                    const label = CANONICAL_EXERCISE_TYPES.find((c) => c.value === t)?.label ?? t.replaceAll('_', ' ');
+                    return (
+                      <option key={t} value={t}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
 
                 <input
@@ -870,7 +883,8 @@ function StudentProgressSnapshotCard({
 
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {filteredItems.map((item) => {
-                  const typeLabel = (item.taskType || 'TASK').replaceAll('_', ' ');
+                  const typeKey = (item.taskType || 'TASK').toUpperCase();
+                  const typeLabel = CANONICAL_EXERCISE_TYPES.find((c) => c.value === typeKey)?.label ?? typeKey.replaceAll('_', ' ');
                   return (
                     <div
                       key={`${item.taskId}-${item.taskType}`}
