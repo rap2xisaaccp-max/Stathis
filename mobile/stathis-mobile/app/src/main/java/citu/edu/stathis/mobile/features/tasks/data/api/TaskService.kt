@@ -10,6 +10,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.QuizSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizAutoCheckRequest
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseResultSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseProgressPayload
+import citu.edu.stathis.mobile.features.tasks.data.model.ScoreAttemptResponse
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -94,6 +95,12 @@ interface TaskService {
         @Path("studentId") studentId: String,
         @Path("taskId") taskId: String
     ): Response<List<ScoreResponse>>
+
+    @GET("api/v1/scores/student/{studentId}/task/{taskId}/attempts")
+    suspend fun getAttemptsByStudentAndTask(
+        @Path("studentId") studentId: String,
+        @Path("taskId") taskId: String
+    ): Response<List<ScoreAttemptResponse>>
     // Create a TaskCompletion record so progress queries don't 403/404 when missing
     @POST("api/v1/task-completions/{taskId}")
     suspend fun createTaskCompletion(

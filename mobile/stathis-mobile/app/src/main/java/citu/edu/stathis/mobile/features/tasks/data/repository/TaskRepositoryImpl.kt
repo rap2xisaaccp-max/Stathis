@@ -9,6 +9,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.ExerciseTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizSubmission
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizAutoCheckRequest
+import citu.edu.stathis.mobile.features.tasks.data.model.ScoreAttemptResponse
 import citu.edu.stathis.mobile.core.data.AuthTokenManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -218,6 +219,18 @@ class TaskRepositoryImpl @Inject constructor(
             response.body()?.let { emit(it) } ?: throw IllegalStateException("Empty body for scores by student and task")
         } else {
             throw IllegalStateException("Failed to load scores by student and task: ${response.code()} ${response.message()}")
+        }
+    }
+
+    override suspend fun getAttemptsByStudentAndTask(
+        studentId: String,
+        taskId: String
+    ): Flow<List<ScoreAttemptResponse>> = flow {
+        val response = taskService.getAttemptsByStudentAndTask(studentId, taskId)
+        if (response.isSuccessful) {
+            response.body()?.let { emit(it) } ?: throw IllegalStateException("Empty body for attempt history")
+        } else {
+            throw IllegalStateException("Failed to load attempt history: ${response.code()} ${response.message()}")
         }
     }
 } 
