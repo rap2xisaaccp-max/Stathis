@@ -23,18 +23,17 @@ import timber.log.Timber
 @Singleton
 class AdaptiveFeedbackEngine @Inject constructor(
     private val adaptiveApi: AdaptiveApi,
-    private val delivery: AdaptiveFeedbackDelivery
+    private val delivery: AdaptiveFeedbackDelivery,
+    // Injected OfflineQueue with default binding to in-memory AdaptiveOfflineQueue via Hilt.
+    private val offlineQueue: OfflineQueue = AdaptiveOfflineQueue(maxRetries = 5)
 ) {
     private val pendingResponses = ConcurrentLinkedQueue<PendingIntervention>()
-    private val offlineQueue = AdaptiveOfflineQueue(maxRetries = 5)
     private val signalMutex = Mutex()
 
     @Volatile private var sessionId: String = ""
     @Volatile private var taskId: String? = null
     @Volatile private var classroomId: String? = null
     @Volatile private var exerciseType: String = "UNKNOWN"
-    @Volatile private var staticControl: Boolean = false
-    @Volatile private var sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
     @Volatile private var cooldownMs: Long = 8000L
     @Volatile private var activeDelivery: DeliveredFeedback? = null
     @Volatile private var cachedRecommendation: AdaptiveRecommendation? = null
@@ -45,7 +44,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
     @Volatile private var sessionRecorded: Boolean = false
 
     /** Exposed for tests / diagnostics. */
-    fun offlineQueueForTests(): AdaptiveOfflineQueue = offlineQueue
+    fun offlineQueueForTests(): AdaptiveOfflineQueue =
+        if (offlineQueue is AdaptiveOfflineQueue) offlineQueue else throw IllegalStateException("offlineQueue is not AdaptiveOfflineQueue")
 
     /** Exposed for diagnostics / UI status. */
     fun lifecyclePhase(): InterventionPhase = interventionLifecycle.phase
@@ -53,16 +53,12 @@ class AdaptiveFeedbackEngine @Inject constructor(
     fun startSession(
         exerciseType: String,
         taskId: String? = null,
-        classroomId: String? = null,
-        staticControl: Boolean = false,
-        sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
+        classroomId: String? = null
     ) {
         this.sessionId = "SES-${UUID.randomUUID().toString().uppercase()}"
         this.exerciseType = exerciseType
         this.taskId = taskId
         this.classroomId = classroomId
-        this.staticControl = staticControl
-        this.sessionContext = sessionContext
         this.activeDelivery = null
         this.cooldownMs = 8000L
         this.sessionInterventionCount = 0
@@ -73,9 +69,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
         pendingResponses.clear()
         delivery.ensureInitialized()
         Timber.d(
-            "Adaptive session started context=%s staticControl=%s exercise=%s",
-            sessionContext,
-            staticControl,
+            "Adaptive session started exercise=%s",
             exerciseType
         )
     }
@@ -212,7 +206,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     deliveredAtEpochMs = now,
                     baselineSeverity = severity.coerceIn(0.0, 1.0),
                     policySource = recommendation.policySource,
-                    experimentArm = resolveExperimentArm(recommendation.experimentArm),
+                    experimentArm = "ADAPTIVE",
                     baselineReps = currentReps
                 )
 
@@ -252,17 +246,6 @@ class AdaptiveFeedbackEngine @Inject constructor(
         return "FI-$uuid"
     }
 
-    private fun resolveExperimentArm(recommendedArm: String?): String {
-        val base =
-            when {
-                staticControl -> "STATIC"
-                !recommendedArm.isNullOrBlank() &&
-                    recommendedArm.contains("STATIC", ignoreCase = true) -> "STATIC"
-                else -> "ADAPTIVE"
-            }
-        return RctExperimentPrefs.composeArm(base, sessionContext)
-    }
-
     private suspend fun resolveRecommendation(
         errorCode: FormErrorCode,
         severity: Double,
@@ -270,18 +253,6 @@ class AdaptiveFeedbackEngine @Inject constructor(
     ): AdaptiveRecommendation {
         val catalogText = CoachingInstructionCatalog.messageText(exerciseType, errorCode, intensity)
         val catalogCode = CoachingInstructionCatalog.messageCode(exerciseType, errorCode, intensity)
-        if (staticControl) {
-            return AdaptiveRecommendation(
-                modality = FeedbackModality.VERBAL_TEXT,
-                errorCode = errorCode,
-                messageCode = catalogCode,
-                messageText = catalogText,
-                policySource = PolicySource.STATIC_CONTROL,
-                experimentArm = resolveExperimentArm("STATIC"),
-                cooldownMs = 8000
-            )
-        }
-
         return try {
             val remote =
                 withContext(Dispatchers.IO) {
@@ -289,8 +260,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                         RecommendationRequestDto(
                             exerciseType = exerciseType,
                             errorCode = errorCode.name,
-                            currentSeverity = severity,
-                            staticControl = false
+                            currentSeverity = severity
                         )
                     )
                 }
@@ -306,7 +276,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     runCatching { PolicySource.valueOf(remote.policySource ?: "DEFAULT") }
                         .getOrDefault(PolicySource.DEFAULT),
                 expectedDelta = remote.expectedDelta ?: 0.0,
-                experimentArm = remote.experimentArm ?: "ADAPTIVE",
+                experimentArm = "ADAPTIVE",
                 cooldownMs = remote.cooldownMs ?: 8000
             ).also { cachedRecommendation = it }
         } catch (t: Throwable) {
@@ -335,7 +305,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
             messageCode = CoachingInstructionCatalog.messageCode(exerciseType, errorCode, intensity),
             messageText = CoachingInstructionCatalog.messageText(exerciseType, errorCode, intensity),
             policySource = if (explore) PolicySource.EXPLORE else PolicySource.DEFAULT,
-            experimentArm = resolveExperimentArm("ADAPTIVE"),
+            experimentArm = "ADAPTIVE",
             cooldownMs = 8000
         )
     }

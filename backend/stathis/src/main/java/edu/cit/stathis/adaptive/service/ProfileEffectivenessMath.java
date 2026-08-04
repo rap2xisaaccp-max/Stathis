@@ -85,9 +85,6 @@ public final class ProfileEffectivenessMath {
     }
 
     for (FeedbackModality modality : FeedbackModality.values()) {
-      if (modality == FeedbackModality.DEMONSTRATION) {
-        continue;
-      }
       Object raw = effectiveness.get(modality.name());
       if (!(raw instanceof Map<?, ?>)) {
         continue;
@@ -139,9 +136,6 @@ public final class ProfileEffectivenessMath {
       try {
         modality = FeedbackModality.valueOf(parts[2]);
       } catch (IllegalArgumentException ex) {
-        continue;
-      }
-      if (modality == FeedbackModality.DEMONSTRATION) {
         continue;
       }
       Map<String, Object> bucket = (Map<String, Object>) e.getValue();
