@@ -809,13 +809,74 @@ export async function fetchStudentProgressItems(studentId: string, classroomId?:
     // If we have progress data and tasks, enhance the progress items with task details
     const progressItems = Array.isArray(data) ? data as StudentProgressItemDTO[] : [];
     
-    // If we have task data, enhance progress items with display names only.
-    // Preserve backend taskType so multi-component tasks (QUIZ + EXERCISE) stay distinct.
+    // If we have task data from the classroom, enhance progress items with display names and exercise template ids.
+    // Prefer exerciseTemplateId -> exerciseType mapping when available so we can show exact exercise (Push ups, Squats, ...)
     if (Object.keys(tasks).length > 0) {
-      for (const item of progressItems) {
-        const taskInfo = tasks[item.taskId];
-        if (taskInfo) {
-          item.taskName = taskInfo.name || item.taskName;
+      // tasks here comes from getClassroomTasks() which previously returned only {name,type}.
+      // Try to fetch full task records from the tasks API to obtain exerciseTemplateId.
+      try {
+        // Importing the tasks client dynamically to avoid circular imports in some bundlers
+        const { getClassroomTasks: fetchFullTasks } = await import('@/services/tasks/api-task-client');
+        const fullTasks = await fetchFullTasks(targetClassroomId);
+        const exerciseTemplateIds = new Set<string>();
+        const taskMap: Record<string, { name: string; type: string; exerciseTemplateId?: string }> = {};
+
+        if (Array.isArray(fullTasks)) {
+          for (const t of fullTasks) {
+            taskMap[t.physicalId] = {
+              name: t.name || tasks[t.physicalId]?.name || '',
+              type: t.exerciseTemplateId ? 'EXERCISE' : (t.lessonTemplateId ? 'LESSON' : (t.quizTemplateId ? 'QUIZ' : tasks[t.physicalId]?.type || 'TASK')),
+              exerciseTemplateId: t.exerciseTemplateId,
+            };
+            if (t.exerciseTemplateId) exerciseTemplateIds.add(t.exerciseTemplateId);
+          }
+        }
+
+        // Fetch exercise templates for all referenced template IDs
+        const exerciseTypeByTemplate: Record<string, string> = {};
+        if (exerciseTemplateIds.size > 0) {
+          const { getExerciseTemplate } = await import('@/services/templates/api-template-client');
+          await Promise.all(Array.from(exerciseTemplateIds).map(async (tid) => {
+            try {
+              const tmpl = await getExerciseTemplate(tid);
+              if (tmpl && tmpl.exerciseType) {
+                exerciseTypeByTemplate[tid] = tmpl.exerciseType.toUpperCase();
+              }
+            } catch (e) {
+              // ignore template fetch errors and continue
+              console.warn('Could not fetch exercise template', tid, e);
+            }
+          }));
+        }
+
+        // Apply enhancements to progress items
+        for (const item of progressItems) {
+          const full = taskMap[item.taskId];
+          if (full) {
+            item.taskName = full.name || item.taskName;
+            // Attach exerciseType if available from the template
+            if (full.exerciseTemplateId && exerciseTypeByTemplate[full.exerciseTemplateId]) {
+              // Add a non-standard field used by the UI: exerciseType
+              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+              // @ts-ignore
+              item.exerciseType = exerciseTypeByTemplate[full.exerciseTemplateId];
+            }
+          } else {
+            // fallback to existing tasks map that had name/type
+            const taskInfo = tasks[item.taskId];
+            if (taskInfo) {
+              item.taskName = taskInfo.name || item.taskName;
+            }
+          }
+        }
+      } catch (e) {
+        // If anything fails, fall back to the original lightweight enhancement
+        console.warn('Failed to enrich progress items with exercise template info:', e);
+        for (const item of progressItems) {
+          const taskInfo = tasks[item.taskId];
+          if (taskInfo) {
+            item.taskName = taskInfo.name || item.taskName;
+          }
         }
       }
     }
