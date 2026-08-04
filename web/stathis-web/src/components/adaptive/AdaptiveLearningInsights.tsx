@@ -815,18 +815,22 @@ function StudentProgressSnapshotCard({
   const items = (progressItems || [])
     .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON');
 
+  // Build available types from canonical list + actual item.exerciseType when present.
   const availableTypes = Array.from(
     new Set([
       ...CANONICAL_EXERCISE_TYPES.map((t) => t.value),
-      ...items.map((i) => (i.taskType || 'TASK').toUpperCase()),
+      ...items.map((i) => ((i as any).exerciseType || i.taskType || 'TASK').toUpperCase()),
     ])
-  ).sort();
+  )
+    // Remove generic 'EXERCISE' option so teachers see concrete exercise types only
+    .filter((t) => t !== 'EXERCISE')
+    .sort();
 
   const filteredItems = items.filter((item) => {
-    const typeKey = (item.taskType || 'TASK').toUpperCase();
+    const typeKey = ((item as any).exerciseType || item.taskType || 'TASK').toUpperCase();
     const matchesType = typeFilter === 'All' ? true : typeKey === typeFilter;
     const matchesQuery = query.trim()
-      ? (`${item.taskName} ${(item.taskType || '')}`.toLowerCase().includes(query.trim().toLowerCase()))
+      ? (`${item.taskName} ${((item as any).exerciseType || item.taskType || '')}`.toLowerCase().includes(query.trim().toLowerCase()))
       : true;
     return matchesType && matchesQuery;
   });
@@ -883,11 +887,11 @@ function StudentProgressSnapshotCard({
 
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {filteredItems.map((item) => {
-                  const typeKey = (item.taskType || 'TASK').toUpperCase();
+                  const typeKey = (((item as any).exerciseType || item.taskType) || 'TASK').toUpperCase();
                   const typeLabel = CANONICAL_EXERCISE_TYPES.find((c) => c.value === typeKey)?.label ?? typeKey.replaceAll('_', ' ');
                   return (
                     <div
-                      key={`${item.taskId}-${item.taskType}`}
+                      key={`${item.taskId}-${(item as any).exerciseType || item.taskType}`}
                       className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
                     >
                       <div className="min-w-0">
