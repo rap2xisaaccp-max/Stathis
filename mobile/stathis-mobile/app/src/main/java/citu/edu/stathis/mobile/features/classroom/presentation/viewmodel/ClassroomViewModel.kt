@@ -40,6 +40,8 @@ class ClassroomViewModel @Inject constructor(
     val classroomsState: StateFlow<ClassroomsState> = _classroomsState.asStateFlow()
     private val _verifiedMap = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val verifiedMap: StateFlow<Map<String, Boolean>> = _verifiedMap.asStateFlow()
+    private val _studentCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val studentCounts: StateFlow<Map<String, Int>> = _studentCounts.asStateFlow()
     
     // UI state for enrollment
     private val _enrollmentState = MutableStateFlow<EnrollmentState>(EnrollmentState.Idle)
@@ -117,6 +119,7 @@ class ClassroomViewModel @Inject constructor(
                                     
                                     if (!me.isNullOrBlank()) {
                                         val map = mutableMapOf<String, Boolean>()
+                                        val counts = mutableMapOf<String, Int>()
                                         // Fetch actual verification status from API; default to false
                                         for (c in classrooms) {
                                             try {
@@ -125,6 +128,7 @@ class ClassroomViewModel @Inject constructor(
                                                 if (resp.isSuccessful) {
                                                     val list = resp.body().orEmpty()
                                                     Timber.d("Students in classroom ${c.physicalId}: $list")
+                                                    counts[c.physicalId] = list.size
                                                     // Match by physicalId primarily. If not available yet, fall back to best-effort: if there's exactly one entry and it's verified, assume it's this user.
                                                     val entry = list.firstOrNull { it.physicalId.equals(me, ignoreCase = true) }
                                                         ?: if (me.isNullOrBlank() && list.size == 1) list.first() else null
@@ -134,17 +138,21 @@ class ClassroomViewModel @Inject constructor(
                                                 } else {
                                                     Timber.e("Failed to fetch students for classroom ${c.physicalId}: ${resp.code()} ${resp.message()}")
                                                     map[c.physicalId] = false
+                                                    counts[c.physicalId] = 0
                                                 }
                                             } catch (e: Exception) { 
                                                 Timber.e(e, "Exception fetching students for classroom ${c.physicalId}")
                                                 map[c.physicalId] = false
+                                                counts[c.physicalId] = 0
                                             }
                                         }
                                         Timber.d("Final verification map: $map")
                                         _verifiedMap.value = map
+                                        _studentCounts.value = counts
                                     } else {
                                         Timber.w("User ID is null or blank and profile fetch failed; temporarily mark all classrooms as pending and retry later")
                                         _verifiedMap.value = classrooms.associate { it.physicalId to false }
+                                        _studentCounts.value = classrooms.associate { it.physicalId to (it.studentCount ?: 0) }
                                     }
                                 }
                             }
@@ -267,6 +275,23 @@ class ClassroomViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Loads a single classroom's details and publishes it to `selectedClassroom`
+     */
+    fun loadClassroomDetails(classroomId: String) {
+        viewModelScope.launch {
+            try {
+                getClassroomDetailsUseCase(classroomId)
+                    .catch { e -> Timber.e(e, "Error loading classroom details") }
+                    .collectLatest { classroom ->
+                        _selectedClassroom.value = classroom
+                    }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load classroom details for $classroomId")
+            }
+        }
+    }
     
     /**
      * Sets the selected classroom
@@ -281,6 +306,19 @@ class ClassroomViewModel @Inject constructor(
      */
     fun resetEnrollmentState() {
         _enrollmentState.value = EnrollmentState.Idle
+    }
+
+    /**
+     * Fetches the tasks for a classroom on demand (one-shot).
+     * Returns an empty list if unavailable or an error occurs.
+     */
+    suspend fun getClassroomTasksOnce(classroomId: String): List<Task> {
+        return try {
+            getClassroomTasksUseCase(classroomId).firstOrNull() ?: emptyList()
+        } catch (e: Exception) {
+            Timber.e(e, "Error fetching classroom tasks once for $classroomId")
+            emptyList()
+        }
     }
 }
 

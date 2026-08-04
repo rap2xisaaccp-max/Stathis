@@ -6,6 +6,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
 import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
+import citu.edu.stathis.mobile.features.tasks.data.model.ScoreAttemptResponse
 import citu.edu.stathis.mobile.features.tasks.domain.usecase.*
 import citu.edu.stathis.mobile.features.common.domain.Result
 import citu.edu.stathis.mobile.features.common.domain.asResult
@@ -29,6 +30,7 @@ class TaskViewModel @Inject constructor(
     private val completeLessonResultUseCase: CompleteLessonResultUseCase,
     private val completeExerciseResultUseCase: CompleteExerciseResultUseCase,
     private val getQuizScoreResultUseCase: GetQuizScoreResultUseCase,
+    private val getAttemptsByStudentAndTaskResultUseCase: GetAttemptsByStudentAndTaskResultUseCase,
     val authTokenManager: AuthTokenManager
 ) : ViewModel() {
 
@@ -49,6 +51,15 @@ class TaskViewModel @Inject constructor(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
+
+    private val _exerciseHistory = MutableStateFlow<List<ScoreAttemptResponse>?>(null)
+    val exerciseHistory: StateFlow<List<ScoreAttemptResponse>?> = _exerciseHistory
+
+    private val _exerciseHistoryLoading = MutableStateFlow(false)
+    val exerciseHistoryLoading: StateFlow<Boolean> = _exerciseHistoryLoading
+
+    private val _exerciseHistoryError = MutableStateFlow<String?>(null)
+    val exerciseHistoryError: StateFlow<String?> = _exerciseHistoryError
 
     fun loadTasksForClassroom(classroomId: String) {
         viewModelScope.launch {
@@ -214,5 +225,36 @@ class TaskViewModel @Inject constructor(
                 null
             }
         }
+    }
+
+    fun loadExerciseHistory(taskId: String) {
+        viewModelScope.launch {
+            val studentId = authTokenManager.physicalIdFlow.firstOrNull()
+            if (studentId.isNullOrBlank()) {
+                _exerciseHistoryError.value = "Unable to identify student account"
+                _exerciseHistory.value = emptyList()
+                _exerciseHistoryLoading.value = false
+                return@launch
+            }
+            _exerciseHistoryLoading.value = true
+            _exerciseHistoryError.value = null
+            when (val result = getAttemptsByStudentAndTaskResultUseCase(studentId, taskId)) {
+                is Result.Success -> {
+                    // Filter to exercise attempts only
+                    val exerciseAttempts = result.data.filter { it.exerciseTemplateId != null }
+                    _exerciseHistory.value = exerciseAttempts
+                }
+                is Result.Error -> {
+                    android.util.Log.w("TaskViewModel", "Failed to load exercise history for $taskId: ${result.message}")
+                    _exerciseHistoryError.value = "Could not load exercise history"
+                    _exerciseHistory.value = emptyList()
+                }
+            }
+            _exerciseHistoryLoading.value = false
+        }
+    }
+
+    fun clearExerciseHistoryError() {
+        _exerciseHistoryError.value = null
     }
 } 

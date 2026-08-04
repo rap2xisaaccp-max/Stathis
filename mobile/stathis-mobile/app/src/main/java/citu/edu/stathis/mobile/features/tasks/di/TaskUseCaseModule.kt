@@ -91,6 +91,16 @@ object TaskUseCaseModule {
     @Singleton
     fun provideGetScoresByStudentAndTaskResultUseCase(repository: TaskRepository): GetScoresByStudentAndTaskResultUseCase =
         GetScoresByStudentAndTaskResultUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideGetAttemptsByStudentAndTaskUseCase(repository: TaskRepository): GetAttemptsByStudentAndTaskUseCase =
+        GetAttemptsByStudentAndTaskUseCase(repository)
+
+    @Provides
+    @Singleton
+    fun provideGetAttemptsByStudentAndTaskResultUseCase(repository: TaskRepository): GetAttemptsByStudentAndTaskResultUseCase =
+        GetAttemptsByStudentAndTaskResultUseCase(repository)
 }
 
 

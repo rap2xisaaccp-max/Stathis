@@ -57,6 +57,12 @@ fun TaskDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
+    // Exercise history state
+    var showExerciseHistory by remember { mutableStateOf(false) }
+    val exerciseHistory by viewModel.exerciseHistory.collectAsState()
+    val exerciseHistoryLoading by viewModel.exerciseHistoryLoading.collectAsState()
+    val exerciseHistoryError by viewModel.exerciseHistoryError.collectAsState()
+
     LaunchedEffect(taskId) {
         viewModel.loadTaskDetails(taskId)
         // Use suppressError = true to avoid showing 403 error banners
@@ -254,6 +260,12 @@ fun TaskDetailScreen(
                             else -> null
                         }
                         
+                        val exerciseActionLabel = when {
+                            !canStartExercise -> null
+                            exerciseAttempts > 0 -> "Retry Exercise"
+                            else -> "Start Exercise"
+                        }
+
                         item {
                             TaskComponentCard(
                                 title = currentTask.exerciseTemplate?.title?.takeIf { it.isNotBlank() } ?: "Exercise",
@@ -265,6 +277,7 @@ fun TaskDetailScreen(
                                 canStart = canStartExercise,
                                 score = exerciseScoreText,
                                 showAttemptBadge = progress != null,
+                                actionLabel = exerciseActionLabel,
                                 onClick = {
                                     if (!isUnavailable) {
                                         onStartExercise(exerciseTemplatePhysicalId!!)
@@ -290,6 +303,36 @@ fun TaskDetailScreen(
                                     }
                                 }
                             )
+                        }
+
+                        // View History button below the exercise card
+                        item {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.loadExerciseHistory(taskId)
+                                    showExerciseHistory = true
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 4.dp)
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "View History",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
 
@@ -377,6 +420,23 @@ fun TaskDetailScreen(
                 }
             }
         }
+    }
+
+    // Exercise History bottom sheet
+    if (showExerciseHistory) {
+        val exerciseTitle = task?.exerciseTemplate?.title?.takeIf { it.isNotBlank() }
+            ?: "Exercise"
+        ExerciseHistorySheet(
+            exerciseTitle = exerciseTitle,
+            maxAttempts = task?.maxAttempts ?: 0,
+            history = exerciseHistory,
+            isLoading = exerciseHistoryLoading,
+            errorMessage = exerciseHistoryError,
+            onDismiss = {
+                showExerciseHistory = false
+                viewModel.clearExerciseHistoryError()
+            }
+        )
     }
 }
 
@@ -846,6 +906,7 @@ private fun TaskComponentCard(
     canStart: Boolean,
     score: String? = null,
     showAttemptBadge: Boolean = true,
+    actionLabel: String? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -956,8 +1017,7 @@ private fun TaskComponentCard(
                     Text(
                         text = when {
                             !canStart -> "Max reached"
-                            isCompleted -> "Retake"
-                            else -> "Start"
+                            else -> actionLabel ?: if (isCompleted) "Retake" else "Start"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Medium
