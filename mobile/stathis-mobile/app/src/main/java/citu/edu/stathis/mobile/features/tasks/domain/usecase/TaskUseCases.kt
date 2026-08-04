@@ -7,6 +7,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
 import citu.edu.stathis.mobile.features.tasks.data.model.LessonTemplate
 import citu.edu.stathis.mobile.features.tasks.data.model.QuizTemplate
+import citu.edu.stathis.mobile.features.tasks.data.model.ScoreAttemptResponse
 import citu.edu.stathis.mobile.features.tasks.data.repository.TaskRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -167,5 +168,19 @@ class GetScoresByStudentAndTaskResultUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(studentId: String, taskId: String): Result<List<ScoreResponse>> =
         safeCall { repository.getScoresByStudentAndTask(studentId, taskId).first() }
+}
+
+class GetAttemptsByStudentAndTaskUseCase @Inject constructor(
+    private val repository: TaskRepository
+) {
+    suspend operator fun invoke(studentId: String, taskId: String): Flow<List<ScoreAttemptResponse>> =
+        repository.getAttemptsByStudentAndTask(studentId, taskId)
+}
+
+class GetAttemptsByStudentAndTaskResultUseCase @Inject constructor(
+    private val repository: TaskRepository
+) {
+    suspend operator fun invoke(studentId: String, taskId: String): Result<List<ScoreAttemptResponse>> =
+        safeCall { repository.getAttemptsByStudentAndTask(studentId, taskId).first() }
 }
 

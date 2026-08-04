@@ -32,10 +32,12 @@ import citu.edu.stathis.mobile.features.classroom.data.model.Classroom
 import citu.edu.stathis.mobile.features.dashboard.presentation.viewmodel.DashboardViewModel
 import citu.edu.stathis.mobile.features.dashboard.presentation.viewmodel.*
 import citu.edu.stathis.mobile.features.tasks.data.model.Task
+import citu.edu.stathis.mobile.features.classroom.presentation.ClassroomProgressCalculator
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomViewModel
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.EnrollmentState
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomsState
 import citu.edu.stathis.mobile.features.tasks.navigation.navigateToTaskList
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,7 +45,8 @@ import kotlinx.coroutines.launch
 fun LearnScreen(
     navController: NavHostController,
     viewModel: ClassroomViewModel = hiltViewModel(),
-    dashboardViewModel: DashboardViewModel = hiltViewModel()
+    dashboardViewModel: DashboardViewModel = hiltViewModel(),
+    taskViewModel: TaskViewModel = hiltViewModel()
 ) {
     val classroomsState by viewModel.classroomsState.collectAsState()
     val verifiedMap by viewModel.verifiedMap.collectAsState()
@@ -62,6 +65,36 @@ fun LearnScreen(
     var classroomCode by remember { mutableStateOf("") }
     var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // Per-classroom task + progress data (shared across cards and stats row)
+    // classroomId -> (taskId -> TaskProgressResponse?)
+    var classroomTaskProgress by remember { mutableStateOf<Map<String, Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>>(emptyMap()) }
+    // classroomId -> List<Task>
+    var classroomTasksMap by remember { mutableStateOf<Map<String, List<Task>>>(emptyMap()) }
+
+    // Fetch tasks + per-task progress for each enrolled/pending classroom
+    LaunchedEffect(classroomsState) {
+        val current = classroomsState
+        if (current is ClassroomsState.Success) {
+            val progressMap = mutableMapOf<String, Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>()
+            val tasksMap = mutableMapOf<String, List<Task>>()
+            current.classrooms.forEach { classroom ->
+                runCatching {
+                    val tasks = viewModel.getClassroomTasksOnce(classroom.physicalId)
+                    tasksMap[classroom.physicalId] = tasks
+                    val taskProgress = mutableMapOf<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>()
+                    tasks.forEach { task ->
+                        runCatching {
+                            taskProgress[task.physicalId] = taskViewModel.getTaskProgress(task.physicalId, suppressError = true)
+                        }
+                    }
+                    progressMap[classroom.physicalId] = taskProgress
+                }
+            }
+            classroomTaskProgress = progressMap
+            classroomTasksMap = tasksMap
+        }
+    }
 
     // Handle enrollment state changes
     LaunchedEffect(enrollmentState) {
@@ -116,8 +149,9 @@ fun LearnScreen(
 
     // Stats Row
     LearnStatsRow(
-        progressState = progressState,
-        tasksState = tasksState
+        tasksState = tasksState,
+        classroomTaskProgress = classroomTaskProgress,
+        classroomTasksMap = classroomTasksMap
     )
 
             // Main Content (Your Classrooms FIRST)
@@ -180,11 +214,16 @@ fun LearnScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
+
                             enrolled.forEach { classroom ->
+                                val tasks = classroomTasksMap[classroom.physicalId].orEmpty()
+                                val taskProgress = classroomTaskProgress[classroom.physicalId].orEmpty()
+                                val pct = ClassroomProgressCalculator.calculateProgress(tasks, taskProgress)
+
                                 ClassroomCard(
                                     classroom = classroom,
                                     isUnlocked = true,
-                                    progress = 0.0f,
+                                    progress = pct,
                                     onClick = { 
                                         if (verifiedMap[classroom.physicalId] == true) {
                                             navController.navigate("classroom_detail/${classroom.physicalId}")
@@ -213,10 +252,14 @@ fun LearnScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             pending.forEach { classroom ->
+                                val tasks = classroomTasksMap[classroom.physicalId].orEmpty()
+                                val taskProgress = classroomTaskProgress[classroom.physicalId].orEmpty()
+                                val pctPending = ClassroomProgressCalculator.calculateProgress(tasks, taskProgress)
+
                                 ClassroomCard(
                                     classroom = classroom,
                                     isUnlocked = false,
-                                    progress = 0.0f,
+                                    progress = pctPending,
                                     onClick = { /* blocked */ },
                                     onViewTasks = { /* blocked */ },
                                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -284,9 +327,26 @@ fun LearnScreen(
 
 @Composable
 private fun LearnStatsRow(
-    progressState: ProgressState,
-    tasksState: TasksState
+    tasksState: TasksState,
+    classroomTaskProgress: Map<String, Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>,
+    classroomTasksMap: Map<String, List<Task>>
 ) {
+    // Compute overall progress across all classrooms using the same per-task
+    // progress data source as the classroom cards and in-classroom overview.
+    val overallProgress = if (classroomTasksMap.isNotEmpty()) {
+        val allTasks = classroomTasksMap.values.flatten()
+        // Build a combined task->progress map keyed by taskId
+        val combinedMap = mutableMapOf<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>()
+        classroomTaskProgress.values.forEach { perClassMap ->
+            perClassMap.forEach { (taskId, progress) ->
+                combinedMap[taskId] = progress
+            }
+        }
+        ClassroomProgressCalculator.calculateProgress(allTasks, combinedMap)
+    } else {
+        0f
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -295,14 +355,7 @@ private fun LearnStatsRow(
     ) {
         LearnStatCard(
             title = "Progress",
-            value = when (progressState) {
-                is ProgressState.Success -> {
-                    val pct = ((progressState.progress.completedTasks.toFloat() /
-                        (progressState.progress.totalTasks.takeIf { it > 0 } ?: 1)) * 100).toInt()
-                    "$pct%"
-                }
-                else -> "--"
-            },
+            value = "${(overallProgress * 100).toInt()}%",
             icon = Icons.Default.TrendingUp,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f)
@@ -797,9 +850,15 @@ fun TaskItemRow(task: Task, classroomName: String? = null, onClick: (String) -> 
 @Composable
 private fun ClassroomsContent(
     classrooms: List<Classroom>,
+    progressState: ProgressState,
     onClassroomClick: (Classroom) -> Unit,
     onViewTasks: (Classroom) -> Unit
 ) {
+    val classroomProgressMap: Map<String, citu.edu.stathis.mobile.features.progress.data.model.ClassroomProgressSummary> = when (progressState) {
+        is ProgressState.Success -> (progressState as ProgressState.Success).progress.classroomProgress.associateBy { it.classroomId }
+        else -> emptyMap()
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -807,10 +866,11 @@ private fun ClassroomsContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(classrooms) { classroom ->
+            val pct = classroomProgressMap[classroom.physicalId]?.completionPercentage ?: 0f
             ClassroomCard(
                 classroom = classroom,
                 isUnlocked = true, // All enrolled classrooms are unlocked
-                progress = 0.0f, // TODO: Calculate actual progress
+                progress = pct,
                 onClick = { onClassroomClick(classroom) },
                 onViewTasks = { onViewTasks(classroom) }
             )
@@ -822,10 +882,15 @@ private fun ClassroomsContent(
 private fun ClassroomsSplitContent(
     enrolled: List<Classroom>,
     pending: List<Classroom>,
+    progressState: ProgressState,
     onClassroomClick: (Classroom) -> Unit,
     onViewTasks: (Classroom) -> Unit,
     footer: (@Composable () -> Unit)? = null
 ) {
+    val classroomProgressMap: Map<String, citu.edu.stathis.mobile.features.progress.data.model.ClassroomProgressSummary> = when (progressState) {
+        is ProgressState.Success -> (progressState as ProgressState.Success).progress.classroomProgress.associateBy { it.classroomId }
+        else -> emptyMap()
+    }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -842,10 +907,11 @@ private fun ClassroomsSplitContent(
                 )
             }
             items(enrolled) { classroom ->
+                val pct = classroomProgressMap[classroom.physicalId]?.completionPercentage ?: 0f
                 ClassroomCard(
                     classroom = classroom,
                     isUnlocked = true,
-                    progress = 0.0f,
+                    progress = pct,
                     onClick = { onClassroomClick(classroom) },
                     onViewTasks = { onViewTasks(classroom) }
                 )
@@ -862,10 +928,11 @@ private fun ClassroomsSplitContent(
                 )
             }
             items(pending) { classroom ->
+                val pctPending = classroomProgressMap[classroom.physicalId]?.completionPercentage ?: 0f
                 ClassroomCard(
                     classroom = classroom,
                     isUnlocked = false,
-                    progress = 0.0f,
+                    progress = pctPending,
                     onClick = { /* blocked */ },
                     onViewTasks = { /* blocked */ }
                 )
