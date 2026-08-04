@@ -307,6 +307,19 @@ class ClassroomViewModel @Inject constructor(
     fun resetEnrollmentState() {
         _enrollmentState.value = EnrollmentState.Idle
     }
+
+    /**
+     * Fetches the tasks for a classroom on demand (one-shot).
+     * Returns an empty list if unavailable or an error occurs.
+     */
+    suspend fun getClassroomTasksOnce(classroomId: String): List<Task> {
+        return try {
+            getClassroomTasksUseCase(classroomId).firstOrNull() ?: emptyList()
+        } catch (e: Exception) {
+            Timber.e(e, "Error fetching classroom tasks once for $classroomId")
+            emptyList()
+        }
+    }
 }
 
 /**
