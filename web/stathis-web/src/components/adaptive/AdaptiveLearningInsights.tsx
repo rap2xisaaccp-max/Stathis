@@ -802,9 +802,24 @@ function StudentProgressSnapshotCard({
     null
   );
   const [statsOpen, setStatsOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<string>('All');
+  const [query, setQuery] = useState<string>('');
 
   const items = (progressItems || [])
     .filter((item) => (item.taskType || '').toUpperCase() !== 'LESSON');
+
+  const availableTypes = Array.from(
+    new Set(items.map((i) => (i.taskType || 'TASK').toUpperCase()))
+  ).sort();
+
+  const filteredItems = items.filter((item) => {
+    const typeLabel = (item.taskType || 'TASK').toUpperCase();
+    const matchesType = typeFilter === 'All' ? true : typeLabel === typeFilter;
+    const matchesQuery = query.trim()
+      ? (`${item.taskName} ${(item.taskType || '')}`.toLowerCase().includes(query.trim().toLowerCase()))
+      : true;
+    return matchesType && matchesQuery;
+  });
 
   const openTaskStats = (item: ProgressSnapshotItem) => {
     setSelectedTask(item);
@@ -827,46 +842,79 @@ function StudentProgressSnapshotCard({
               No scored quiz/exercise progress yet for this classroom.
             </p>
           ) : (
-            <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-              {items.map((item) => (
-                <div
-                  key={`${item.taskId}-${item.taskType}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <label className="text-sm text-muted-foreground">Filter:</label>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="rounded-md border px-2 py-1 text-sm"
                 >
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{item.taskName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(item.taskType || 'TASK').replaceAll('_', ' ')}
-                      {item.attempts != null ? ` · ${item.attempts} attempts` : ''}
-                      {item.reps != null
-                        ? ` · ${item.reps}${item.goalReps != null ? `/${item.goalReps}` : ''} reps`
-                        : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {item.completed && (
-                      <Badge variant="secondary">Done</Badge>
-                    )}
-                    <span className="font-medium">
-                      {item.score != null
-                        ? `${item.score}/${item.maxScore ?? 100}`
-                        : '—'}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      title="View task statistics"
-                      aria-label={`View statistics for ${item.taskName}`}
-                      onClick={() => openTaskStats(item)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <option value="All">All exercise types</option>
+                  {availableTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
 
-                </div>
-              ))}
+                <input
+                  type="search"
+                  placeholder="Search task name or type"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="ml-auto rounded-md border px-2 py-1 text-sm w-48"
+                  aria-label="Search student progress"
+                />
+              </div>
+
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {filteredItems.map((item) => {
+                  const typeLabel = (item.taskType || 'TASK').replaceAll('_', ' ');
+                  return (
+                    <div
+                      key={`${item.taskId}-${item.taskType}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{item.taskName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {typeLabel}
+                          {item.attempts != null ? ` · ${item.attempts} attempts` : ''}
+                          {item.reps != null
+                            ? ` · ${item.reps}${item.goalReps != null ? `/${item.goalReps}` : ''} reps`
+                            : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {item.completed ? (
+                          <Badge variant="secondary">{`${typeLabel} · Done`}</Badge>
+                        ) : (
+                          <Badge variant="outline">{`${typeLabel} · In progress`}</Badge>
+                        )}
+
+                        <span className="font-medium">
+                          {item.score != null
+                            ? `${item.score}/${item.maxScore ?? 100}`
+                            : '—'}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="View task statistics"
+                          aria-label={`View statistics for ${item.taskName}`}
+                          onClick={() => openTaskStats(item)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </CardContent>
