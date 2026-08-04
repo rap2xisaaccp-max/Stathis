@@ -14,6 +14,4 @@ public class AdaptiveRecommendationRequestDTO {
   private String exerciseType;
   private FormErrorCode errorCode;
   private Double currentSeverity;
-  /** When true, force static control arm (RCT). */
-  private Boolean staticControl;
 }

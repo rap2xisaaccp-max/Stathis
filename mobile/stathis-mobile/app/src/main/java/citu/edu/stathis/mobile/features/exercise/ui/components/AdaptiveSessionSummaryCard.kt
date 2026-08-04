@@ -212,13 +212,13 @@ private fun preferredByExerciseLabel(
             it.key.equals(exerciseType, ignoreCase = true)
         }?.value as? Map<*, *>
     if (row == null) {
-        return "Preferred modality: Insufficient data"
+        return "Preferred modality: Default text coaching (DEFAULT)"
     }
     val source = row["source"]?.toString()?.uppercase() ?: "DEFAULT"
     val modality = row["modality"]?.toString()?.replace('_', ' ') ?: "—"
     return when (source) {
-        "LEARNED" -> "Preferred modality: $modality"
-        "EXPLORING" -> "Preferred modality: Learning ($modality)"
-        else -> "Preferred modality: Insufficient data"
+        "LEARNED" -> "Preferred modality: $modality (LEARNED)"
+        "EXPLORING" -> "Preferred modality: Learning ($modality) (EXPLORING)"
+        else -> "Preferred modality: $modality (DEFAULT)"
     }
 }

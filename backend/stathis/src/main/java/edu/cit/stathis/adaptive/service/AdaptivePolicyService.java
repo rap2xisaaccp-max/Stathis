@@ -49,16 +49,6 @@ public class AdaptivePolicyService {
     exerciseType = edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog.normalizeExercise(exerciseType);
 
     InstructionIntensity intensity = InstructionIntensity.REMINDER;
-    if (Boolean.TRUE.equals(request.getStaticControl())) {
-      return buildRecommendation(
-          FeedbackModality.VERBAL_TEXT,
-          errorCode,
-          exerciseType,
-          intensity,
-          PolicySource.STATIC_CONTROL,
-          0.0,
-          "STATIC");
-    }
 
     StudentLearningProfile profile = profileService.getOrCreate(studentId);
     Map<String, Object> effectiveness =

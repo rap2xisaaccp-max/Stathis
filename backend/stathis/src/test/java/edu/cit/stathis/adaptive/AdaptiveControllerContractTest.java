@@ -243,7 +243,6 @@ class AdaptiveControllerContractTest {
             .exerciseType("SQUAT")
             .errorCode(FormErrorCode.CHEST_UP)
             .currentSeverity(0.7)
-            .staticControl(false)
             .build();
 
     mockMvc

@@ -7,7 +7,6 @@ import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.DeliveredFeedback
 import citu.edu.stathis.mobile.features.exercise.adaptive.ExerciseMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorMapper
-import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
 import citu.edu.stathis.mobile.features.exercise.adaptive.StudentLearningProfileDto
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi
@@ -55,11 +54,9 @@ class AdaptiveSessionViewModel @Inject constructor(
     fun startSession(
         exerciseType: String,
         taskId: String? = null,
-        classroomId: String? = null,
-        staticControl: Boolean = false,
-        sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
+        classroomId: String? = null
     ) {
-        engine.startSession(exerciseType, taskId, classroomId, staticControl, sessionContext)
+        engine.startSession(exerciseType, taskId, classroomId)
         _sessionSummary.value = AdaptiveSessionSummary()
     }
 

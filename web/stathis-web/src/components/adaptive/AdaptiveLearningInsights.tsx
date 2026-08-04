@@ -2,7 +2,6 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchAdaptiveInsights,
@@ -71,22 +70,47 @@ import {
 } from '@/components/adaptive/StudentTaskStatsModal';
 
 const CANONICAL_EXERCISE_TYPES: { value: string; label: string }[] = [
-  { value: 'PUSH_UPS', label: 'Push ups' },
+  { value: 'PUSH_UP', label: 'Push ups' },
   { value: 'SQUATS', label: 'Squats' },
   { value: 'GLUTE_BRIDGE', label: 'Glute bridge' },
   { value: 'LYING_LEG_RAISES', label: 'Lying leg raises' },
   { value: 'STATIC_LUNGES', label: 'Static lunges' },
 ];
 
+function normalizeAdaptiveExercise(raw: string | null | undefined): string {
+  if (!raw) return 'UNKNOWN';
+  const n = raw.trim().toUpperCase().replace(/[-\s]+/g, '_');
+  switch (n) {
+    case 'PUSH_UP':
+    case 'PUSH_UPS':
+    case 'PUSHUP':
+    case 'PUSHUPS':
+      return 'PUSH_UP';
+    case 'SQUAT':
+    case 'SQUATS':
+      return 'SQUATS';
+    case 'GLUTE_BRIDGE':
+    case 'GLUTE_BRIDGES':
+      return 'GLUTE_BRIDGE';
+    case 'STATIC_LUNGE':
+    case 'STATIC_LUNGES':
+    case 'LUNGE':
+    case 'LUNGES':
+      return 'STATIC_LUNGES';
+    case 'LYING_LEG_RAISE':
+    case 'LYING_LEG_RAISES':
+    case 'LEG_RAISE':
+    case 'LEG_RAISES':
+      return 'LYING_LEG_RAISES';
+    default:
+      return n;
+  }
+}
+
 function formatPct(value: number | null | undefined, n?: number): string {
   if (n === 0) return 'Insufficient data';
   if (value == null || Number.isNaN(value)) return '—';
   return `${Math.round(value * 100)}%`;
-}
-
-function showApsleResearchUi(searchParams: URLSearchParams | null): boolean {
-  if (process.env.NEXT_PUBLIC_APSLE_SHOW_RCT === 'true') return true;
-  return searchParams?.get('research') === '1';
 }
 
 function formatDelta(value: number | null | undefined): string {
@@ -305,8 +329,7 @@ export function AdaptiveLearningInsights({
     goalReps?: number | null;
   }>;
 }) {
-  const searchParams = useSearchParams();
-  const showResearch = showApsleResearchUi(searchParams);
+  const showResearch = false;
 
   const insightsQuery = useQuery({
     queryKey: ['adaptive-insights', studentId],
@@ -953,7 +976,18 @@ function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }
     data.preferredModalityByExercise ||
     data.profile?.preferredModalityByExercise ||
     {};
-  const entries = Object.entries(byExercise);
+  const normalizedRows: Record<string, unknown> = {};
+  for (const [exercise, row] of Object.entries(byExercise)) {
+    normalizedRows[normalizeAdaptiveExercise(exercise)] = row;
+  }
+  const entries = CANONICAL_EXERCISE_TYPES.map(({ value, label }) => {
+    const row = (normalizedRows[value] as { modality?: string; source?: string; n?: number } | undefined) || {
+      modality: 'VERBAL_TEXT',
+      source: 'DEFAULT',
+      n: 0,
+    };
+    return [value, label, row] as const;
+  });
   return (
     <Card className="rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl">
       <CardHeader>
@@ -963,29 +997,25 @@ function PreferredModalityByExerciseCard({ data }: { data: AdaptiveInsightsDTO }
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        {entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Insufficient data</p>
-        ) : (
-          entries.map(([exercise, row]) => {
-            const copy = preferredModalityCopy({
-              modality: row?.modality,
-              source: row?.source,
-              n: row?.n,
-            });
-            return (
-              <div
-                key={exercise}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
-              >
-                <span className="font-medium">{exercise.replaceAll('_', ' ')}</span>
-                <div className="min-w-0 text-right">
-                  <Badge variant="secondary">{copy.title}</Badge>
-                  <p className="mt-1 text-[11px] text-muted-foreground">{copy.detail}</p>
-                </div>
+        {entries.map(([exercise, label, row]) => {
+          const copy = preferredModalityCopy({
+            modality: row?.modality,
+            source: row?.source,
+            n: row?.n,
+          });
+          return (
+            <div
+              key={exercise}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 px-3 py-2 text-sm"
+            >
+              <span className="font-medium">{label}</span>
+              <div className="min-w-0 text-right">
+                <Badge variant="secondary">{copy.title}</Badge>
+                <p className="mt-1 text-[11px] text-muted-foreground">{copy.detail}</p>
               </div>
-            );
-          })
-        )}
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );

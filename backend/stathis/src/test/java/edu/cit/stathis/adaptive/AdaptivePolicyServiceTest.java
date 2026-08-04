@@ -25,23 +25,6 @@ class AdaptivePolicyServiceTest {
   @Mock private StudentLearningProfileService profileService;
 
   @Test
-  void staticControlAlwaysReturnsVerbalText() {
-    AdaptivePolicyService policyService = new AdaptivePolicyService(profileService, new Random(1));
-    AdaptiveRecommendationDTO result =
-        policyService.recommend(
-            "STUDENT-1",
-            AdaptiveRecommendationRequestDTO.builder()
-                .exerciseType("SQUAT")
-                .errorCode(FormErrorCode.CHEST_UP)
-                .staticControl(true)
-                .build());
-
-    assertEquals(FeedbackModality.VERBAL_TEXT, result.getModality());
-    assertEquals(PolicySource.STATIC_CONTROL, result.getPolicySource());
-    assertEquals("STATIC", result.getExperimentArm());
-  }
-
-  @Test
   void coldStartDefaultsWhenNoEvidence() {
     var profile =
         edu.cit.stathis.adaptive.entity.StudentLearningProfile.builder()
@@ -60,7 +43,6 @@ class AdaptivePolicyServiceTest {
             AdaptiveRecommendationRequestDTO.builder()
                 .exerciseType("SQUAT")
                 .errorCode(FormErrorCode.CHEST_UP)
-                .staticControl(false)
                 .build());
 
     assertNotNull(result.getModality());
