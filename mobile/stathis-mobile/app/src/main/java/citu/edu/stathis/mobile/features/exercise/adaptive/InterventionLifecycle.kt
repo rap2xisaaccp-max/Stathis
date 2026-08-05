@@ -41,6 +41,10 @@ class InterventionLifecycle(
     private var openError: FormErrorCode? = null
     private var deliveredAt: Long = -1L
     private var responseStartReps: Int = 0
+    /** Same-error re-arm is held until recovery or a meaningful rep boundary. */
+    private var disarmedError: FormErrorCode? = null
+    private var disarmRearmAtReps: Int = 0
+    private var disarmClearTicks: Int = 0
     private var lastInterventionAt: Long = -1L
     private var cycleSeq: Int = 0
     private val recentInterventionAt = ArrayDeque<Long>()
@@ -54,6 +58,9 @@ class InterventionLifecycle(
         openError = null
         deliveredAt = -1L
         responseStartReps = 0
+        disarmedError = null
+        disarmRearmAtReps = 0
+        disarmClearTicks = 0
         lastInterventionAt = -1L
         cycleSeq = 0
         recentInterventionAt.clear()
@@ -83,6 +90,7 @@ class InterventionLifecycle(
     ): Int? {
         prune(now)
         advanceResponseObservation(errorCode, severity, currentReps, now, cooldownMs)
+        advanceRearmObservation(errorCode, severity, currentReps)
 
         if (errorCode == null || severity < minSeverity) {
             if (phase == InterventionPhase.ERROR_CANDIDATE ||
@@ -93,6 +101,11 @@ class InterventionLifecycle(
             }
             return null
         }
+
+        // An unchanged error that already failed a response window must not start
+        // another confirmation cycle until the error clears or the rep boundary
+        // establishes a new meaningful coaching opportunity.
+        if (errorCode == disarmedError) return null
 
         // Any unresolved / in-flight cycle blocks a new equivalent (and typically any) delivery.
         if (phase in
@@ -188,6 +201,17 @@ class InterventionLifecycle(
         val err = openError
         openError = null
         clearTicks = 0
+        if (successful) {
+            if (disarmedError == err) {
+                disarmedError = null
+                disarmRearmAtReps = 0
+                disarmClearTicks = 0
+            }
+        } else if (err != null) {
+            disarmedError = err
+            disarmRearmAtReps = responseStartReps + responseValidReps
+            disarmClearTicks = 0
+        }
         phase = InterventionPhase.RESPONSE_CLOSED
         if (successful && err != null) {
             escalationCounts[err] = 0
@@ -235,6 +259,28 @@ class InterventionLifecycle(
         val effectiveCooldown = effectiveCooldownMs(severity, cooldownMs)
         if (now - lastInterventionAt >= effectiveCooldown) {
             phase = InterventionPhase.OBSERVING
+        }
+    }
+
+    private fun advanceRearmObservation(
+        errorCode: FormErrorCode?,
+        severity: Double,
+        currentReps: Int
+    ) {
+        val blockedError = disarmedError ?: return
+        if (currentReps >= disarmRearmAtReps) {
+            disarmedError = null
+            disarmRearmAtReps = 0
+            disarmClearTicks = 0
+            return
+        }
+
+        val errorAbsent = errorCode != blockedError || severity < minSeverity
+        disarmClearTicks = if (errorAbsent) disarmClearTicks + 1 else 0
+        if (disarmClearTicks >= clearConfirmTicks) {
+            disarmedError = null
+            disarmRearmAtReps = 0
+            disarmClearTicks = 0
         }
     }
 

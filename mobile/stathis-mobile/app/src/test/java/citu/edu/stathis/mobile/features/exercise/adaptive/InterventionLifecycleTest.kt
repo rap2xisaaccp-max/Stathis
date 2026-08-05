@@ -85,4 +85,68 @@ class InterventionLifecycleTest {
         life.markResponseClosed(successful = false)
         assertEquals(InstructionIntensity.ESCALATION, life.intensityFor(FormErrorCode.DEPTH_LOW))
     }
+
+    @Test
+    fun persistentErrorDoesNotRestartAfterResponseWindowAndCooldown() {
+        val life = InterventionLifecycle(confirmTicks = 3, responseValidReps = 3)
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 0L, 8_000L, 0))
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 1L, 8_000L, 0))
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 2L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        life.markResponseClosed(successful = false)
+
+        repeat(10) { index ->
+            assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 9_000L + index, 8_000L, 0))
+        }
+        assertEquals(0, life.confirmedTicks())
+        assertEquals(1, life.currentCycleSeq())
+    }
+
+    @Test
+    fun clearFramesRearmSameError() {
+        val life = InterventionLifecycle(confirmTicks = 3, responseValidReps = 3)
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 0L, 8_000L, 0))
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 1L, 8_000L, 0))
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 2L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        life.markResponseClosed(successful = false)
+
+        repeat(3) { index ->
+            assertNull(life.tryClaimDelivery(null, 0.0, 9_000L + index, 8_000L, 0))
+        }
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 10_000L, 8_000L, 0))
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 10_001L, 8_000L, 0))
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 10_002L, 8_000L, 0))
+    }
+
+    @Test
+    fun differentErrorCanStillBeDeliveredWhilePreviousErrorIsDisarmed() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        life.markResponseClosed(successful = false)
+
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.CHEST_UP, 0.6, 9_000L, 8_000L, 0))
+    }
+
+    @Test
+    fun meaningfulRepBoundaryRearmsSameError() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        life.markResponseClosed(successful = false)
+
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 9_000L, 8_000L, 3))
+    }
+
+    @Test
+    fun resetRearmsPersistentError() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        life.markResponseClosed(successful = false)
+        life.reset()
+
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.6, 9_000L, 8_000L, 0))
+    }
 }
