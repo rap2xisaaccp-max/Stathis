@@ -215,6 +215,20 @@ class DashboardViewModel @Inject constructor(
     fun refreshDashboard() {
         initializeDashboard()
     }
+
+    /**
+     * Fetches classroom-level progress for a single classroom on demand.
+     * Returns null if unavailable or an error occurs.
+     */
+    suspend fun getClassroomProgressOnce(classroomId: String): citu.edu.stathis.mobile.features.progress.data.model.ClassroomProgressSummary? {
+        return try {
+            val resp = progressRepository.getClassroomProgress(classroomId).first()
+            if (resp.success) resp.data else null
+        } catch (e: Exception) {
+            Timber.e(e, "Error fetching classroom progress for $classroomId")
+            null
+        }
+    }
 }
 
 /**

@@ -91,6 +91,7 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.foundation)
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
@@ -138,6 +139,13 @@ dependencies {
     implementation(libs.coil.network.okhttp)
 
     // Biometric
+    // Room persistence (scaffold only; not enabled in production DI yet)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    kapt(libs.androidx.room.compiler)
+    testImplementation(libs.androidx.room.testing)
+    // Robolectric for JVM-level Room tests
+    testImplementation(libs.robolectric)
 
     // Bluetooth dependencies
     implementation(libs.androidx.bluetooth)
