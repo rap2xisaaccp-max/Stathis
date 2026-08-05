@@ -54,9 +54,9 @@ object ModalityDeliveryPlanner {
                     highlightBones = emptyList(),
                     channel = "text"
                 )
-            FeedbackModality.VISUAL_HIGHLIGHT, FeedbackModality.DEMONSTRATION ->
+            FeedbackModality.VISUAL_HIGHLIGHT ->
                 Plan(
-                    showTextBanner = true,
+                    showTextBanner = false,
                     highlightSkeleton = true,
                     speak = false,
                     highlightJoints = targets.joints,
@@ -65,7 +65,7 @@ object ModalityDeliveryPlanner {
                 )
             FeedbackModality.VERBAL_TTS ->
                 Plan(
-                    showTextBanner = true,
+                    showTextBanner = false,
                     highlightSkeleton = false,
                     speak = true,
                     highlightJoints = emptySet(),

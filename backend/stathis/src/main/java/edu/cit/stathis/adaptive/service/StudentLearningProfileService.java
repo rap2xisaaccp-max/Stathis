@@ -2,6 +2,7 @@ package edu.cit.stathis.adaptive.service;
 
 import edu.cit.stathis.adaptive.dto.ProfileHistoryPointDTO;
 import edu.cit.stathis.adaptive.dto.StudentLearningProfileDTO;
+import edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog;
 import edu.cit.stathis.adaptive.entity.ExerciseMastery;
 import edu.cit.stathis.adaptive.entity.FeedbackIntervention;
 import edu.cit.stathis.adaptive.entity.FeedbackResponse;
@@ -26,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class StudentLearningProfileService {
+  private static final List<String> CANONICAL_EXERCISES =
+      List.of("PUSH_UP", "SQUATS", "STATIC_LUNGES", "GLUTE_BRIDGE", "LYING_LEG_RAISES");
 
   @Autowired private StudentLearningProfileRepository profileRepository;
 
@@ -45,6 +48,7 @@ public class StudentLearningProfileService {
                         .studentId(studentId)
                         .preferredModality(FeedbackModality.VERBAL_TEXT)
                         .modalityEffectivenessJson(new HashMap<>())
+                        .preferredModalityByExerciseJson(defaultPreferredByExercise())
                         .learningRateEstimate(0.0)
                         .consistencyScore(0.5)
                         .fatigueSensitivity(0.0)
@@ -59,7 +63,8 @@ public class StudentLearningProfileService {
         .studentId(profile.getStudentId())
         .preferredModality(profile.getPreferredModality())
         .modalityEffectivenessJson(profile.getModalityEffectivenessJson())
-        .preferredModalityByExercise(profile.getPreferredModalityByExerciseJson())
+        .preferredModalityByExercise(
+            ensurePreferredByExerciseDefaults(profile.getPreferredModalityByExerciseJson()))
         .learningRateEstimate(profile.getLearningRateEstimate())
         .consistencyScore(profile.getConsistencyScore())
         .fatigueSensitivity(profile.getFatigueSensitivity())
@@ -81,16 +86,19 @@ public class StudentLearningProfileService {
             : new HashMap<>();
 
     String modalityKey = intervention.getModality().name();
-    String compositeKey =
+    // Normalize exercise type so effectiveness attribution does not mix equivalent exercise labels.
+    String normalizedExercise = edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog.normalizeExercise(intervention.getExerciseType());
+
+    String compositeKeyNormalized =
         ProfileEffectivenessMath.compositeKey(
-            intervention.getExerciseType(),
+            normalizedExercise,
             intervention.getErrorCode().name(),
             modalityKey);
 
     ProfileEffectivenessMath.updateBucket(
         effectiveness, modalityKey, response.getDelta(), response.isSuccess());
     ProfileEffectivenessMath.updateBucket(
-        effectiveness, compositeKey, response.getDelta(), response.isSuccess());
+        effectiveness, compositeKeyNormalized, response.getDelta(), response.isSuccess());
 
     profile.setModalityEffectivenessJson(effectiveness);
 
@@ -114,8 +122,44 @@ public class StudentLearningProfileService {
 
     profile.setPreferredModality(
         ProfileEffectivenessMath.derivePreferredModality(effectiveness));
-    profile.setPreferredModalityByExerciseJson(
-        ProfileEffectivenessMath.derivePreferredByExercise(effectiveness));
+
+    // Compute per-exercise preferred modalities and preserve stable learned choices unless
+    // enough additional confident evidence supports a switch.
+    Map<String, Object> newByExercise =
+        ensurePreferredByExerciseDefaults(
+            ProfileEffectivenessMath.derivePreferredByExercise(effectiveness));
+    Map<String, Object> oldByExercise = profile.getPreferredModalityByExerciseJson() != null
+        ? new HashMap<>(profile.getPreferredModalityByExerciseJson())
+        : new HashMap<>();
+
+    final int REASSIGN_MIN_ADDITIONAL_N = 3;
+    for (Map.Entry<String, Object> e : new HashMap<>(newByExercise).entrySet()) {
+      String ex = e.getKey();
+      Object newRowObj = e.getValue();
+      if (!(newRowObj instanceof Map)) continue;
+      @SuppressWarnings("unchecked")
+      Map<String, Object> newRow = (Map<String, Object>) newRowObj;
+      String newMod = String.valueOf(newRow.getOrDefault("modality", "VERBAL_TEXT"));
+      int newN = ((Number) newRow.getOrDefault("n", 0)).intValue();
+
+      Object oldRowObj = oldByExercise.get(ex);
+      if (oldRowObj instanceof Map) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> oldRow = (Map<String, Object>) oldRowObj;
+        String oldSource = String.valueOf(oldRow.getOrDefault("source", "DEFAULT"));
+        String oldMod = String.valueOf(oldRow.getOrDefault("modality", "VERBAL_TEXT"));
+        int oldN = ((Number) oldRow.getOrDefault("n", 0)).intValue();
+        String newSource = String.valueOf(newRow.getOrDefault("source", "DEFAULT"));
+        if ("LEARNED".equals(oldSource) && !oldMod.equals(newMod)) {
+          // Keep a learned choice unless the challenger is also learned and has extra evidence.
+          if (!"LEARNED".equals(newSource) || newN < oldN + REASSIGN_MIN_ADDITIONAL_N) {
+            newByExercise.put(ex, oldRow);
+          }
+        }
+      }
+    }
+
+    profile.setPreferredModalityByExerciseJson(ensurePreferredByExerciseDefaults(newByExercise));
 
     StudentLearningProfile saved = profileRepository.save(profile);
     maybeSnapshot(saved, "response:" + response.getPhysicalId());
@@ -201,5 +245,45 @@ public class StudentLearningProfileService {
 
   public static boolean isSuccessfulDelta(double delta) {
     return ProfileEffectivenessMath.isSuccessfulDelta(delta);
+  }
+
+  private static Map<String, Object> defaultPreferredByExercise() {
+    Map<String, Object> out = new HashMap<>();
+    for (String exercise : CANONICAL_EXERCISES) {
+      out.put(exercise, defaultPreferredRow());
+    }
+    return out;
+  }
+
+  private static Map<String, Object> defaultPreferredRow() {
+    Map<String, Object> row = new HashMap<>();
+    row.put("modality", FeedbackModality.VERBAL_TEXT.name());
+    row.put("n", 0);
+    row.put("meanDelta", 0.0);
+    row.put("confidence", 0.0);
+    row.put("source", "DEFAULT");
+    return row;
+  }
+
+  private static Map<String, Object> ensurePreferredByExerciseDefaults(Map<String, Object> raw) {
+    Map<String, Object> merged = defaultPreferredByExercise();
+    if (raw == null || raw.isEmpty()) {
+      return merged;
+    }
+    for (Map.Entry<String, Object> entry : raw.entrySet()) {
+      if (!(entry.getValue() instanceof Map<?, ?> row)) {
+        continue;
+      }
+      String normalized = CoachingInstructionCatalog.normalizeExercise(entry.getKey());
+      @SuppressWarnings("unchecked")
+      Map<String, Object> typedRow = new HashMap<>((Map<String, Object>) row);
+      typedRow.put("modality", String.valueOf(typedRow.getOrDefault("modality", FeedbackModality.VERBAL_TEXT.name())));
+      typedRow.put("n", ((Number) typedRow.getOrDefault("n", 0)).intValue());
+      typedRow.put("meanDelta", ((Number) typedRow.getOrDefault("meanDelta", 0.0)).doubleValue());
+      typedRow.put("confidence", ((Number) typedRow.getOrDefault("confidence", 0.0)).doubleValue());
+      typedRow.put("source", String.valueOf(typedRow.getOrDefault("source", "DEFAULT")));
+      merged.put(normalized, typedRow);
+    }
+    return merged;
   }
 }

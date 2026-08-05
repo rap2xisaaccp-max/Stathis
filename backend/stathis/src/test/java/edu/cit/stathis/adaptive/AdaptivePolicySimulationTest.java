@@ -26,7 +26,7 @@ class AdaptivePolicySimulationTest {
     return switch (modality) {
       case VISUAL_HIGHLIGHT -> 0.35 + random.nextGaussian() * 0.05;
       case VERBAL_TTS -> 0.18 + random.nextGaussian() * 0.05;
-      case VERBAL_TEXT, DEMONSTRATION -> 0.05 + random.nextGaussian() * 0.03;
+      case VERBAL_TEXT -> 0.05 + random.nextGaussian() * 0.03;
     };
   }
 

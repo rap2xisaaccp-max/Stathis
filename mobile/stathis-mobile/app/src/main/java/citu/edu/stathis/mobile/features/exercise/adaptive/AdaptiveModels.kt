@@ -3,15 +3,13 @@ package citu.edu.stathis.mobile.features.exercise.adaptive
 enum class FeedbackModality {
     VERBAL_TEXT,
     VISUAL_HIGHLIGHT,
-    DEMONSTRATION,
     VERBAL_TTS
 }
 
 enum class PolicySource {
     EXPLORE,
     EXPLOIT,
-    DEFAULT,
-    STATIC_CONTROL
+    DEFAULT
 }
 
 enum class FormErrorCode {

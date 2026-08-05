@@ -171,13 +171,13 @@ class StudentLearningProfileUpdateMathTest {
     assertTrue(
         updated
             .getModalityEffectivenessJson()
-            .containsKey("SQUAT|CHEST_UP|VISUAL_HIGHLIGHT"));
+            .containsKey("SQUATS|CHEST_UP|VISUAL_HIGHLIGHT"));
     assertEquals(FeedbackModality.VISUAL_HIGHLIGHT, updated.getPreferredModality());
     assertNotNull(updated.getPreferredModalityByExerciseJson());
-    assertTrue(updated.getPreferredModalityByExerciseJson().containsKey("SQUAT"));
+    assertTrue(updated.getPreferredModalityByExerciseJson().containsKey("SQUATS"));
     @SuppressWarnings("unchecked")
     Map<String, Object> squatPref =
-        (Map<String, Object>) updated.getPreferredModalityByExerciseJson().get("SQUAT");
+        (Map<String, Object>) updated.getPreferredModalityByExerciseJson().get("SQUATS");
     assertEquals("EXPLORING", squatPref.get("source"));
   }
 

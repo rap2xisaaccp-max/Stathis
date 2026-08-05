@@ -85,8 +85,7 @@ data class AdaptiveBatchResultDto(
 data class RecommendationRequestDto(
     val exerciseType: String,
     val errorCode: String,
-    val currentSeverity: Double? = null,
-    val staticControl: Boolean? = false
+    val currentSeverity: Double? = null
 )
 
 data class RecommendationResponseDto(

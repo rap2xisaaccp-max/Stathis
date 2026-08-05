@@ -43,7 +43,7 @@ class ModalityDeliveryPlannerTest {
                 FormErrorCode.KNEES_IN,
                 interventionLogged = true
             )
-        assertTrue(plan.showTextBanner)
+        assertFalse(plan.showTextBanner)
         assertTrue(plan.highlightSkeleton)
         assertFalse(plan.speak)
         assertTrue(plan.highlightJoints.contains(ModalityHighlightTargets.LEFT_KNEE))
@@ -59,7 +59,7 @@ class ModalityDeliveryPlannerTest {
                 FormErrorCode.CHEST_UP,
                 interventionLogged = true
             )
-        assertTrue(plan.showTextBanner)
+        assertFalse(plan.showTextBanner)
         assertFalse(plan.highlightSkeleton)
         assertTrue(plan.speak)
         assertEquals("tts", plan.channel)
