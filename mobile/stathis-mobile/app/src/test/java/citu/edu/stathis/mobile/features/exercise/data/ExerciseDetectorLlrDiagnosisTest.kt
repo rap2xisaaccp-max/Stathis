@@ -8,7 +8,7 @@ import java.io.File
 /** Post-fix diagnosis — confirms previously blocking gates now allow valid motion. */
 class ExerciseDetectorLlrDiagnosisTest {
 
-    private val logFile = File("C:/Users/ASUS/Stathis/debug-b7147e.log")
+    private val logFile: File = java.nio.file.Files.createTempDirectory("stathis-test-").resolve("debug-b7147e.log").toFile()
     private var t = 1_000L
 
     private fun log(hypothesisId: String, message: String, data: Map<String, Any?>) {

@@ -23,10 +23,11 @@ import timber.log.Timber
 @Singleton
 class AdaptiveFeedbackEngine @Inject constructor(
     private val adaptiveApi: AdaptiveApi,
-    private val delivery: AdaptiveFeedbackDelivery
+    private val delivery: AdaptiveFeedbackDelivery,
+    // Injected OfflineQueue with default binding to in-memory AdaptiveOfflineQueue via Hilt.
+    private val offlineQueue: OfflineQueue = AdaptiveOfflineQueue(maxRetries = 5)
 ) {
     private val pendingResponses = ConcurrentLinkedQueue<PendingIntervention>()
-    private val offlineQueue = AdaptiveOfflineQueue(maxRetries = 5)
     private val signalMutex = Mutex()
 
     @Volatile private var sessionId: String = ""
@@ -45,7 +46,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
     @Volatile private var sessionRecorded: Boolean = false
 
     /** Exposed for tests / diagnostics. */
-    fun offlineQueueForTests(): AdaptiveOfflineQueue = offlineQueue
+    fun offlineQueueForTests(): AdaptiveOfflineQueue =
+        if (offlineQueue is AdaptiveOfflineQueue) offlineQueue else throw IllegalStateException("offlineQueue is not AdaptiveOfflineQueue")
 
     /** Exposed for diagnostics / UI status. */
     fun lifecyclePhase(): InterventionPhase = interventionLifecycle.phase
@@ -270,27 +272,26 @@ class AdaptiveFeedbackEngine @Inject constructor(
     ): AdaptiveRecommendation {
         val catalogText = CoachingInstructionCatalog.messageText(exerciseType, errorCode, intensity)
         val catalogCode = CoachingInstructionCatalog.messageCode(exerciseType, errorCode, intensity)
-        if (staticControl) {
-            return AdaptiveRecommendation(
-                modality = FeedbackModality.VERBAL_TEXT,
-                errorCode = errorCode,
-                messageCode = catalogCode,
-                messageText = catalogText,
-                policySource = PolicySource.STATIC_CONTROL,
-                experimentArm = resolveExperimentArm("STATIC"),
-                cooldownMs = 8000
-            )
-        }
+                if (staticControl) {
+                    return AdaptiveRecommendation(
+                        modality = FeedbackModality.VERBAL_TEXT,
+                        errorCode = errorCode,
+                        messageCode = catalogCode,
+                        messageText = catalogText,
+                        policySource = PolicySource.STATIC_CONTROL,
+                        experimentArm = resolveExperimentArm("STATIC"),
+                        cooldownMs = 8000
+                    )
+                }
 
-        return try {
-            val remote =
+                return try {
+                    val remote =
                 withContext(Dispatchers.IO) {
                     adaptiveApi.recommend(
                         RecommendationRequestDto(
                             exerciseType = exerciseType,
                             errorCode = errorCode.name,
-                            currentSeverity = severity,
-                            staticControl = false
+                            currentSeverity = severity
                         )
                     )
                 }
@@ -306,7 +307,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     runCatching { PolicySource.valueOf(remote.policySource ?: "DEFAULT") }
                         .getOrDefault(PolicySource.DEFAULT),
                 expectedDelta = remote.expectedDelta ?: 0.0,
-                experimentArm = remote.experimentArm ?: "ADAPTIVE",
+                experimentArm = resolveExperimentArm(remote.experimentArm),
                 cooldownMs = remote.cooldownMs ?: 8000
             ).also { cachedRecommendation = it }
         } catch (t: Throwable) {
