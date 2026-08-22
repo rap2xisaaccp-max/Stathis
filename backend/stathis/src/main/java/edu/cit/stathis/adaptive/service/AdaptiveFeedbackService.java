@@ -8,7 +8,6 @@ import edu.cit.stathis.adaptive.enums.FormErrorCode;
 import edu.cit.stathis.adaptive.enums.PolicySource;
 import edu.cit.stathis.adaptive.repository.FeedbackInterventionRepository;
 import edu.cit.stathis.adaptive.repository.FeedbackResponseRepository;
-import edu.cit.stathis.classroom.entity.Classroom;
 import edu.cit.stathis.classroom.repository.ClassroomRepository;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
@@ -27,9 +26,7 @@ public class AdaptiveFeedbackService {
   @Autowired private FeedbackResponseRepository responseRepository;
   @Autowired private StudentLearningProfileService profileService;
   @Autowired private ExerciseMasteryService masteryService;
-  @Autowired private AdaptivePolicyService policyService;
   @Autowired private ClassroomRepository classroomRepository;
-  @Autowired private AdaptiveArmRollupService armRollupService;
 
   @Transactional
   public AdaptiveBatchIngestResultDTO ingestBatch(String studentId, AdaptiveBatchIngestDTO batch) {
@@ -121,6 +118,7 @@ public class AdaptiveFeedbackService {
       return existing.get();
     }
 
+    FormErrorCode errorCode = req.getErrorCode() != null ? req.getErrorCode() : FormErrorCode.UNKNOWN;
     FeedbackIntervention entity =
         FeedbackIntervention.builder()
             .physicalId(physicalId)
@@ -129,9 +127,9 @@ public class AdaptiveFeedbackService {
             .taskId(req.getTaskId())
             .classroomId(req.getClassroomId())
             .exerciseType(req.getExerciseType())
-            .errorCode(req.getErrorCode() != null ? req.getErrorCode() : FormErrorCode.UNKNOWN)
+            .errorCode(errorCode)
             .modality(
-                req.getModality() != null ? req.getModality() : FeedbackModality.VERBAL_TEXT)
+                req.getModality() != null ? req.getModality() : FeedbackModality.VERBAL_TTS)
             .messageCode(req.getMessageCode())
             .messageText(req.getMessageText())
             .deliveredAt(parseTime(req.getDeliveredAt(), OffsetDateTime.now()))
@@ -141,7 +139,12 @@ public class AdaptiveFeedbackService {
             .experimentArm(req.getExperimentArm())
             .build();
 
-    return interventionRepository.save(entity);
+    FeedbackIntervention saved = interventionRepository.save(entity);
+    if (isCoachableIntervention(saved)) {
+      masteryService.recordCoachableError(saved);
+      profileService.recordCoachableIntervention(studentId);
+    }
+    return saved;
   }
 
   @Transactional
@@ -172,10 +175,7 @@ public class AdaptiveFeedbackService {
     double post = clamp01(req.getPostSeverity());
     double delta =
         req.getDelta() != null ? req.getDelta() : (intervention.getBaselineSeverity() - post);
-    boolean success =
-        req.getSuccess() != null
-            ? req.getSuccess()
-            : StudentLearningProfileService.isSuccessfulDelta(delta);
+    boolean success = req.getSuccess() != null ? req.getSuccess() : delta >= 0.15;
 
     String physicalId =
         (req.getPhysicalId() != null && !req.getPhysicalId().isBlank())
@@ -195,19 +195,7 @@ public class AdaptiveFeedbackService {
             .confoundersJson(req.getConfoundersJson())
             .build();
 
-    FeedbackResponse saved = responseRepository.save(entity);
-    // Technical camera/detection signals must not drive preferred-modality learning.
-    if (intervention.getErrorCode() == null || !intervention.getErrorCode().isTechnical()) {
-      profileService.applyResponse(intervention, saved);
-      masteryService.applyResponse(intervention, saved);
-    }
-    armRollupService.recordResponse(intervention, saved);
-    return saved;
-  }
-
-  public AdaptiveRecommendationDTO recommend(
-      String studentId, AdaptiveRecommendationRequestDTO request) {
-    return policyService.recommend(studentId, request);
+    return responseRepository.save(entity);
   }
 
   public StudentLearningProfileDTO getProfile(String studentId) {
@@ -237,305 +225,37 @@ public class AdaptiveFeedbackService {
     List<FeedbackIntervention> coachableInterventions =
         allInterventions.stream().filter(this::isCoachableIntervention).collect(Collectors.toList());
     List<FeedbackIntervention> recent =
-        allInterventions.stream().limit(25).collect(Collectors.toList());
+        coachableInterventions.stream().limit(25).collect(Collectors.toList());
 
-    // Recurring form errors: coachable codes only (exclude camera/model technical signals).
-    Map<String, Long> topErrors =
-        RctEvaluationMetrics.countDistinctSessionErrors(
-            coachableInterventions.stream()
-                .map(FeedbackIntervention::getSessionId)
-                .collect(Collectors.toList()),
-            coachableInterventions.stream()
-                .map(i -> i.getErrorCode() != null ? i.getErrorCode().name() : null)
-                .collect(Collectors.toList()));
+    Map<String, Long> topErrors = new LinkedHashMap<>();
+    for (FeedbackIntervention intervention : coachableInterventions) {
+      if (intervention.getErrorCode() == null) {
+        continue;
+      }
+      String key = intervention.getErrorCode().name();
+      topErrors.merge(key, 1L, Long::sum);
+    }
 
     StudentLearningProfileDTO profile = getProfile(studentId);
-    List<FeedbackResponse> allResponses =
-        responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId);
-
-    Map<String, FeedbackIntervention> interventionById = new HashMap<>();
-    for (FeedbackIntervention fi : allInterventions) {
-      if (fi.getPhysicalId() != null) {
-        interventionById.put(fi.getPhysicalId(), fi);
-      }
-    }
-    List<FeedbackResponse> coachableResponses =
-        allResponses.stream()
-            .filter(
-                fr -> {
-                  FeedbackIntervention fi =
-                      interventionById.get(fr.getInterventionPhysicalId());
-                  return fi != null && isCoachableIntervention(fi);
-                })
-            .collect(Collectors.toList());
-
-    Map<String, Double> modalityMeanDelta =
-        extractModalityMeanDelta(profile.getModalityEffectivenessJson());
-    // Fallback: derive from closed-loop FR↔FI when profile buckets are empty/unreadable
-    if (modalityMeanDelta.isEmpty() && !coachableResponses.isEmpty()) {
-      modalityMeanDelta =
-          modalityMeanDeltaFromResponses(coachableInterventions, coachableResponses);
-    }
-
-    // Closed-loop success: successes / coachable response pairs (not FI count; not technical).
-    long closedPairs = coachableResponses.size();
-    long successes = coachableResponses.stream().filter(FeedbackResponse::isSuccess).count();
     List<ExerciseMasteryDTO> mastery = getMastery(studentId);
-    List<ProfileHistoryPointDTO> history = profileService.listHistory(studentId);
-
-    // Seed a current point so the timeline chart is useful before the 5th snapshot.
-    // Include FI/FR presence so Score-only gaps don't hide timeline when adaptive telemetry exists.
-    if (history.isEmpty()
-        && ((profile.getTotalInterventions() != null && profile.getTotalInterventions() > 0)
-            || (mastery != null && !mastery.isEmpty())
-            || !allInterventions.isEmpty()
-            || closedPairs > 0)) {
-      double meanMastery =
-          mastery == null || mastery.isEmpty()
-              ? 0.0
-              : mastery.stream().mapToDouble(ExerciseMasteryDTO::getMasteryLevel).average().orElse(0.0);
-      history =
-          List.of(
-              ProfileHistoryPointDTO.builder()
-                  .physicalId("CURRENT")
-                  .createdAt(java.time.OffsetDateTime.now().toString())
-                  .reason("live")
-                  .learningRateEstimate(profile.getLearningRateEstimate())
-                  .consistencyScore(profile.getConsistencyScore())
-                  .meanMasteryLevel(meanMastery)
-                  .totalInterventions(profile.getTotalInterventions())
-                  .preferredModality(
-                      profile.getPreferredModality() != null
-                          ? profile.getPreferredModality().name()
-                          : null)
-                  .build());
-    }
-
-    Map<String, FeedbackResponse> responseByIntervention = new HashMap<>();
-    for (FeedbackResponse response : allResponses) {
-      if (response.getInterventionPhysicalId() != null) {
-        responseByIntervention.putIfAbsent(response.getInterventionPhysicalId(), response);
-      }
-    }
 
     return AdaptiveInsightsDTO.builder()
         .studentId(studentId)
         .profile(profile)
         .mastery(mastery)
-        .preferredModalityByExercise(profile.getPreferredModalityByExercise())
-        .modalityMeanDelta(modalityMeanDelta)
+        .preferredModalityByExercise(Map.of())
+        .modalityMeanDelta(Map.of())
         .topRecurringErrors(topErrors)
-        .totalInterventions(closedPairs)
-        .successfulInterventions(successes)
-        .overallSuccessRate(RctEvaluationMetrics.successRate(successes, closedPairs))
+        .totalInterventions(coachableInterventions.size())
+        .successfulInterventions(0)
+        .overallSuccessRate(0.0)
         .recentInterventions(
-            recent.stream()
-                .map(fi -> toInterventionDto(fi, responseByIntervention.get(fi.getPhysicalId())))
-                .collect(Collectors.toList()))
-        .profileHistory(history)
+            recent.stream().map(this::toInterventionDto).collect(Collectors.toList()))
+        .profileHistory(List.of())
         .build();
   }
 
-  public AdaptiveEvaluationSummaryDTO getEvaluationSummary(String teacherId, String studentId) {
-    AdaptiveInsightsDTO insights = getInsights(teacherId, studentId);
-    List<FeedbackIntervention> all =
-        interventionRepository.findByStudentIdOrderByDeliveredAtDesc(studentId);
-    String arm =
-        all.stream()
-            .map(FeedbackIntervention::getExperimentArm)
-            .filter(a -> a != null && !a.isBlank())
-            .findFirst()
-            .orElse("ADAPTIVE");
-
-    List<FeedbackResponse> responses =
-        responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId);
-    double meanDelta = 0.0;
-    int deltaN = 0;
-    for (FeedbackResponse response : responses) {
-      meanDelta += response.getDelta();
-      deltaN++;
-    }
-    if (deltaN > 0) {
-      meanDelta /= deltaN;
-    }
-
-    List<ExerciseMasteryDTO> mastery = insights.getMastery();
-    double meanMastery =
-        mastery == null || mastery.isEmpty()
-            ? 0.0
-            : mastery.stream().mapToDouble(ExerciseMasteryDTO::getMasteryLevel).average().orElse(0.0);
-    int sessions =
-        mastery == null
-            ? 0
-            : mastery.stream()
-                .mapToInt(m -> m.getSessionsCount() == null ? 0 : m.getSessionsCount())
-                .sum();
-
-    Map<String, Long> byArm =
-        all.stream()
-            .collect(
-                Collectors.groupingBy(
-                    i ->
-                        i.getExperimentArm() == null || i.getExperimentArm().isBlank()
-                            ? "ADAPTIVE"
-                            : i.getExperimentArm(),
-                    Collectors.counting()));
-    long practiceCount =
-        byArm.entrySet().stream()
-            .filter(e -> RctEvaluationMetrics.isPracticeArm(e.getKey()))
-            .mapToLong(Map.Entry::getValue)
-            .sum();
-    long taskCount = Math.max(0, all.size() - practiceCount);
-
-    return AdaptiveEvaluationSummaryDTO.builder()
-        .studentId(studentId)
-        .experimentArm(arm)
-        .totalInterventions(insights.getTotalInterventions())
-        .successfulInterventions(insights.getSuccessfulInterventions())
-        .successRate(insights.getOverallSuccessRate())
-        .meanDelta(meanDelta)
-        .meanDeltaByModality(insights.getModalityMeanDelta())
-        .errorFrequency(insights.getTopRecurringErrors())
-        .meanMasteryLevel(meanMastery)
-        .sessionsTracked(sessions)
-        .practiceInterventions(practiceCount)
-        .taskInterventions(taskCount)
-        .interventionsByArm(byArm)
-        .build();
-  }
-
-  public ClassroomEvaluationDTO getClassroomEvaluation(String teacherId, String classroomId) {
-    Classroom classroom =
-        classroomRepository
-            .findByPhysicalId(classroomId)
-            .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Classroom not found"));
-    if (!teacherId.equals(classroom.getTeacherId())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized for this classroom");
-    }
-
-    List<String> studentIds =
-        classroom.getClassroomStudents() == null
-            ? List.of()
-            : classroom.getClassroomStudents().stream()
-                .filter(cs -> cs.getStudent() != null && cs.getStudent().getUser() != null)
-                .map(cs -> cs.getStudent().getUser().getPhysicalId())
-                .filter(id -> id != null && !id.isBlank())
-                .distinct()
-                .toList();
-
-    List<AdaptiveEvaluationSummaryDTO> studentSummaries = new ArrayList<>();
-    Map<String, Long> interventionsByArm = new HashMap<>();
-    List<Double> adaptiveDeltas = new ArrayList<>();
-    List<Double> staticDeltas = new ArrayList<>();
-    long adaptiveSuccesses = 0;
-    long staticSuccesses = 0;
-    long totalClosedPairs = 0;
-    long successfulClosedPairs = 0;
-    long practiceInterventions = 0;
-    long taskInterventions = 0;
-    double masterySum = 0.0;
-    int masteryN = 0;
-
-    for (String studentId : studentIds) {
-      AdaptiveEvaluationSummaryDTO summary = getEvaluationSummary(teacherId, studentId);
-      studentSummaries.add(summary);
-      if (summary.getMeanMasteryLevel() != null) {
-        masterySum += summary.getMeanMasteryLevel();
-        masteryN++;
-      }
-
-      // Classroom-scoped FI only (exclude blank classroomId to avoid cross-room bleed).
-      List<FeedbackIntervention> classroomInterventions =
-          interventionRepository.findByStudentIdOrderByDeliveredAtDesc(studentId).stream()
-              .filter(i -> RctEvaluationMetrics.matchesClassroom(i.getClassroomId(), classroomId))
-              .toList();
-
-      Map<String, String> interventionArm = new HashMap<>();
-      java.util.HashSet<String> classroomInterventionIds = new java.util.HashSet<>();
-      for (FeedbackIntervention intervention : classroomInterventions) {
-        classroomInterventionIds.add(intervention.getPhysicalId());
-        String arm =
-            intervention.getExperimentArm() == null || intervention.getExperimentArm().isBlank()
-                ? "ADAPTIVE"
-                : intervention.getExperimentArm();
-        interventionArm.put(intervention.getPhysicalId(), arm);
-        interventionsByArm.merge(arm, 1L, Long::sum);
-        if (RctEvaluationMetrics.isPracticeArm(arm)) {
-          practiceInterventions++;
-        } else {
-          taskInterventions++;
-        }
-      }
-
-      for (FeedbackResponse response :
-          responseRepository.findByStudentIdOrderByCreatedAtDesc(studentId)) {
-        if (!classroomInterventionIds.contains(response.getInterventionPhysicalId())) {
-          continue;
-        }
-        totalClosedPairs++;
-        if (response.isSuccess()) {
-          successfulClosedPairs++;
-        }
-        String rawArm =
-            interventionArm.getOrDefault(response.getInterventionPhysicalId(), "ADAPTIVE");
-        String base = RctEvaluationMetrics.baseArm(rawArm);
-        if ("STATIC".equals(base)) {
-          staticDeltas.add(response.getDelta());
-          if (response.isSuccess()) {
-            staticSuccesses++;
-          }
-        } else {
-          adaptiveDeltas.add(response.getDelta());
-          if (response.isSuccess()) {
-            adaptiveSuccesses++;
-          }
-        }
-      }
-    }
-
-    RctEvaluationMetrics.ArmStats adaptiveStats =
-        RctEvaluationMetrics.armStats("ADAPTIVE", adaptiveDeltas, adaptiveSuccesses, null);
-    RctEvaluationMetrics.ArmStats staticStats =
-        RctEvaluationMetrics.armStats("STATIC", staticDeltas, staticSuccesses, null);
-    RctEvaluationMetrics.AblationContrast contrast =
-        RctEvaluationMetrics.contrast(adaptiveStats, staticStats);
-    boolean bothArmsHaveData = !adaptiveDeltas.isEmpty() && !staticDeltas.isEmpty();
-    Double adaptiveMeanDelta = adaptiveDeltas.isEmpty() ? null : adaptiveStats.meanDelta();
-    Double staticMeanDelta = staticDeltas.isEmpty() ? null : staticStats.meanDelta();
-    Double meanDeltaLift = bothArmsHaveData ? contrast.meanDeltaLift() : null;
-    Double successRateLift = bothArmsHaveData ? contrast.successRateLift() : null;
-    Double cohensD =
-        bothArmsHaveData ? RctEvaluationMetrics.cohensD(adaptiveDeltas, staticDeltas) : null;
-
-    // Classroom mean Δ from classroom-scoped closed responses only.
-    List<Double> allClassroomDeltas = new ArrayList<>();
-    allClassroomDeltas.addAll(adaptiveDeltas);
-    allClassroomDeltas.addAll(staticDeltas);
-
-    return ClassroomEvaluationDTO.builder()
-        .classroomId(classroomId)
-        .studentCount(studentIds.size())
-        .totalInterventions(totalClosedPairs)
-        .successfulInterventions(successfulClosedPairs)
-        .overallSuccessRate(
-            RctEvaluationMetrics.successRate(successfulClosedPairs, totalClosedPairs))
-        .meanDelta(RctEvaluationMetrics.mean(allClassroomDeltas))
-        .meanMasteryLevel(masteryN == 0 ? 0.0 : masterySum / masteryN)
-        .practiceInterventions(practiceInterventions)
-        .taskInterventions(taskInterventions)
-        .interventionsByArm(interventionsByArm)
-        .adaptiveMeanDelta(adaptiveMeanDelta)
-        .staticMeanDelta(staticMeanDelta)
-        .meanDeltaLift(meanDeltaLift)
-        .successRateLift(successRateLift)
-        .cohensD(cohensD)
-        .adaptiveOutperformsOnDelta(bothArmsHaveData && contrast.adaptiveOutperformsOnDelta())
-        .students(studentSummaries)
-        .build();
-  }
-
-  private void assertTeacherCanViewStudent(String teacherId, String studentId) {
+  public void assertTeacherCanViewStudent(String teacherId, String studentId) {
     boolean sharedClassroom =
         classroomRepository
             .findByClassroomStudents_Student_User_PhysicalId(studentId)
@@ -546,67 +266,15 @@ public class AdaptiveFeedbackService {
     }
   }
 
-  /** Read modality meanΔ from profile JSON buckets (modality enum keys only). */
-  private Map<String, Double> extractModalityMeanDelta(Map<String, Object> effectiveness) {
-    Map<String, Double> modalityMeanDelta = new HashMap<>();
-    if (effectiveness == null || effectiveness.isEmpty()) {
-      return modalityMeanDelta;
-    }
-    for (FeedbackModality modality : FeedbackModality.values()) {
-      Object raw = effectiveness.get(modality.name());
-      if (!(raw instanceof Map<?, ?> map)) {
-        continue;
-      }
-      Object mean = map.get("meanDelta");
-      if (mean == null) {
-        mean = map.get("bayesianMeanDelta");
-      }
-      if (mean instanceof Number number) {
-        modalityMeanDelta.put(modality.name(), number.doubleValue());
-      }
-    }
-    return modalityMeanDelta;
-  }
-
-  /** Aggregate mean Δ per modality from closed FI↔FR pairs (teacher chart fallback). */
-  private Map<String, Double> modalityMeanDeltaFromResponses(
-      List<FeedbackIntervention> interventions, List<FeedbackResponse> responses) {
-    Map<String, String> interventionModality = new HashMap<>();
-    for (FeedbackIntervention intervention : interventions) {
-      if (intervention.getPhysicalId() != null && intervention.getModality() != null) {
-        interventionModality.put(intervention.getPhysicalId(), intervention.getModality().name());
-      }
-    }
-    Map<String, List<Double>> deltasByModality = new HashMap<>();
-    for (FeedbackResponse response : responses) {
-      String modality = interventionModality.get(response.getInterventionPhysicalId());
-      if (modality == null || modality.isBlank()) {
-        continue;
-      }
-      deltasByModality
-          .computeIfAbsent(modality, k -> new ArrayList<>())
-          .add(response.getDelta());
-    }
-    Map<String, Double> means = new HashMap<>();
-    for (Map.Entry<String, List<Double>> entry : deltasByModality.entrySet()) {
-      means.put(entry.getKey(), RctEvaluationMetrics.mean(entry.getValue()));
-    }
-    return means;
-  }
-
   private boolean isCoachableIntervention(FeedbackIntervention intervention) {
     if (intervention == null || intervention.getErrorCode() == null) {
       return false;
     }
-    return !intervention.getErrorCode().isTechnical();
+    return !intervention.getErrorCode().isTechnical()
+        && intervention.getErrorCode() != FormErrorCode.UNKNOWN;
   }
 
   private FeedbackInterventionResponseDTO toInterventionDto(FeedbackIntervention entity) {
-    return toInterventionDto(entity, null);
-  }
-
-  private FeedbackInterventionResponseDTO toInterventionDto(
-      FeedbackIntervention entity, FeedbackResponse response) {
     return FeedbackInterventionResponseDTO.builder()
         .physicalId(entity.getPhysicalId())
         .studentId(entity.getStudentId())
@@ -622,8 +290,6 @@ public class AdaptiveFeedbackService {
         .baselineSeverity(entity.getBaselineSeverity())
         .policySource(entity.getPolicySource())
         .experimentArm(entity.getExperimentArm())
-        .responseSuccess(response != null ? response.isSuccess() : null)
-        .responseDelta(response != null ? response.getDelta() : null)
         .correctionDelivered(entity.getMessageText())
         .build();
   }

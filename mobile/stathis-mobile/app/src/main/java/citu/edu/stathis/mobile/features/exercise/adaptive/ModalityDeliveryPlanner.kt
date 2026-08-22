@@ -1,8 +1,8 @@
 package citu.edu.stathis.mobile.features.exercise.adaptive
 
 /**
- * Pure planner for modality channels. Visual and TTS are supporting delivery channels
- * and must only activate when an intervention was already logged ([interventionId] present).
+ * Fixed dual-channel planner: visual highlight of the incorrect region plus TTS.
+ * Channels activate only after an intervention id is logged.
  */
 object ModalityDeliveryPlanner {
 
@@ -24,9 +24,6 @@ object ModalityDeliveryPlanner {
         val epochMs: Long
     )
 
-    /**
-     * @param interventionLogged when false, all channels are suppressed (gate behind logger).
-     */
     fun plan(
         modality: FeedbackModality,
         errorCode: FormErrorCode,
@@ -44,35 +41,14 @@ object ModalityDeliveryPlanner {
             )
         }
         val targets = ModalityHighlightTargets.forError(errorCode, exerciseType)
-        return when (modality) {
-            FeedbackModality.VERBAL_TEXT ->
-                Plan(
-                    showTextBanner = true,
-                    highlightSkeleton = false,
-                    speak = false,
-                    highlightJoints = emptySet(),
-                    highlightBones = emptyList(),
-                    channel = "text"
-                )
-            FeedbackModality.VISUAL_HIGHLIGHT, FeedbackModality.DEMONSTRATION ->
-                Plan(
-                    showTextBanner = true,
-                    highlightSkeleton = true,
-                    speak = false,
-                    highlightJoints = targets.joints,
-                    highlightBones = targets.bones,
-                    channel = "visual"
-                )
-            FeedbackModality.VERBAL_TTS ->
-                Plan(
-                    showTextBanner = true,
-                    highlightSkeleton = false,
-                    speak = true,
-                    highlightJoints = emptySet(),
-                    highlightBones = emptyList(),
-                    channel = "tts"
-                )
-        }
+        return Plan(
+            showTextBanner = true,
+            highlightSkeleton = true,
+            speak = true,
+            highlightJoints = targets.joints,
+            highlightBones = targets.bones,
+            channel = "highlight_tts"
+        )
     }
 
     fun toDeliveredFeedback(

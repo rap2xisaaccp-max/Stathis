@@ -6,26 +6,28 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.max
-import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 
 /**
- * On-device closed-loop session logger + orchestrator.
+ * On-device coaching orchestrator.
  *
- * One meaningful intervention = confirmed error → one modality → one delivery → one response
- * window → one FR → cooldown. Form signals are serialized; lifecycle claims before async work.
+ * Confirmed physical form error → one highlight + one TTS cue → one evidence snapshot.
+ * Form signals are serialized; lifecycle claims before delivery.
  */
 @Singleton
 class AdaptiveFeedbackEngine @Inject constructor(
     private val adaptiveApi: AdaptiveApi,
-    private val delivery: AdaptiveFeedbackDelivery,
-    // Injected OfflineQueue with default binding to in-memory AdaptiveOfflineQueue via Hilt.
-    private val offlineQueue: OfflineQueue = AdaptiveOfflineQueue(maxRetries = 5)
+    private val delivery: CoachingDelivery,
+    private val offlineQueue: OfflineQueue,
+    private val evidenceQueue: EvidenceQueue,
+    private val evidenceCapture: FormEvidenceCapture
 ) {
     private val pendingResponses = ConcurrentLinkedQueue<PendingIntervention>()
     private val signalMutex = Mutex()
@@ -33,53 +35,40 @@ class AdaptiveFeedbackEngine @Inject constructor(
     @Volatile private var sessionId: String = ""
     @Volatile private var taskId: String? = null
     @Volatile private var classroomId: String? = null
+    @Volatile private var attemptNumber: Int? = null
     @Volatile private var exerciseType: String = "UNKNOWN"
-    @Volatile private var staticControl: Boolean = false
-    @Volatile private var sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
     @Volatile private var cooldownMs: Long = 8000L
     @Volatile private var activeDelivery: DeliveredFeedback? = null
-    @Volatile private var cachedRecommendation: AdaptiveRecommendation? = null
     private val interventionLifecycle = InterventionLifecycle()
-    private val sessionModalities = linkedSetOf<String>()
     private val sessionErrorCodes = linkedSetOf<String>()
     @Volatile private var sessionInterventionCount: Int = 0
     @Volatile private var sessionRecorded: Boolean = false
 
-    /** Exposed for tests / diagnostics. */
     fun offlineQueueForTests(): AdaptiveOfflineQueue =
         if (offlineQueue is AdaptiveOfflineQueue) offlineQueue else throw IllegalStateException("offlineQueue is not AdaptiveOfflineQueue")
 
-    /** Exposed for diagnostics / UI status. */
     fun lifecyclePhase(): InterventionPhase = interventionLifecycle.phase
 
     fun startSession(
         exerciseType: String,
         taskId: String? = null,
         classroomId: String? = null,
-        staticControl: Boolean = false,
-        sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
+        attemptNumber: Int? = null
     ) {
         this.sessionId = "SES-${UUID.randomUUID().toString().uppercase()}"
         this.exerciseType = exerciseType
         this.taskId = taskId
         this.classroomId = classroomId
-        this.staticControl = staticControl
-        this.sessionContext = sessionContext
+        this.attemptNumber = attemptNumber
         this.activeDelivery = null
         this.cooldownMs = 8000L
         this.sessionInterventionCount = 0
         this.sessionRecorded = false
-        sessionModalities.clear()
         sessionErrorCodes.clear()
         interventionLifecycle.reset()
         pendingResponses.clear()
         delivery.ensureInitialized()
-        Timber.d(
-            "Adaptive session started context=%s staticControl=%s exercise=%s",
-            sessionContext,
-            staticControl,
-            exerciseType
-        )
+        Timber.d("Coaching session started exercise=%s attempt=%s", exerciseType, attemptNumber)
     }
 
     fun currentSessionId(): String = sessionId
@@ -87,9 +76,9 @@ class AdaptiveFeedbackEngine @Inject constructor(
     fun sessionSummary(): AdaptiveSessionSummary =
         AdaptiveSessionSummary(
             interventionCount = sessionInterventionCount,
-            modalitiesUsed = sessionModalities.toList(),
+            modalitiesUsed = if (sessionInterventionCount > 0) listOf("HIGHLIGHT_TTS") else emptyList(),
             errorCodes = sessionErrorCodes.toList(),
-            syncPending = !offlineQueue.isEmpty()
+            syncPending = !offlineQueue.isEmpty() || !evidenceQueue.isEmpty()
         )
 
     fun activeFeedback(): DeliveredFeedback? = activeDelivery
@@ -123,12 +112,12 @@ class AdaptiveFeedbackEngine @Inject constructor(
         flags: List<String> = emptyList(),
         severity: Double,
         currentReps: Int,
-        visibilityOk: Boolean = true
+        visibilityOk: Boolean = true,
+        now: Long = System.currentTimeMillis()
     ): DeliveredFeedback? =
         signalMutex.withLock {
-            val now = System.currentTimeMillis()
             clearActiveFeedbackIfExpired(now)
-            closeExpiredWindows(now, severity, currentReps, visibilityOk)
+            closeExpiredWindows(now, severity)
 
             if (!visibilityOk) {
                 return@withLock activeDelivery
@@ -136,7 +125,6 @@ class AdaptiveFeedbackEngine @Inject constructor(
 
             val errorCode = FormErrorMapper.resolve(flags, formIssues)
 
-            // Technical camera/detection quality: UI guidance only — no coaching FI/FR cycle.
             if (FormErrorClassifier.isTechnical(errorCode)) {
                 val guidance =
                     CoachingInstructionCatalog.messageText(
@@ -147,7 +135,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                 val techUi =
                     DeliveredFeedback(
                         interventionId = "",
-                        modality = FeedbackModality.VERBAL_TEXT,
+                        modality = FeedbackModality.VERBAL_TTS,
                         errorCode = errorCode,
                         message = guidance,
                         highlightJoints = false,
@@ -161,10 +149,16 @@ class AdaptiveFeedbackEngine @Inject constructor(
             }
 
             if (!FormErrorClassifier.isCoachable(errorCode)) {
-                return@withLock activeDelivery
-            }
-
-            if (pendingResponses.isNotEmpty()) {
+                // No physical error this tick (student corrected, or no issue). Observe a
+                // genuine clear so a later repeat can re-arm. Technical/camera signals
+                // already returned above and must not count as form-corrected.
+                interventionLifecycle.tryClaimDelivery(
+                    null,
+                    0.0,
+                    now,
+                    cooldownMs,
+                    currentReps
+                )
                 return@withLock activeDelivery
             }
 
@@ -190,15 +184,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     cycle = cycle
                 )
 
-            val recommendation =
-                try {
-                    resolveRecommendation(resolvedCode, severity, intensity)
-                } catch (t: Throwable) {
-                    Timber.w(t, "Recommend failed after claim; aborting cycle")
-                    interventionLifecycle.abortClaim(System.currentTimeMillis())
-                    return@withLock activeDelivery
-                }
-            cooldownMs = recommendation.cooldownMs.toLong().coerceAtLeast(8_000L)
+            val catalogText = CoachingInstructionCatalog.messageText(exerciseType, resolvedCode, intensity)
+            val catalogCode = CoachingInstructionCatalog.messageCode(exerciseType, resolvedCode, intensity)
 
             val pending =
                 PendingIntervention(
@@ -208,13 +195,13 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     classroomId = classroomId,
                     exerciseType = exerciseType,
                     errorCode = resolvedCode,
-                    modality = recommendation.modality,
-                    messageCode = recommendation.messageCode,
-                    messageText = recommendation.messageText,
+                    modality = FeedbackModality.VERBAL_TTS,
+                    messageCode = catalogCode,
+                    messageText = catalogText,
                     deliveredAtEpochMs = now,
                     baselineSeverity = severity.coerceIn(0.0, 1.0),
-                    policySource = recommendation.policySource,
-                    experimentArm = resolveExperimentArm(recommendation.experimentArm),
+                    policySource = PolicySource.DEFAULT,
+                    experimentArm = null,
                     baselineReps = currentReps
                 )
 
@@ -222,16 +209,15 @@ class AdaptiveFeedbackEngine @Inject constructor(
             offlineQueue.enqueueIntervention(pending.toRequestDto())
             interventionLifecycle.markDelivered(resolvedCode, now, currentReps)
             sessionInterventionCount += 1
-            sessionModalities.add(recommendation.modality.name)
             sessionErrorCodes.add(resolvedCode.name)
 
             val delivered =
                 delivery.deliver(
                     DeliveredFeedback(
                         interventionId = interventionId,
-                        modality = recommendation.modality,
+                        modality = FeedbackModality.VERBAL_TTS,
                         errorCode = resolvedCode,
-                        message = recommendation.messageText,
+                        message = catalogText,
                         highlightJoints = false,
                         speak = false,
                         exerciseType = exerciseType
@@ -239,6 +225,22 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     now = now
                 )
             activeDelivery = delivered
+            evidenceCapture.onConfirmedCoaching(
+                FormEvidenceEvent(
+                    interventionId = interventionId,
+                    sessionId = pending.sessionId,
+                    taskId = taskId,
+                    classroomId = classroomId,
+                    attemptNumber = attemptNumber,
+                    exerciseType = exerciseType,
+                    errorCode = resolvedCode,
+                    errorDescription = FormErrorCopy.explanation(resolvedCode).ifBlank {
+                        FormErrorCopy.label(resolvedCode)
+                    },
+                    correctionText = catalogText,
+                    capturedAtIso = Instant.ofEpochMilli(now).toString()
+                )
+            )
             delivered
         }
 
@@ -254,98 +256,14 @@ class AdaptiveFeedbackEngine @Inject constructor(
         return "FI-$uuid"
     }
 
-    private fun resolveExperimentArm(recommendedArm: String?): String {
-        val base =
-            when {
-                staticControl -> "STATIC"
-                !recommendedArm.isNullOrBlank() &&
-                    recommendedArm.contains("STATIC", ignoreCase = true) -> "STATIC"
-                else -> "ADAPTIVE"
-            }
-        return RctExperimentPrefs.composeArm(base, sessionContext)
-    }
-
-    private suspend fun resolveRecommendation(
-        errorCode: FormErrorCode,
-        severity: Double,
-        intensity: InstructionIntensity
-    ): AdaptiveRecommendation {
-        val catalogText = CoachingInstructionCatalog.messageText(exerciseType, errorCode, intensity)
-        val catalogCode = CoachingInstructionCatalog.messageCode(exerciseType, errorCode, intensity)
-                if (staticControl) {
-                    return AdaptiveRecommendation(
-                        modality = FeedbackModality.VERBAL_TEXT,
-                        errorCode = errorCode,
-                        messageCode = catalogCode,
-                        messageText = catalogText,
-                        policySource = PolicySource.STATIC_CONTROL,
-                        experimentArm = resolveExperimentArm("STATIC"),
-                        cooldownMs = 8000
-                    )
-                }
-
-                return try {
-                    val remote =
-                withContext(Dispatchers.IO) {
-                    adaptiveApi.recommend(
-                        RecommendationRequestDto(
-                            exerciseType = exerciseType,
-                            errorCode = errorCode.name,
-                            currentSeverity = severity
-                        )
-                    )
-                }
-            AdaptiveRecommendation(
-                modality =
-                    runCatching { FeedbackModality.valueOf(remote.modality ?: "VERBAL_TEXT") }
-                        .getOrDefault(FeedbackModality.VERBAL_TEXT),
-                errorCode = errorCode,
-                // Prefer local intensity ladder so escalation is non-repetitive even if server returns reminder.
-                messageCode = catalogCode,
-                messageText = catalogText.ifBlank { remote.messageText ?: defaultMessage(errorCode) },
-                policySource =
-                    runCatching { PolicySource.valueOf(remote.policySource ?: "DEFAULT") }
-                        .getOrDefault(PolicySource.DEFAULT),
-                expectedDelta = remote.expectedDelta ?: 0.0,
-                experimentArm = resolveExperimentArm(remote.experimentArm),
-                cooldownMs = remote.cooldownMs ?: 8000
-            ).also { cachedRecommendation = it }
-        } catch (t: Throwable) {
-            Timber.w(t, "Adaptive recommend failed; using local epsilon-greedy fallback")
-            localRecommend(errorCode, intensity)
-        }
-    }
-
-    private fun localRecommend(
-        errorCode: FormErrorCode,
-        intensity: InstructionIntensity
-    ): AdaptiveRecommendation {
-        val explore = Random.nextDouble() < 0.2
-        val modalities =
-            listOf(
-                FeedbackModality.VERBAL_TEXT,
-                FeedbackModality.VISUAL_HIGHLIGHT,
-                FeedbackModality.VERBAL_TTS
-            )
-        val modality =
-            if (explore) modalities.random()
-            else cachedRecommendation?.modality ?: FeedbackModality.VERBAL_TEXT
-        return AdaptiveRecommendation(
-            modality = modality,
-            errorCode = errorCode,
-            messageCode = CoachingInstructionCatalog.messageCode(exerciseType, errorCode, intensity),
-            messageText = CoachingInstructionCatalog.messageText(exerciseType, errorCode, intensity),
-            policySource = if (explore) PolicySource.EXPLORE else PolicySource.DEFAULT,
-            experimentArm = resolveExperimentArm("ADAPTIVE"),
-            cooldownMs = 8000
-        )
-    }
-
+    /**
+     * Ends the on-device response-observation *window* (banner / highlight timeout).
+     * Does **not** re-arm the lifecycle: a continuously present error stays disarmed
+     * until sustained clear frames, a meaningful rep boundary, or [startSession] reset.
+     */
     private fun closeExpiredWindows(
         now: Long,
-        currentSeverity: Double,
-        currentReps: Int,
-        visibilityOk: Boolean
+        currentSeverity: Double
     ) {
         val expired = pendingResponses.filter { now - it.deliveredAtEpochMs >= it.windowMs }
         expired.forEach { pending ->
@@ -353,23 +271,6 @@ class AdaptiveFeedbackEngine @Inject constructor(
             val post = currentSeverity.coerceIn(0.0, 1.0)
             val delta = pending.baselineSeverity - post
             val success = delta >= 0.15
-            offlineQueue.enqueueResponse(
-                ResponseRequestDto(
-                    physicalId = "FR-${UUID.randomUUID().toString().uppercase()}",
-                    interventionPhysicalId = pending.physicalId,
-                    windowEndAt = Instant.ofEpochMilli(now).toString(),
-                    postSeverity = post,
-                    delta = delta,
-                    repsInWindow = max(0, currentReps - pending.baselineReps),
-                    success = success,
-                    confoundersJson =
-                        mapOf(
-                            "visibilityOk" to visibilityOk,
-                            "sessionId" to pending.sessionId
-                        )
-                )
-            )
-            interventionLifecycle.markResponseClosed(successful = success)
             if (success) {
                 val reinforce =
                     CoachingInstructionCatalog.messageText(
@@ -380,7 +281,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                 activeDelivery =
                     DeliveredFeedback(
                         interventionId = pending.physicalId,
-                        modality = FeedbackModality.VERBAL_TEXT,
+                        modality = FeedbackModality.VERBAL_TTS,
                         errorCode = pending.errorCode,
                         message = reinforce,
                         highlightJoints = false,
@@ -388,7 +289,6 @@ class AdaptiveFeedbackEngine @Inject constructor(
                         showTextBanner = true,
                         deliveryChannel = "text"
                     )
-                interventionLifecycle.markReinforcementDelivered(now)
             } else if (activeDelivery?.interventionId == pending.physicalId) {
                 activeDelivery = null
             }
@@ -396,45 +296,27 @@ class AdaptiveFeedbackEngine @Inject constructor(
     }
 
     suspend fun flush() {
-        val now = System.currentTimeMillis()
-        pendingResponses.forEach { pending ->
-            offlineQueue.enqueueResponse(
-                ResponseRequestDto(
-                    physicalId = "FR-${UUID.randomUUID().toString().uppercase()}",
-                    interventionPhysicalId = pending.physicalId,
-                    windowEndAt = Instant.ofEpochMilli(now).toString(),
-                    postSeverity = pending.baselineSeverity,
-                    delta = 0.0,
-                    repsInWindow = 0,
-                    success = false,
-                    confoundersJson = mapOf("flushed" to true)
-                )
-            )
-        }
         pendingResponses.clear()
 
-        val (queuedInterventions, queuedResponses) = offlineQueue.drain()
-        val hasBatch = queuedInterventions.isNotEmpty() || queuedResponses.isNotEmpty()
-
-        if (hasBatch) {
+        val (queuedInterventions, _) = offlineQueue.drain()
+        if (queuedInterventions.isNotEmpty()) {
             try {
                 withContext(Dispatchers.IO) {
                     adaptiveApi.ingestBatch(
                         AdaptiveBatchIngestDto(
                             interventions = queuedInterventions.map { it.payload },
-                            responses = queuedResponses.map { it.payload }
+                            responses = emptyList()
                         )
                     )
                 }
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to flush adaptive batch; re-queueing with retry budget")
-                offlineQueue.requeueAfterFailure(queuedInterventions, queuedResponses)
-                // Still attempt session recording below so clean/empty sessions count.
+                Timber.w(t, "Failed to flush coaching batch; re-queueing with retry budget")
+                offlineQueue.requeueAfterFailure(queuedInterventions, emptyList())
             }
         }
 
-        // Always bump mastery sessionsCount once per ended session, even with an empty queue
-        // (clean sessions with zero interventions previously skipped recordSession).
+        flushEvidence()
+
         if (!sessionRecorded && exerciseType.isNotBlank()) {
             sessionRecorded = true
             runCatching {
@@ -443,7 +325,39 @@ class AdaptiveFeedbackEngine @Inject constructor(
                 }
             }.onFailure { t ->
                 sessionRecorded = false
-                Timber.w(t, "Failed to record adaptive session for %s", exerciseType)
+                Timber.w(t, "Failed to record coaching session for %s", exerciseType)
+            }
+        }
+    }
+
+    private suspend fun flushEvidence() {
+        val queued = evidenceQueue.pending()
+        if (queued.isEmpty()) return
+        queued.forEach { item ->
+            try {
+                withContext(Dispatchers.IO) {
+                    adaptiveApi.uploadEvidence(
+                        interventionId = textPart(item.event.interventionId),
+                        sessionId = textPart(item.event.sessionId),
+                        taskId = item.event.taskId?.let { textPart(it) },
+                        classroomId = item.event.classroomId?.let { textPart(it) },
+                        attemptNumber = item.event.attemptNumber?.let { textPart(it.toString()) },
+                        exerciseType = textPart(item.event.exerciseType),
+                        errorCode = textPart(item.event.errorCode.name),
+                        errorDescription = textPart(item.event.errorDescription),
+                        correctionText = textPart(item.event.correctionText),
+                        capturedAt = textPart(item.event.capturedAtIso),
+                        file =
+                            MultipartBody.Part.createFormData(
+                                "file",
+                                "${item.event.interventionId}.jpg",
+                                item.jpeg.toRequestBody("image/jpeg".toMediaType())
+                            )
+                    )
+                }
+                evidenceQueue.acknowledge(item.event.interventionId)
+            } catch (t: Throwable) {
+                Timber.w(t, "Evidence upload failed for %s; leaving queued for retry", item.event.interventionId)
             }
         }
     }
@@ -464,6 +378,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
             ruleSeverity: Double? = null
         ): Double =
             FormErrorMapper.estimateSeverity(formIssues, confidence, flags, ruleSeverity)
+
+        private fun textPart(value: String) = value.toRequestBody("text/plain".toMediaType())
     }
 }
 

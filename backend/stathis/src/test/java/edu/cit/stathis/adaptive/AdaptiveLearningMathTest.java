@@ -2,14 +2,12 @@ package edu.cit.stathis.adaptive;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import edu.cit.stathis.adaptive.enums.FeedbackModality;
+import edu.cit.stathis.adaptive.coaching.CoachingInstructionCatalog;
+import edu.cit.stathis.adaptive.coaching.InstructionIntensity;
 import edu.cit.stathis.adaptive.enums.FormErrorCode;
-import edu.cit.stathis.adaptive.service.AdaptivePolicyService;
-import edu.cit.stathis.adaptive.service.ProfileEffectivenessMath;
 import edu.cit.stathis.adaptive.service.StudentLearningProfileService;
 import org.junit.jupiter.api.Test;
 
-/** Lightweight math smoke checks; detailed Phase 3 coverage lives in StudentLearningProfileUpdateMathTest. */
 class AdaptiveLearningMathTest {
 
   @Test
@@ -28,22 +26,14 @@ class AdaptiveLearningMathTest {
   }
 
   @Test
-  void defaultMessagesCoverCoreErrors() {
-    assertTrue(AdaptivePolicyService.defaultMessage(FormErrorCode.CHEST_UP).contains("chest"));
-    assertTrue(AdaptivePolicyService.defaultMessage(FormErrorCode.SAG).toLowerCase().contains("sag"));
-  }
-
-  @Test
-  void modalityEnumValuesForV1() {
-    assertNotNull(FeedbackModality.VERBAL_TEXT);
-    assertNotNull(FeedbackModality.VISUAL_HIGHLIGHT);
-    assertNotNull(FeedbackModality.VERBAL_TTS);
-  }
-
-  @Test
-  void profileMathConstantsAreStable() {
-    assertEquals(0.3, ProfileEffectivenessMath.EWMA_ALPHA, 1e-9);
-    assertEquals(0.15, ProfileEffectivenessMath.SUCCESS_DELTA_THRESHOLD, 1e-9);
-    assertEquals(5, ProfileEffectivenessMath.WARMUP_N);
+  void catalogMessagesCoverCoreErrors() {
+    assertTrue(
+        CoachingInstructionCatalog.messageText("SQUATS", FormErrorCode.CHEST_UP, InstructionIntensity.REMINDER)
+            .toLowerCase()
+            .contains("chest"));
+    assertTrue(
+        CoachingInstructionCatalog.messageText("PUSH_UP", FormErrorCode.SAG, InstructionIntensity.REMINDER)
+            .toLowerCase()
+            .contains("hip"));
   }
 }

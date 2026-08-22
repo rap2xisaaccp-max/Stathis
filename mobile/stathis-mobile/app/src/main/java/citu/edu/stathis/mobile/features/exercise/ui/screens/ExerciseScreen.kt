@@ -113,7 +113,8 @@ fun ExerciseScreen(
     /** Adaptive coaching message to display (closed-loop feedback). */
     adaptiveMessage: String? = null,
     /** Delivery channel label: text | visual | tts */
-    adaptiveDeliveryChannel: String? = null
+    adaptiveDeliveryChannel: String? = null,
+    onRawCameraFrame: ((androidx.camera.core.ImageProxy) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
     val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
@@ -411,7 +412,8 @@ fun ExerciseScreen(
                                             }
                                         }
                                     },
-                                    isImageFlipped = useFrontCamera
+                                    isImageFlipped = useFrontCamera,
+                                    onRawFrame = { proxy -> onRawCameraFrame?.invoke(proxy) }
                                 )
                             )
                         }

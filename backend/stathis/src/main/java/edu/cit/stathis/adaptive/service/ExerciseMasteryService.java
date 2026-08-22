@@ -122,11 +122,12 @@ public class ExerciseMasteryService {
   private record SoftRecommendation(String difficulty, Integer goalReps, String rationale) {}
 
   @Transactional
-  public ExerciseMastery applyResponse(
-      FeedbackIntervention intervention, FeedbackResponse response) {
+  public ExerciseMastery recordCoachableError(FeedbackIntervention intervention) {
+    if (intervention.getErrorCode() == null || intervention.getErrorCode().isTechnical()) {
+      return getOrCreate(intervention.getStudentId(), intervention.getExerciseType());
+    }
     ExerciseMastery mastery =
         getOrCreate(intervention.getStudentId(), intervention.getExerciseType());
-
     Map<String, Object> errors =
         mastery.getCommonErrorsJson() != null
             ? new HashMap<>(mastery.getCommonErrorsJson())
@@ -135,31 +136,16 @@ public class ExerciseMasteryService {
     int count = ((Number) errors.getOrDefault(errorKey, 0)).intValue() + 1;
     errors.put(errorKey, count);
     mastery.setCommonErrorsJson(errors);
-
-    double updated =
-        ExerciseMasteryMath.updateMastery(
-            mastery.getMasteryLevel(), response.getDelta(), response.isSuccess());
-    mastery.setMasteryLevel(updated);
-    mastery.setRecommendedDifficulty(
-        ExerciseMasteryMath.normalizeDifficulty(
-            ExerciseMasteryMath.recommendDifficulty(updated)));
+    recomputeMastery(mastery);
     mastery.setLastSessionAt(OffsetDateTime.now());
-
-    if (response.isSuccess()
-        && intervention.getDeliveredAt() != null
-        && response.getWindowEndAt() != null) {
-      long correctionMs =
-          java.time.Duration.between(intervention.getDeliveredAt(), response.getWindowEndAt())
-              .toMillis();
-      Long priorMedian = mastery.getMedianTimeToCorrectionMs();
-      if (priorMedian == null) {
-        mastery.setMedianTimeToCorrectionMs(correctionMs);
-      } else {
-        mastery.setMedianTimeToCorrectionMs((priorMedian + correctionMs) / 2);
-      }
-    }
-
     return masteryRepository.save(mastery);
+  }
+
+  @Transactional
+  public ExerciseMastery applyResponse(
+      FeedbackIntervention intervention, FeedbackResponse response) {
+    // FR delta no longer updates mastery. Keep error increment if a legacy client still posts FR.
+    return recordCoachableError(intervention);
   }
 
   @Transactional
@@ -169,10 +155,17 @@ public class ExerciseMasteryService {
     int sessions = mastery.getSessionsCount() == null ? 0 : mastery.getSessionsCount();
     mastery.setSessionsCount(sessions + 1);
     mastery.setLastSessionAt(OffsetDateTime.now());
-    // Keep difficulty label aligned with current mastery even if no new responses arrived.
+    recomputeMastery(mastery);
+    return masteryRepository.save(mastery);
+  }
+
+  private void recomputeMastery(ExerciseMastery mastery) {
+    int sessions = mastery.getSessionsCount() == null ? 0 : mastery.getSessionsCount();
+    int errors = ExerciseMasteryMath.totalErrorCount(mastery.getCommonErrorsJson());
+    double updated = ExerciseMasteryMath.fromSessionErrors(sessions, errors);
+    mastery.setMasteryLevel(updated);
     mastery.setRecommendedDifficulty(
         ExerciseMasteryMath.normalizeDifficulty(
-            ExerciseMasteryMath.recommendDifficulty(mastery.getMasteryLevel())));
-    return masteryRepository.save(mastery);
+            ExerciseMasteryMath.recommendDifficulty(updated)));
   }
 }

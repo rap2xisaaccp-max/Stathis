@@ -22,7 +22,7 @@ class ModalityDeliveryPlannerTest {
     }
 
     @Test
-    fun verbalTextIsBannerOnly() {
+    fun loggedInterventionAlwaysHighlightsAndSpeaks() {
         val plan =
             ModalityDeliveryPlanner.plan(
                 FeedbackModality.VERBAL_TEXT,
@@ -30,54 +30,25 @@ class ModalityDeliveryPlannerTest {
                 interventionLogged = true
             )
         assertTrue(plan.showTextBanner)
-        assertFalse(plan.highlightSkeleton)
-        assertFalse(plan.speak)
-        assertEquals("text", plan.channel)
-    }
-
-    @Test
-    fun visualHighlightTargetsErrorJoints() {
-        val plan =
-            ModalityDeliveryPlanner.plan(
-                FeedbackModality.VISUAL_HIGHLIGHT,
-                FormErrorCode.KNEES_IN,
-                interventionLogged = true
-            )
-        assertTrue(plan.showTextBanner)
         assertTrue(plan.highlightSkeleton)
-        assertFalse(plan.speak)
-        assertTrue(plan.highlightJoints.contains(ModalityHighlightTargets.LEFT_KNEE))
-        assertTrue(plan.highlightJoints.contains(ModalityHighlightTargets.RIGHT_KNEE))
-        assertEquals("visual", plan.channel)
-    }
-
-    @Test
-    fun ttsSpeaksWithoutSkeletonHighlight() {
-        val plan =
-            ModalityDeliveryPlanner.plan(
-                FeedbackModality.VERBAL_TTS,
-                FormErrorCode.CHEST_UP,
-                interventionLogged = true
-            )
-        assertTrue(plan.showTextBanner)
-        assertFalse(plan.highlightSkeleton)
         assertTrue(plan.speak)
-        assertEquals("tts", plan.channel)
+        assertEquals("highlight_tts", plan.channel)
+        assertTrue(plan.highlightJoints.contains(ModalityHighlightTargets.LEFT_KNEE))
     }
 
     @Test
-    fun deliveredFeedbackCarriesInstrumentationFields() {
+    fun deliveredFeedbackCarriesBothChannels() {
         val delivered =
             ModalityDeliveryPlanner.toDeliveredFeedback(
                 interventionId = "FI-TEST",
-                modality = FeedbackModality.VISUAL_HIGHLIGHT,
+                modality = FeedbackModality.VERBAL_TTS,
                 errorCode = FormErrorCode.SAG,
-                message = "Avoid sagging hips."
+                message = "Keep your hips level."
             )
         assertTrue(delivered.highlightJoints)
-        assertFalse(delivered.speak)
+        assertTrue(delivered.speak)
         assertTrue(delivered.highlightLandmarkIds.contains(ModalityHighlightTargets.LEFT_HIP))
-        assertEquals("visual", delivered.deliveryChannel)
+        assertEquals("highlight_tts", delivered.deliveryChannel)
         assertEquals("FI-TEST", delivered.interventionId)
     }
 

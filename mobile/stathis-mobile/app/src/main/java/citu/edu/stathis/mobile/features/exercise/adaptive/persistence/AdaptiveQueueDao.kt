@@ -32,6 +32,21 @@ interface AdaptiveQueueDao {
     @Query("SELECT COUNT(*) FROM queued_responses WHERE intervention_physical_id = :fi")
     fun responseExistsForIntervention(fi: String): Int
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertEvidence(entity: QueuedEvidenceEntity): Long
+
+    @Query("SELECT * FROM queued_evidence ORDER BY created_at_epoch_ms ASC")
+    fun allEvidence(): List<QueuedEvidenceEntity>
+
+    @Query("DELETE FROM queued_evidence WHERE id IN (:ids)")
+    fun deleteEvidenceById(ids: List<Long>)
+
+    @Query("SELECT COUNT(*) FROM queued_evidence WHERE intervention_physical_id = :interventionId")
+    fun evidenceExists(interventionId: String): Int
+
+    @Query("SELECT * FROM queued_evidence WHERE intervention_physical_id = :interventionId LIMIT 1")
+    fun findEvidenceByInterventionId(interventionId: String): QueuedEvidenceEntity?
+
     @Transaction
     fun enqueueInterventionIfAbsent(entity: QueuedInterventionEntity): Boolean {
         val exists = interventionExists(entity.physicalId) > 0
@@ -45,6 +60,13 @@ interface AdaptiveQueueDao {
         val exists = responseExistsForIntervention(entity.interventionPhysicalId) > 0
         if (exists) return false
         val row = insertResponse(entity)
+        return row != -1L
+    }
+
+    @Transaction
+    fun enqueueEvidenceIfAbsent(entity: QueuedEvidenceEntity): Boolean {
+        if (evidenceExists(entity.interventionPhysicalId) > 0) return false
+        val row = insertEvidence(entity)
         return row != -1L
     }
 }

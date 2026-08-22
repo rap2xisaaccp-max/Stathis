@@ -34,27 +34,16 @@ fun AdaptiveSessionSummaryCard(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
-                text = "Adaptive coaching summary",
+                text = "Coaching summary",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Coaching cues this session: ${summary.interventionCount}",
+                text = "Form corrections this session: ${summary.interventionCount}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            if (summary.modalitiesUsed.isNotEmpty()) {
-                Text(
-                    text = "Channels used: ${
-                        summary.modalitiesUsed.joinToString(", ") {
-                            it.replace('_', ' ').lowercase()
-                        }
-                    }",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
             if (summary.errorCodes.isNotEmpty()) {
                 Text(
                     text = "Form focus: ${
@@ -93,7 +82,7 @@ fun StudentMasterySection(
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Adaptive learning",
+            text = "Form coaching",
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.fillMaxWidth()
@@ -127,16 +116,12 @@ fun StudentMasterySection(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Overall preferred feedback: ${
-                                profile?.preferredModality?.replace('_', ' ') ?: "Insufficient data"
-                            }",
+                            text = "Coaching cues: ${profile?.totalInterventions ?: 0}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
                         )
-                        val total = profile?.totalInterventions ?: 0
-                        val success = profile?.totalSuccessfulInterventions ?: 0
                         Text(
-                            text = "Successful corrections: $success / $total",
+                            text = "Successful corrections: ${profile?.totalSuccessfulInterventions ?: 0}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -177,14 +162,6 @@ fun StudentMasterySection(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Text(
-                                        text = preferredByExerciseLabel(
-                                            profile?.preferredModalityByExercise,
-                                            item.exerciseType
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                     item.recommendedDifficulty?.let { difficulty ->
                                         Text(
                                             text = "Soft tip: $difficulty · ~${item.recommendedGoalReps ?: 8} reps (teacher approves)",
@@ -199,26 +176,5 @@ fun StudentMasterySection(
                 }
             }
         }
-    }
-}
-
-@Suppress("UNCHECKED_CAST")
-private fun preferredByExerciseLabel(
-    preferredByExercise: Map<String, Any?>?,
-    exerciseType: String
-): String {
-    val row = preferredByExercise?.get(exerciseType) as? Map<*, *>
-        ?: preferredByExercise?.entries?.firstOrNull {
-            it.key.equals(exerciseType, ignoreCase = true)
-        }?.value as? Map<*, *>
-    if (row == null) {
-        return "Preferred modality: Insufficient data"
-    }
-    val source = row["source"]?.toString()?.uppercase() ?: "DEFAULT"
-    val modality = row["modality"]?.toString()?.replace('_', ' ') ?: "—"
-    return when (source) {
-        "LEARNED" -> "Preferred modality: $modality"
-        "EXPLORING" -> "Preferred modality: Learning ($modality)"
-        else -> "Preferred modality: Insufficient data"
     }
 }

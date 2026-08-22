@@ -8,8 +8,6 @@ import static org.mockito.Mockito.when;
 
 import edu.cit.stathis.adaptive.dto.AdaptiveBatchIngestDTO;
 import edu.cit.stathis.adaptive.dto.AdaptiveInsightsDTO;
-import edu.cit.stathis.adaptive.dto.AdaptiveRecommendationDTO;
-import edu.cit.stathis.adaptive.dto.AdaptiveRecommendationRequestDTO;
 import edu.cit.stathis.adaptive.dto.FeedbackInterventionRequestDTO;
 import edu.cit.stathis.adaptive.dto.FeedbackResponseRequestDTO;
 import edu.cit.stathis.adaptive.dto.StudentLearningProfileDTO;
@@ -21,9 +19,7 @@ import edu.cit.stathis.adaptive.enums.FormErrorCode;
 import edu.cit.stathis.adaptive.enums.PolicySource;
 import edu.cit.stathis.adaptive.repository.FeedbackInterventionRepository;
 import edu.cit.stathis.adaptive.repository.FeedbackResponseRepository;
-import edu.cit.stathis.adaptive.service.AdaptiveArmRollupService;
 import edu.cit.stathis.adaptive.service.AdaptiveFeedbackService;
-import edu.cit.stathis.adaptive.service.AdaptivePolicyService;
 import edu.cit.stathis.adaptive.service.ExerciseMasteryService;
 import edu.cit.stathis.adaptive.service.StudentLearningProfileService;
 import edu.cit.stathis.classroom.entity.Classroom;
@@ -48,9 +44,7 @@ class AdaptiveFeedbackServiceContractTest {
   @Mock private FeedbackResponseRepository responseRepository;
   @Mock private StudentLearningProfileService profileService;
   @Mock private ExerciseMasteryService masteryService;
-  @Mock private AdaptivePolicyService policyService;
   @Mock private ClassroomRepository classroomRepository;
-  @Mock private AdaptiveArmRollupService armRollupService;
 
   @InjectMocks private AdaptiveFeedbackService service;
 
@@ -135,26 +129,6 @@ class AdaptiveFeedbackServiceContractTest {
   }
 
   @Test
-  void recommendDelegatesToPolicyService() {
-    AdaptiveRecommendationDTO expected =
-        AdaptiveRecommendationDTO.builder()
-            .modality(FeedbackModality.VISUAL_HIGHLIGHT)
-            .errorCode(FormErrorCode.DEPTH_LOW)
-            .policySource(PolicySource.EXPLOIT)
-            .build();
-    AdaptiveRecommendationRequestDTO request =
-        AdaptiveRecommendationRequestDTO.builder()
-            .exerciseType("SQUAT")
-            .errorCode(FormErrorCode.DEPTH_LOW)
-            .build();
-    when(policyService.recommend("STUDENT-1", request)).thenReturn(expected);
-
-    AdaptiveRecommendationDTO actual = service.recommend("STUDENT-1", request);
-    assertEquals(FeedbackModality.VISUAL_HIGHLIGHT, actual.getModality());
-    verify(policyService).recommend("STUDENT-1", request);
-  }
-
-  @Test
   void getProfileUsesProfileService() {
     when(profileService.getOrCreate("STUDENT-1"))
         .thenReturn(
@@ -206,7 +180,6 @@ class AdaptiveFeedbackServiceContractTest {
     verify(responseRepository, never()).save(any());
     verify(profileService, never()).applyResponse(any(), any());
     verify(masteryService, never()).applyResponse(any(), any());
-    verify(armRollupService, never()).recordResponse(any(), any());
   }
 
   @Test
@@ -246,30 +219,6 @@ class AdaptiveFeedbackServiceContractTest {
 
     when(interventionRepository.findByStudentIdOrderByDeliveredAtDesc("STUDENT-1"))
         .thenReturn(List.of(coachable, technical, coachableFail));
-    when(responseRepository.findByStudentIdOrderByCreatedAtDesc("STUDENT-1"))
-        .thenReturn(
-            List.of(
-                FeedbackResponse.builder()
-                    .physicalId("FR-1")
-                    .studentId("STUDENT-1")
-                    .interventionPhysicalId("FI-SAG")
-                    .success(true)
-                    .delta(0.2)
-                    .build(),
-                FeedbackResponse.builder()
-                    .physicalId("FR-TECH")
-                    .studentId("STUDENT-1")
-                    .interventionPhysicalId("FI-TECH")
-                    .success(true)
-                    .delta(0.3)
-                    .build(),
-                FeedbackResponse.builder()
-                    .physicalId("FR-2")
-                    .studentId("STUDENT-1")
-                    .interventionPhysicalId("FI-ROM")
-                    .success(false)
-                    .delta(0.05)
-                    .build()));
 
     when(profileService.getOrCreate("STUDENT-1"))
         .thenReturn(
@@ -286,14 +235,12 @@ class AdaptiveFeedbackServiceContractTest {
                 .learningRateEstimate(0.1)
                 .consistencyScore(0.5)
                 .build());
-    when(profileService.listHistory("STUDENT-1")).thenReturn(List.of());
     when(masteryService.listForStudent("STUDENT-1")).thenReturn(List.of());
 
     AdaptiveInsightsDTO insights = service.getInsights("TEACHER-1", "STUDENT-1");
 
     assertEquals(2, insights.getTotalInterventions());
-    assertEquals(1, insights.getSuccessfulInterventions());
-    assertEquals(0.5, insights.getOverallSuccessRate(), 1e-6);
+    assertEquals(0, insights.getSuccessfulInterventions());
     assertFalse(insights.getTopRecurringErrors().containsKey("LOW_CONFIDENCE"));
     assertTrue(insights.getTopRecurringErrors().containsKey("SAG"));
     assertTrue(insights.getTopRecurringErrors().containsKey("LOW_ROM"));

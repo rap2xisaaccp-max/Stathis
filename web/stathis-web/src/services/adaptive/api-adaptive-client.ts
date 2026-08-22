@@ -116,64 +116,37 @@ export async function fetchDifficultyRecommendations(
   return data ?? [];
 }
 
-export interface AdaptiveEvaluationSummaryDTO {
+export interface FormCorrectionEvidenceDTO {
+  physicalId: string;
+  interventionPhysicalId: string;
   studentId: string;
-  experimentArm?: string | null;
-  totalInterventions: number;
-  successfulInterventions: number;
-  successRate: number;
-  meanDelta: number;
-  meanDeltaByModality?: Record<string, number>;
-  errorFrequency?: Record<string, number>;
-  meanMasteryLevel?: number | null;
-  sessionsTracked?: number | null;
-  practiceInterventions?: number;
-  taskInterventions?: number;
-  interventionsByArm?: Record<string, number>;
+  sessionId: string;
+  taskId?: string | null;
+  classroomId?: string | null;
+  attemptNumber?: number | null;
+  exerciseType: string;
+  errorCode: string;
+  errorLabel?: string | null;
+  errorDescription?: string | null;
+  correctionText?: string | null;
+  capturedAt?: string | null;
+  createdAt?: string | null;
+  byteSize?: number;
+  imageUrl?: string | null;
 }
 
-export async function fetchAdaptiveEvaluation(
-  studentId: string
-): Promise<AdaptiveEvaluationSummaryDTO | null> {
-  const { data, error, status } = await serverApiClient.get<AdaptiveEvaluationSummaryDTO>(
-    `/adaptive/evaluation/${encodeURIComponent(studentId)}`
+export async function fetchFormCorrectionEvidence(
+  studentId: string,
+  classroomId?: string | null
+): Promise<FormCorrectionEvidenceDTO[]> {
+  const params = classroomId
+    ? `?classroomId=${encodeURIComponent(classroomId)}`
+    : '';
+  const { data, error, status } = await serverApiClient.get<FormCorrectionEvidenceDTO[]>(
+    `/adaptive/evidence/students/${encodeURIComponent(studentId)}${params}`
   );
-  if (status === 404) return null;
-  if (error || !data) {
-    throw new Error(error || `Adaptive evaluation unavailable (${status})`);
+  if (error) {
+    throw new Error(error || `Form-correction evidence unavailable (${status})`);
   }
-  return data;
-}
-
-export interface ClassroomEvaluationDTO {
-  classroomId: string;
-  studentCount: number;
-  totalInterventions: number;
-  successfulInterventions: number;
-  overallSuccessRate: number;
-  meanDelta: number;
-  meanMasteryLevel: number;
-  practiceInterventions: number;
-  taskInterventions: number;
-  interventionsByArm?: Record<string, number>;
-  adaptiveMeanDelta?: number | null;
-  staticMeanDelta?: number | null;
-  meanDeltaLift?: number | null;
-  successRateLift?: number | null;
-  cohensD?: number | null;
-  adaptiveOutperformsOnDelta?: boolean;
-  students?: AdaptiveEvaluationSummaryDTO[];
-}
-
-export async function fetchClassroomEvaluation(
-  classroomId: string
-): Promise<ClassroomEvaluationDTO | null> {
-  const { data, error, status } = await serverApiClient.get<ClassroomEvaluationDTO>(
-    `/adaptive/evaluation/classroom/${encodeURIComponent(classroomId)}`
-  );
-  if (status === 404) return null;
-  if (error || !data) {
-    throw new Error(error || `Classroom evaluation unavailable (${status})`);
-  }
-  return data;
+  return data ?? [];
 }

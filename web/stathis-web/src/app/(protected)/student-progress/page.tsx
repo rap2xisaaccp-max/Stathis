@@ -62,7 +62,6 @@ import {
 import { AuthNavbar } from '@/components/auth-navbar';
 import { motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
-import { ClassroomAdaptiveCard } from '@/components/adaptive/ClassroomAdaptiveCard';
 
 export default function StudentProgressPage() {
   const router = useRouter();
@@ -321,11 +320,11 @@ export default function StudentProgressPage() {
                 
                 <div>
                   <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                    {focusAdaptive ? 'Adaptive Learning' : 'Student Progress'}
+                    {focusAdaptive ? 'Form Correction Evidence' : 'Student Progress'}
                   </h1>
                   <p className="text-muted-foreground mt-2">
                     {focusAdaptive
-                      ? 'Pick a classroom and student to open Adaptive coaching insights'
+                      ? 'Pick a classroom and student to open the Form Correction Evidence Log'
                       : 'View and track the progress of all students'}
                   </p>
                 </div>
@@ -349,10 +348,6 @@ export default function StudentProgressPage() {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="grid gap-8"
             >
-              {(searchParams.get('research') === '1' ||
-                process.env.NEXT_PUBLIC_APSLE_SHOW_RCT === 'true') && (
-                <ClassroomAdaptiveCard classroomId={selectedClassroom || undefined} />
-              )}
 
               {/* Filters and search */}
               <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
@@ -521,10 +516,10 @@ export default function StudentProgressPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleViewStudent(student.physicalId, true)}
-                                    title="Open Adaptive insights"
+                                    title="Open form-correction evidence"
                                   >
                                     <Brain className="h-4 w-4" />
-                                    <span className="sr-only">Adaptive</span>
+                                    <span className="sr-only">Form evidence</span>
                                   </Button>
                                   <Button 
                                     variant="ghost" 

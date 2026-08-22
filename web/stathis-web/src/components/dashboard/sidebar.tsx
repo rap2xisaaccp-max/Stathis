@@ -80,8 +80,8 @@ export function Sidebar({ className }: SidebarProps) {
           active: pathname.startsWith('/student-progress') && !adaptiveActive
         },
         {
-          label: 'Adaptive Learning',
-          sublabel: 'APSLE coaching insights',
+          label: 'Form Evidence',
+          sublabel: 'Form correction snapshots',
           icon: Brain,
           href: '/student-progress?focus=adaptive',
           active: adaptiveActive
@@ -261,7 +261,7 @@ function MobileSidebar({ actives, setOpen }: MobileSidebarProps) {
               <Link href="/student-progress?focus=adaptive" onClick={() => setOpen(false)} className={cn('hover:bg-primary/10 hover:text-primary block rounded-xl border px-4 py-3 text-sm transition-all duration-200', actives.adaptive ? 'bg-primary/10 text-primary border-primary/20 shadow-sm' : 'text-muted-foreground border-transparent hover:text-foreground')}>
                 <div className="flex items-center gap-3">
                   <Brain className="h-5 w-5" />
-                  <div className="flex flex-col"><span className="font-medium">Adaptive Learning</span><span className="text-xs text-muted-foreground">APSLE coaching insights</span></div>
+                  <div className="flex flex-col"><span className="font-medium">Form Evidence</span><span className="text-xs text-muted-foreground">Form correction snapshots</span></div>
                 </div>
               </Link>
             </nav>

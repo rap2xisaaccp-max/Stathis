@@ -22,7 +22,8 @@ class PoseAnalyzer(
     private val executor: Executor,
     private val onPoseDetected: (Pose, Int, Int, Boolean, Int) -> Unit,
     private val isImageFlipped: Boolean = false,
-    private val minAnalysisIntervalMs: Long = 100L // throttle to ~10 FPS by default
+    private val minAnalysisIntervalMs: Long = 100L, // throttle to ~10 FPS by default
+    private val onRawFrame: ((ImageProxy) -> Unit)? = null
 ) : ImageAnalysis.Analyzer {
 
     // Configure the pose detector
@@ -67,7 +68,8 @@ class PoseAnalyzer(
                                 ", RH=" + (rightHip?.x?.toInt()?.toString() + "," + rightHip?.y?.toInt()?.toString())
                         )
                     }
-                    // Pass the detected pose along with image dimensions to the callback
+                    // One-slot preview for evidence snapshots — overwrite only, never upload here.
+                    onRawFrame?.invoke(imageProxy)
                     onPoseDetected(
                         pose,
                         imageProxy.width,

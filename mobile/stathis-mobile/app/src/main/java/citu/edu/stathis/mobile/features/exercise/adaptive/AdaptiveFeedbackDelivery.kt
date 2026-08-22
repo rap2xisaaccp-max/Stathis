@@ -10,6 +10,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import timber.log.Timber
 
+/** Highlight + TTS delivery used after a confirmed intervention claim. */
+interface CoachingDelivery {
+    fun ensureInitialized()
+    fun deliver(feedback: DeliveredFeedback, now: Long = System.currentTimeMillis()): DeliveredFeedback
+    fun stopSpeaking()
+}
+
 /**
  * Delivers adaptive feedback channels (text coordination, skeleton highlight targets, TTS).
  * Visual / TTS are supporting features gated behind a logged intervention id.
@@ -17,13 +24,13 @@ import timber.log.Timber
 @Singleton
 class AdaptiveFeedbackDelivery @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : CoachingDelivery {
     private var tts: TextToSpeech? = null
     private val ready = AtomicBoolean(false)
     private var lastSpokenAt = 0L
     private val deliveryLog = CopyOnWriteArrayList<ModalityDeliveryPlanner.DeliveryEvent>()
 
-    fun ensureInitialized() {
+    override fun ensureInitialized() {
         if (tts != null) return
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -39,7 +46,7 @@ class AdaptiveFeedbackDelivery @Inject constructor(
      * Applies modality channels for a logged intervention. Returns the UI-facing payload.
      * Does nothing for speak/highlight when [feedback.interventionId] is blank.
      */
-    fun deliver(feedback: DeliveredFeedback, now: Long = System.currentTimeMillis()): DeliveredFeedback {
+    override fun deliver(feedback: DeliveredFeedback, now: Long): DeliveredFeedback {
         val planned =
             ModalityDeliveryPlanner.toDeliveredFeedback(
                 interventionId = feedback.interventionId,
@@ -79,7 +86,7 @@ class AdaptiveFeedbackDelivery @Inject constructor(
         engine.speak(message, TextToSpeech.QUEUE_FLUSH, null, "apsle-$now")
     }
 
-    fun stopSpeaking() {
+    override fun stopSpeaking() {
         tts?.stop()
     }
 

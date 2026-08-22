@@ -1,5 +1,6 @@
 package citu.edu.stathis.mobile.features.exercise.ui.viewmodel
 
+import androidx.camera.core.ImageProxy
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveFeedbackEngine
@@ -7,7 +8,7 @@ import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.DeliveredFeedback
 import citu.edu.stathis.mobile.features.exercise.adaptive.ExerciseMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorMapper
-import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
+import citu.edu.stathis.mobile.features.exercise.adaptive.LatestFrameBuffer
 import citu.edu.stathis.mobile.features.exercise.adaptive.StudentLearningProfileDto
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi
@@ -22,7 +23,8 @@ import timber.log.Timber
 @HiltViewModel
 class AdaptiveSessionViewModel @Inject constructor(
     private val engine: AdaptiveFeedbackEngine,
-    private val adaptiveApi: AdaptiveApi
+    private val adaptiveApi: AdaptiveApi,
+    private val frameBuffer: LatestFrameBuffer
 ) : ViewModel() {
 
     private val _feedback = MutableStateFlow<DeliveredFeedback?>(null)
@@ -56,15 +58,17 @@ class AdaptiveSessionViewModel @Inject constructor(
         exerciseType: String,
         taskId: String? = null,
         classroomId: String? = null,
-        staticControl: Boolean = false,
-        sessionContext: String = RctExperimentPrefs.CONTEXT_TASK
+        attemptNumber: Int? = null
     ) {
-        engine.startSession(exerciseType, taskId, classroomId, staticControl, sessionContext)
+        engine.startSession(exerciseType, taskId, classroomId, attemptNumber)
         _sessionSummary.value = AdaptiveSessionSummary()
     }
 
+    fun onRawCameraFrame(imageProxy: ImageProxy) {
+        frameBuffer.updateFromImageProxy(imageProxy)
+    }
+
     fun onExerciseFeedback(feedback: OnDeviceFeedback) {
-        // Engine serializes via Mutex; launches may overlap but only one claim proceeds.
         viewModelScope.launch {
             val flags = feedback.backendFlags
             val severity =
@@ -95,7 +99,6 @@ class AdaptiveSessionViewModel @Inject constructor(
             engine.endSession()
             _sessionSummary.value = engine.sessionSummary()
             publishDelivery(null)
-            // Refresh profile/mastery so sessionsCount and related UI stay current
             loadLearningProfileAndMastery()
         }
     }
@@ -114,8 +117,8 @@ class AdaptiveSessionViewModel @Inject constructor(
                 _learningProfile.value = adaptiveApi.getOwnProfile()
                 _mastery.value = adaptiveApi.getOwnMastery()
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to load adaptive profile/mastery")
-                _profileError.value = t.message ?: "Could not load adaptive learning data"
+                Timber.w(t, "Failed to load coaching profile/mastery")
+                _profileError.value = t.message ?: "Could not load coaching data"
             } finally {
                 _profileLoading.value = false
             }

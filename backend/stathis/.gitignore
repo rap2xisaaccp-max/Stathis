@@ -42,3 +42,6 @@ build/
 logs/
 *.log
 spring.log
+
+# Local form-correction evidence store
+data/evidence/

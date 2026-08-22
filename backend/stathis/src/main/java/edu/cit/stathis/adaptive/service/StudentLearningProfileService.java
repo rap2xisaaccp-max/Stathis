@@ -7,7 +7,6 @@ import edu.cit.stathis.adaptive.entity.FeedbackIntervention;
 import edu.cit.stathis.adaptive.entity.FeedbackResponse;
 import edu.cit.stathis.adaptive.entity.LearningProfileHistory;
 import edu.cit.stathis.adaptive.entity.StudentLearningProfile;
-import edu.cit.stathis.adaptive.enums.FeedbackModality;
 import edu.cit.stathis.adaptive.repository.ExerciseMasteryRepository;
 import edu.cit.stathis.adaptive.repository.LearningProfileHistoryRepository;
 import edu.cit.stathis.adaptive.repository.StudentLearningProfileRepository;
@@ -22,7 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Maintains evidence-based StudentLearningProfile using EWMA / Bayesian-shrunk deltas.
+ * Coaching profile counters. Preferred-modality learning is retired; leftover columns
+ * are still mapped until an optional later drop migration.
  */
 @Service
 public class StudentLearningProfileService {
@@ -43,8 +43,6 @@ public class StudentLearningProfileService {
                     StudentLearningProfile.builder()
                         .physicalId("SLP-" + UUID.randomUUID().toString().toUpperCase())
                         .studentId(studentId)
-                        .preferredModality(FeedbackModality.VERBAL_TEXT)
-                        .modalityEffectivenessJson(new HashMap<>())
                         .learningRateEstimate(0.0)
                         .consistencyScore(0.5)
                         .fatigueSensitivity(0.0)
@@ -71,55 +69,17 @@ public class StudentLearningProfileService {
   }
 
   @Transactional
+  public StudentLearningProfile recordCoachableIntervention(String studentId) {
+    StudentLearningProfile profile = getOrCreate(studentId);
+    int total = profile.getTotalInterventions() == null ? 0 : profile.getTotalInterventions();
+    profile.setTotalInterventions(total + 1);
+    return profileRepository.save(profile);
+  }
+
+  @Transactional
   public StudentLearningProfile applyResponse(
       FeedbackIntervention intervention, FeedbackResponse response) {
-    StudentLearningProfile profile = getOrCreate(intervention.getStudentId());
-
-    Map<String, Object> effectiveness =
-        profile.getModalityEffectivenessJson() != null
-            ? new HashMap<>(profile.getModalityEffectivenessJson())
-            : new HashMap<>();
-
-    String modalityKey = intervention.getModality().name();
-    String compositeKey =
-        ProfileEffectivenessMath.compositeKey(
-            intervention.getExerciseType(),
-            intervention.getErrorCode().name(),
-            modalityKey);
-
-    ProfileEffectivenessMath.updateBucket(
-        effectiveness, modalityKey, response.getDelta(), response.isSuccess());
-    ProfileEffectivenessMath.updateBucket(
-        effectiveness, compositeKey, response.getDelta(), response.isSuccess());
-
-    profile.setModalityEffectivenessJson(effectiveness);
-
-    int total =
-        (profile.getTotalInterventions() == null ? 0 : profile.getTotalInterventions()) + 1;
-    int successes =
-        (profile.getTotalSuccessfulInterventions() == null
-                ? 0
-                : profile.getTotalSuccessfulInterventions())
-            + (response.isSuccess() ? 1 : 0);
-    profile.setTotalInterventions(total);
-    profile.setTotalSuccessfulInterventions(successes);
-
-    double priorRate =
-        profile.getLearningRateEstimate() == null ? 0.0 : profile.getLearningRateEstimate();
-    profile.setLearningRateEstimate(
-        ProfileEffectivenessMath.ewma(priorRate, response.getDelta()));
-
-    double successRate = total == 0 ? 0.5 : (double) successes / total;
-    profile.setConsistencyScore(successRate);
-
-    profile.setPreferredModality(
-        ProfileEffectivenessMath.derivePreferredModality(effectiveness));
-    profile.setPreferredModalityByExerciseJson(
-        ProfileEffectivenessMath.derivePreferredByExercise(effectiveness));
-
-    StudentLearningProfile saved = profileRepository.save(profile);
-    maybeSnapshot(saved, "response:" + response.getPhysicalId());
-    return saved;
+    return recordCoachableIntervention(intervention.getStudentId());
   }
 
   private void maybeSnapshot(StudentLearningProfile profile, String reason) {
@@ -200,6 +160,6 @@ public class StudentLearningProfileService {
   }
 
   public static boolean isSuccessfulDelta(double delta) {
-    return ProfileEffectivenessMath.isSuccessfulDelta(delta);
+    return delta >= 0.15;
   }
 }

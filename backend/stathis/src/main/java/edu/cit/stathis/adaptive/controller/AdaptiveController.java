@@ -2,28 +2,32 @@ package edu.cit.stathis.adaptive.controller;
 
 import edu.cit.stathis.adaptive.dto.*;
 import edu.cit.stathis.adaptive.service.AdaptiveFeedbackService;
+import edu.cit.stathis.adaptive.service.FormCorrectionEvidenceService;
 import edu.cit.stathis.auth.service.PhysicalIdService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/adaptive")
 @Tag(
-    name = "Adaptive Learning",
-    description = "Closed-loop adaptive physical skill learning interventions and profiles")
+    name = "Form Correction Coaching",
+    description = "Confirmed form-error coaching events and teacher evidence log")
 public class AdaptiveController {
 
   @Autowired private AdaptiveFeedbackService adaptiveFeedbackService;
+  @Autowired private FormCorrectionEvidenceService evidenceService;
   @Autowired private PhysicalIdService physicalIdService;
 
   @PostMapping("/batch")
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "Batch ingest interventions and responses from a live exercise session")
+  @Operation(summary = "Batch ingest coaching interventions from a live exercise session")
   public ResponseEntity<AdaptiveBatchIngestResultDTO> ingestBatch(
       @RequestBody AdaptiveBatchIngestDTO batch) {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
@@ -32,7 +36,7 @@ public class AdaptiveController {
 
   @PostMapping("/interventions")
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "Log a single feedback intervention")
+  @Operation(summary = "Log a single form-correction intervention")
   public ResponseEntity<FeedbackInterventionResponseDTO> createIntervention(
       @RequestBody FeedbackInterventionRequestDTO request) {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
@@ -54,12 +58,13 @@ public class AdaptiveController {
             .baselineSeverity(saved.getBaselineSeverity())
             .policySource(saved.getPolicySource())
             .experimentArm(saved.getExperimentArm())
+            .correctionDelivered(saved.getMessageText())
             .build());
   }
 
   @PostMapping("/responses")
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "Log measured response to an intervention (closed loop)")
+  @Operation(summary = "Legacy response ingest (no longer drives learning)")
   public ResponseEntity<FeedbackResponseResponseDTO> createResponse(
       @RequestBody FeedbackResponseRequestDTO request) {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
@@ -79,18 +84,64 @@ public class AdaptiveController {
             .build());
   }
 
-  @PostMapping("/recommend")
+  @PostMapping(value = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "Get next adaptive feedback recommendation for an error")
-  public ResponseEntity<AdaptiveRecommendationDTO> recommend(
-      @RequestBody AdaptiveRecommendationRequestDTO request) {
+  @Operation(summary = "Upload one evidence snapshot for a confirmed coaching event")
+  public ResponseEntity<FormCorrectionEvidenceDTO> uploadEvidence(
+      @RequestParam("interventionId") String interventionId,
+      @RequestParam("sessionId") String sessionId,
+      @RequestParam(value = "taskId", required = false) String taskId,
+      @RequestParam(value = "classroomId", required = false) String classroomId,
+      @RequestParam(value = "attemptNumber", required = false) Integer attemptNumber,
+      @RequestParam("exerciseType") String exerciseType,
+      @RequestParam("errorCode") String errorCode,
+      @RequestParam(value = "errorDescription", required = false) String errorDescription,
+      @RequestParam(value = "correctionText", required = false) String correctionText,
+      @RequestParam(value = "capturedAt", required = false) String capturedAt,
+      @RequestParam("file") MultipartFile file) {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
-    return ResponseEntity.ok(adaptiveFeedbackService.recommend(studentId, request));
+    return ResponseEntity.ok(
+        evidenceService.upload(
+            studentId,
+            interventionId,
+            sessionId,
+            taskId,
+            classroomId,
+            attemptNumber,
+            exerciseType,
+            errorCode,
+            errorDescription,
+            correctionText,
+            capturedAt,
+            file));
+  }
+
+  @GetMapping("/evidence/students/{studentId}")
+  @PreAuthorize("hasRole('TEACHER')")
+  @Operation(summary = "Form Correction Evidence Log for a student")
+  public ResponseEntity<List<FormCorrectionEvidenceDTO>> listStudentEvidence(
+      @PathVariable String studentId,
+      @RequestParam(value = "classroomId", required = false) String classroomId) {
+    String teacherId = physicalIdService.getCurrentUserPhysicalId();
+    return ResponseEntity.ok(evidenceService.listForStudent(teacherId, studentId, classroomId));
+  }
+
+  @GetMapping(value = "/evidence/{evidenceId}/image", produces = MediaType.IMAGE_JPEG_VALUE)
+  @PreAuthorize("hasRole('TEACHER')")
+  @Operation(summary = "Authenticated JPEG stream for one evidence snapshot")
+  public ResponseEntity<byte[]> getEvidenceImage(@PathVariable String evidenceId) {
+    String teacherId = physicalIdService.getCurrentUserPhysicalId();
+    byte[] bytes = evidenceService.readImage(teacherId, evidenceId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.IMAGE_JPEG)
+        .cacheControl(org.springframework.http.CacheControl.noStore().mustRevalidate().cachePrivate())
+        .header(org.springframework.http.HttpHeaders.PRAGMA, "no-cache")
+        .body(bytes);
   }
 
   @GetMapping("/profile")
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "Get current student's movement learning profile")
+  @Operation(summary = "Get current student's coaching profile")
   public ResponseEntity<StudentLearningProfileDTO> getOwnProfile() {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(adaptiveFeedbackService.getProfile(studentId));
@@ -98,11 +149,10 @@ public class AdaptiveController {
 
   @GetMapping("/profile/{studentId}")
   @PreAuthorize("hasRole('TEACHER')")
-  @Operation(summary = "Get a student's learning profile (teacher)")
+  @Operation(summary = "Get a student's coaching profile (teacher)")
   public ResponseEntity<StudentLearningProfileDTO> getStudentProfile(
       @PathVariable String studentId) {
     String teacherId = physicalIdService.getCurrentUserPhysicalId();
-    // Authorization enforced via insights path; profile alone still checks classroom share
     return ResponseEntity.ok(adaptiveFeedbackService.getInsights(teacherId, studentId).getProfile());
   }
 
@@ -146,30 +196,9 @@ public class AdaptiveController {
 
   @GetMapping("/insights/{studentId}")
   @PreAuthorize("hasRole('TEACHER')")
-  @Operation(summary = "Teacher adaptive insights: modality effectiveness, errors, mastery")
+  @Operation(summary = "Teacher coaching insights: recurring errors and mastery")
   public ResponseEntity<AdaptiveInsightsDTO> getInsights(@PathVariable String studentId) {
     String teacherId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(adaptiveFeedbackService.getInsights(teacherId, studentId));
-  }
-
-  @GetMapping("/evaluation/{studentId}")
-  @PreAuthorize("hasRole('TEACHER')")
-  @Operation(summary = "RCT evaluation summary metrics for a student")
-  public ResponseEntity<AdaptiveEvaluationSummaryDTO> getEvaluation(
-      @PathVariable String studentId) {
-    String teacherId = physicalIdService.getCurrentUserPhysicalId();
-    return ResponseEntity.ok(adaptiveFeedbackService.getEvaluationSummary(teacherId, studentId));
-  }
-
-  @GetMapping("/evaluation/classroom/{classroomId}")
-  @PreAuthorize("hasRole('TEACHER')")
-  @Operation(
-      summary =
-          "Classroom RCT/ablation export: adaptive vs static mean Δ, success lift, Cohen's d")
-  public ResponseEntity<ClassroomEvaluationDTO> getClassroomEvaluation(
-      @PathVariable String classroomId) {
-    String teacherId = physicalIdService.getCurrentUserPhysicalId();
-    return ResponseEntity.ok(
-        adaptiveFeedbackService.getClassroomEvaluation(teacherId, classroomId));
   }
 }

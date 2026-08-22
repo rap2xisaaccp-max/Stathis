@@ -6,10 +6,7 @@ import {
 import {
   formErrorDisplay,
   formErrorLabel,
-  formatModalityLabel as formatModalityDisplay,
 } from '@/components/adaptive/form-error-labels';
-
-export { formatModalityDisplay as formatModalityLabel };
 
 export const MASTERY_CHART_Y_DOMAIN: [number, number] = [0, 100];
 
@@ -21,17 +18,6 @@ export const TIMELINE_CATEGORY_NAMES: Record<string, string> = {
 export const MASTERY_CATEGORY_NAMES: Record<string, string> = {
   masteryPct: 'APSLE Form Mastery',
 };
-
-export function buildModalityEffectivenessChartData(
-  modalityMeanDelta: Record<string, number> | null | undefined
-): Array<{ modality: string; delta: number }> {
-  return Object.entries(modalityMeanDelta || {})
-    .map(([modality, delta]) => ({
-      modality: formatModalityDisplay(modality),
-      delta: Number(delta) || 0,
-    }))
-    .sort((a, b) => b.delta - a.delta);
-}
 
 export function buildRecurringErrorsChartData(
   topRecurringErrors: Record<string, number> | null | undefined,
@@ -93,9 +79,7 @@ export function buildMasteryTimelineChartData(
 export function hasChartableInsights(data: AdaptiveInsightsDTO | null | undefined): boolean {
   if (!data) return false;
   return (
-    Object.keys(data.modalityMeanDelta || {}).length > 0 ||
     Object.keys(data.topRecurringErrors || {}).length > 0 ||
-    (data.mastery || []).length > 0 ||
-    (data.profileHistory || []).length > 0
+    (data.mastery || []).length > 0
   );
 }

@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,9 +21,11 @@ import edu.cit.stathis.adaptive.enums.FeedbackModality;
 import edu.cit.stathis.adaptive.enums.FormErrorCode;
 import edu.cit.stathis.adaptive.enums.PolicySource;
 import edu.cit.stathis.adaptive.service.AdaptiveFeedbackService;
+import edu.cit.stathis.adaptive.service.FormCorrectionEvidenceService;
 import edu.cit.stathis.auth.service.PhysicalIdService;
 import java.lang.reflect.Method;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,20 +35,16 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-/**
- * Phase 2 API contract tests for AdaptiveController.
- *
- * <p>Validates JSON request/response shapes and STUDENT/TEACHER authorization annotations without
- * booting the full Spring Security filter chain.
- */
 @ExtendWith(MockitoExtension.class)
 class AdaptiveControllerContractTest {
 
   @Mock private AdaptiveFeedbackService adaptiveFeedbackService;
+  @Mock private FormCorrectionEvidenceService evidenceService;
   @Mock private PhysicalIdService physicalIdService;
 
   @InjectMocks private AdaptiveController controller;
@@ -59,51 +59,36 @@ class AdaptiveControllerContractTest {
 
   @Test
   void studentWriteEndpointsRequireStudentRole() throws Exception {
-    assertPreAuthorize(AdaptiveController.class.getMethod("ingestBatch", AdaptiveBatchIngestDTO.class), "hasRole('STUDENT')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("createIntervention", FeedbackInterventionRequestDTO.class),
-        "hasRole('STUDENT')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("createResponse", FeedbackResponseRequestDTO.class),
-        "hasRole('STUDENT')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("recommend", AdaptiveRecommendationRequestDTO.class),
-        "hasRole('STUDENT')");
-    assertPreAuthorize(AdaptiveController.class.getMethod("getOwnProfile"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("ingestBatch"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("createIntervention"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("createResponse"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("uploadEvidence"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("getOwnProfile"), "hasRole('STUDENT')");
   }
 
   @Test
   void teacherReadEndpointsRequireTeacherRole() throws Exception {
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("getStudentProfile", String.class), "hasRole('TEACHER')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("getStudentMastery", String.class), "hasRole('TEACHER')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("getDifficultyRecommendations", String.class),
-        "hasRole('TEACHER')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("getInsights", String.class), "hasRole('TEACHER')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("getEvaluation", String.class), "hasRole('TEACHER')");
-    assertPreAuthorize(
-        AdaptiveController.class.getMethod("getClassroomEvaluation", String.class),
-        "hasRole('TEACHER')");
+    assertPreAuthorize(method("getStudentProfile"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("getStudentMastery"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("getDifficultyRecommendations"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("getInsights"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("listStudentEvidence"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("getEvidenceImage"), "hasRole('TEACHER')");
   }
 
   @Test
-  void postBatchIngestsInterventionsAndResponses() throws Exception {
+  void postBatchIngestsInterventions() throws Exception {
     when(physicalIdService.getCurrentUserPhysicalId()).thenReturn("STUDENT-1");
     when(adaptiveFeedbackService.ingestBatch(eq("STUDENT-1"), any(AdaptiveBatchIngestDTO.class)))
         .thenReturn(
             AdaptiveBatchIngestResultDTO.builder()
                 .interventionsSaved(1)
-                .responsesSaved(1)
+                .responsesSaved(0)
                 .interventionPhysicalIds(List.of("FI-1"))
-                .responsePhysicalIds(List.of("FR-1"))
+                .responsePhysicalIds(List.of())
                 .updatedProfile(
                     StudentLearningProfileDTO.builder()
                         .studentId("STUDENT-1")
-                        .preferredModality(FeedbackModality.VERBAL_TEXT)
                         .totalInterventions(1)
                         .build())
                 .build());
@@ -116,18 +101,11 @@ class AdaptiveControllerContractTest {
                         .sessionId("SES-1")
                         .exerciseType("SQUAT")
                         .errorCode(FormErrorCode.CHEST_UP)
-                        .modality(FeedbackModality.VERBAL_TEXT)
+                        .modality(FeedbackModality.VERBAL_TTS)
                         .baselineSeverity(0.7)
                         .policySource(PolicySource.DEFAULT)
                         .build()))
-            .responses(
-                List.of(
-                    FeedbackResponseRequestDTO.builder()
-                        .interventionPhysicalId("FI-1")
-                        .postSeverity(0.4)
-                        .delta(0.3)
-                        .success(true)
-                        .build()))
+            .responses(List.of())
             .build();
 
     mockMvc
@@ -137,11 +115,7 @@ class AdaptiveControllerContractTest {
                 .content(objectMapper.writeValueAsString(body)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.interventionsSaved").value(1))
-        .andExpect(jsonPath("$.responsesSaved").value(1))
-        .andExpect(jsonPath("$.interventionPhysicalIds[0]").value("FI-1"))
-        .andExpect(jsonPath("$.updatedProfile.studentId").value("STUDENT-1"));
-
-    verify(adaptiveFeedbackService).ingestBatch(eq("STUDENT-1"), any(AdaptiveBatchIngestDTO.class));
+        .andExpect(jsonPath("$.interventionPhysicalIds[0]").value("FI-1"));
   }
 
   @Test
@@ -155,12 +129,11 @@ class AdaptiveControllerContractTest {
                 .sessionId("SES-9")
                 .exerciseType("SQUAT")
                 .errorCode(FormErrorCode.KNEES_IN)
-                .modality(FeedbackModality.VISUAL_HIGHLIGHT)
-                .messageText("Push knees outward.")
+                .modality(FeedbackModality.VERBAL_TTS)
+                .messageText("Keep your front knee tracking over your toes.")
                 .deliveredAt(OffsetDateTime.parse("2026-07-30T05:00:00Z"))
                 .baselineSeverity(0.6)
-                .policySource(PolicySource.EXPLORE)
-                .experimentArm("ADAPTIVE")
+                .policySource(PolicySource.DEFAULT)
                 .build());
 
     FeedbackInterventionRequestDTO body =
@@ -168,9 +141,9 @@ class AdaptiveControllerContractTest {
             .sessionId("SES-9")
             .exerciseType("SQUAT")
             .errorCode(FormErrorCode.KNEES_IN)
-            .modality(FeedbackModality.VISUAL_HIGHLIGHT)
+            .modality(FeedbackModality.VERBAL_TTS)
             .baselineSeverity(0.6)
-            .policySource(PolicySource.EXPLORE)
+            .policySource(PolicySource.DEFAULT)
             .build();
 
     mockMvc
@@ -180,9 +153,7 @@ class AdaptiveControllerContractTest {
                 .content(objectMapper.writeValueAsString(body)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.physicalId").value("FI-99"))
-        .andExpect(jsonPath("$.errorCode").value("KNEES_IN"))
-        .andExpect(jsonPath("$.modality").value("VISUAL_HIGHLIGHT"))
-        .andExpect(jsonPath("$.policySource").value("EXPLORE"));
+        .andExpect(jsonPath("$.errorCode").value("KNEES_IN"));
   }
 
   @Test
@@ -216,46 +187,55 @@ class AdaptiveControllerContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.physicalId").value("FR-99"))
-        .andExpect(jsonPath("$.interventionPhysicalId").value("FI-99"))
-        .andExpect(jsonPath("$.delta").value(0.4))
-        .andExpect(jsonPath("$.success").value(true));
+        .andExpect(jsonPath("$.physicalId").value("FR-99"));
   }
 
   @Test
-  void postRecommendReturnsModalityPolicyAndMessage() throws Exception {
+  void postEvidenceUploadsSnapshot() throws Exception {
     when(physicalIdService.getCurrentUserPhysicalId()).thenReturn("STUDENT-1");
-    when(adaptiveFeedbackService.recommend(eq("STUDENT-1"), any()))
+    when(evidenceService.upload(
+            eq("STUDENT-1"),
+            eq("FI-1"),
+            eq("SES-1"),
+            eq("TASK-1"),
+            eq("ROOM-1"),
+            eq(1),
+            eq("SQUATS"),
+            eq("SAG"),
+            eq("Hips sagging"),
+            eq("Keep hips level"),
+            any(),
+            any()))
         .thenReturn(
-            AdaptiveRecommendationDTO.builder()
-                .modality(FeedbackModality.VERBAL_TEXT)
-                .errorCode(FormErrorCode.CHEST_UP)
-                .messageCode("CHEST_UP")
-                .messageText("Keep chest up and back straight.")
-                .policySource(PolicySource.DEFAULT)
-                .expectedDelta(0.0)
-                .experimentArm("ADAPTIVE")
-                .cooldownMs(8000)
+            FormCorrectionEvidenceDTO.builder()
+                .physicalId("FCE-1")
+                .interventionPhysicalId("FI-1")
+                .studentId("STUDENT-1")
+                .exerciseType("SQUATS")
+                .errorCode("SAG")
+                .errorLabel("Hips sagging")
+                .correctionText("Keep hips level")
                 .build());
 
-    AdaptiveRecommendationRequestDTO body =
-        AdaptiveRecommendationRequestDTO.builder()
-            .exerciseType("SQUAT")
-            .errorCode(FormErrorCode.CHEST_UP)
-            .currentSeverity(0.7)
-            .staticControl(false)
-            .build();
+    MockMultipartFile file =
+        new MockMultipartFile("file", "snap.jpg", "image/jpeg", new byte[] {(byte) 0xFF, (byte) 0xD8, 1, 2, 3});
 
     mockMvc
         .perform(
-            post("/api/adaptive/recommend")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(body)))
+            multipart("/api/adaptive/evidence")
+                .file(file)
+                .param("interventionId", "FI-1")
+                .param("sessionId", "SES-1")
+                .param("taskId", "TASK-1")
+                .param("classroomId", "ROOM-1")
+                .param("attemptNumber", "1")
+                .param("exerciseType", "SQUATS")
+                .param("errorCode", "SAG")
+                .param("errorDescription", "Hips sagging")
+                .param("correctionText", "Keep hips level"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.modality").value("VERBAL_TEXT"))
-        .andExpect(jsonPath("$.errorCode").value("CHEST_UP"))
-        .andExpect(jsonPath("$.cooldownMs").value(8000))
-        .andExpect(jsonPath("$.experimentArm").value("ADAPTIVE"));
+        .andExpect(jsonPath("$.physicalId").value("FCE-1"))
+        .andExpect(jsonPath("$.errorLabel").value("Hips sagging"));
   }
 
   @Test
@@ -266,16 +246,13 @@ class AdaptiveControllerContractTest {
             StudentLearningProfileDTO.builder()
                 .physicalId("SLP-1")
                 .studentId("STUDENT-1")
-                .preferredModality(FeedbackModality.VERBAL_TTS)
                 .totalInterventions(3)
-                .totalSuccessfulInterventions(2)
                 .build());
 
     mockMvc
         .perform(get("/api/adaptive/profile"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.studentId").value("STUDENT-1"))
-        .andExpect(jsonPath("$.preferredModality").value("VERBAL_TTS"))
         .andExpect(jsonPath("$.totalInterventions").value(3));
   }
 
@@ -286,11 +263,7 @@ class AdaptiveControllerContractTest {
         .thenReturn(
             AdaptiveInsightsDTO.builder()
                 .studentId("STUDENT-9")
-                .profile(
-                    StudentLearningProfileDTO.builder()
-                        .studentId("STUDENT-9")
-                        .preferredModality(FeedbackModality.VISUAL_HIGHLIGHT)
-                        .build())
+                .profile(StudentLearningProfileDTO.builder().studentId("STUDENT-9").build())
                 .mastery(List.of())
                 .totalInterventions(0)
                 .successfulInterventions(0)
@@ -300,10 +273,28 @@ class AdaptiveControllerContractTest {
     mockMvc
         .perform(get("/api/adaptive/profile/STUDENT-9"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.studentId").value("STUDENT-9"))
-        .andExpect(jsonPath("$.preferredModality").value("VISUAL_HIGHLIGHT"));
+        .andExpect(jsonPath("$.studentId").value("STUDENT-9"));
 
     verify(adaptiveFeedbackService).getInsights("TEACHER-1", "STUDENT-9");
+  }
+
+  @Test
+  void getEvidenceImageSetsPrivateNoStoreHeaders() throws Exception {
+    when(physicalIdService.getCurrentUserPhysicalId()).thenReturn("TEACHER-1");
+    when(evidenceService.readImage("TEACHER-1", "FCE-1")).thenReturn(new byte[] {1, 2, 3});
+
+    mockMvc
+        .perform(get("/api/adaptive/evidence/FCE-1/image"))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+        .andExpect(header().string("Pragma", "no-cache"));
+  }
+
+  private static Method method(String name) {
+    return Arrays.stream(AdaptiveController.class.getDeclaredMethods())
+        .filter(m -> m.getName().equals(name))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("Missing method " + name));
   }
 
   private static void assertPreAuthorize(Method method, String expected) {

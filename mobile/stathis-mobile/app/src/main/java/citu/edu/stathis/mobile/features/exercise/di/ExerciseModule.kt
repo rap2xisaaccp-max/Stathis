@@ -46,13 +46,5 @@ abstract class ExerciseModule {
         fun provideAdaptiveApi(retrofit: Retrofit): citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi {
             return retrofit.create(citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi::class.java)
         }
-
-        // Provide the current in-memory OfflineQueue as the default binding. PR1 introduces the
-        // OfflineQueue abstraction and a zero-behavior-change adapter around AdaptiveOfflineQueue.
-        @Provides
-        @Singleton
-        fun provideOfflineQueue(): citu.edu.stathis.mobile.features.exercise.adaptive.OfflineQueue {
-            return citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveOfflineQueue(maxRetries = 5)
-        }
     }
 }

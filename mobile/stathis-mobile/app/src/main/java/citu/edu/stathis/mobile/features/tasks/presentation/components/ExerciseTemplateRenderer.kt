@@ -58,7 +58,6 @@ import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
-import citu.edu.stathis.mobile.features.exercise.adaptive.RctExperimentPrefs
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
@@ -132,8 +131,8 @@ fun ExerciseTemplateRenderer(
     /** Reset submission guard when a new attempt begins (start or retry). */
     onExerciseAttemptReady: () -> Unit = {},
     onCancel: (() -> Unit)? = null,
-    /** Use [RctExperimentPrefs.CONTEXT_PRACTICE] for ungraded practice sessions. */
-    sessionContext: String = RctExperimentPrefs.CONTEXT_TASK,
+    /** Practice sessions skip graded Complete API; coaching still runs. */
+    sessionContext: String = "TASK",
     modifier: Modifier = Modifier
 ) {
     var isExerciseStarted by remember { mutableStateOf(false) }
@@ -167,9 +166,6 @@ fun ExerciseTemplateRenderer(
     val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
     val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
     val context = LocalContext.current
-    val staticControlArm = remember {
-        RctExperimentPrefs.isStaticControl(context)
-    }
 
     fun endAdaptiveSession() {
         if (adaptiveSessionLive) {
@@ -202,8 +198,7 @@ fun ExerciseTemplateRenderer(
                 exerciseType = template.exerciseType,
                 taskId = taskPhysicalId,
                 classroomId = classroomPhysicalId,
-                staticControl = staticControlArm,
-                sessionContext = sessionContext
+                attemptNumber = displayedAttempts + 1
             )
             adaptiveSessionLive = true
             // #region agent log
@@ -390,7 +385,8 @@ fun ExerciseTemplateRenderer(
                 adaptiveHighlightLandmarks = adaptiveHighlightLandmarks,
                 adaptiveHighlightBones = adaptiveHighlightBones,
                 adaptiveMessage = adaptiveFeedback?.message,
-                adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel
+                adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel,
+                onRawCameraFrame = { proxy -> adaptiveSessionViewModel.onRawCameraFrame(proxy) }
             )
 
             ExerciseControlsOverlay(

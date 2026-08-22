@@ -537,7 +537,7 @@ export default function StudentProgressDetailPage() {
         <Tabs defaultValue={initialTab} className="mt-6">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-[560px] h-12 rounded-xl bg-card/80 backdrop-blur-xl border border-border/30">
             <TabsTrigger value="scores" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Task Scores</TabsTrigger>
-            <TabsTrigger value="adaptive" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Adaptive</TabsTrigger>
+            <TabsTrigger value="adaptive" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Form Evidence</TabsTrigger>
             <TabsTrigger value="badges" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Badges</TabsTrigger>
             <TabsTrigger value="ranking" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Ranking</TabsTrigger>
           </TabsList>
@@ -793,10 +793,10 @@ export default function StudentProgressDetailPage() {
                   <div>
                     <CardTitle className="text-xl flex items-center gap-2">
                       <Brain className="h-5 w-5" />
-                      Adaptive Physical Skill Learning
+                      Form Correction Evidence
                     </CardTitle>
                     <CardDescription>
-                      Evidence-based coaching profile: which feedback worked, recurring errors, and mastery trends.
+                      Confirmed form errors with a snapshot, what was incorrect, and the correction delivered.
                     </CardDescription>
                   </div>
                 </div>

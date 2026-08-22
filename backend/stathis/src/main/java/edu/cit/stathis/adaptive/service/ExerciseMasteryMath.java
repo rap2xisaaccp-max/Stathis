@@ -101,6 +101,26 @@ public final class ExerciseMasteryMath {
     return sb.toString();
   }
 
+  public static double fromSessionErrors(int sessions, int totalErrors) {
+    if (sessions <= 0) {
+      return 0.0;
+    }
+    return clamp(1.0 - (totalErrors / (sessions * 4.0)), 0.0, 1.0);
+  }
+
+  public static int totalErrorCount(Map<String, Object> commonErrors) {
+    if (commonErrors == null || commonErrors.isEmpty()) {
+      return 0;
+    }
+    int total = 0;
+    for (Object value : commonErrors.values()) {
+      if (value instanceof Number number) {
+        total += number.intValue();
+      }
+    }
+    return total;
+  }
+
   public static String topErrorCode(Map<String, Object> commonErrors) {
     if (commonErrors == null || commonErrors.isEmpty()) {
       return null;

@@ -85,4 +85,29 @@ class InterventionLifecycleTest {
         life.markResponseClosed(successful = false)
         assertEquals(InstructionIntensity.ESCALATION, life.intensityFor(FormErrorCode.DEPTH_LOW))
     }
+
+    @Test
+    fun heldErrorDoesNotRearmFromTimeAlone() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3, maxPerMinute = 40)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        // Same error, same reps, far past response window (10s) and cooldown (8s).
+        var claims = 0
+        var t = 1_000L
+        while (t <= 40_000L) {
+            if (life.tryClaimDelivery(FormErrorCode.SAG, 0.7, t, 8_000L, currentReps = 0) != null) {
+                claims++
+            }
+            t += 100L
+        }
+        assertEquals(0, claims)
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, life.phase)
+        // Legitimate re-arm: sustained clear, then cooldown, then the error returns.
+        repeat(3) { i ->
+            life.tryClaimDelivery(null, 0.0, 41_000L + i, 8_000L, 0)
+        }
+        assertEquals(InterventionPhase.COOLDOWN, life.phase)
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 42_000L, 8_000L, 0))
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 50_000L, 8_000L, 0))
+    }
 }

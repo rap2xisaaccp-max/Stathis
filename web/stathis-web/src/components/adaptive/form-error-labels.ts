@@ -70,47 +70,6 @@ export function formErrorDisplay(code: string | null | undefined): string {
   return formErrorLabel(code);
 }
 
-/** Teacher-facing coaching method names (internal enum values unchanged). */
-export function formatModalityLabel(modality: string | null | undefined): string {
-  if (!modality) return '—';
-  const key = modality.trim().toUpperCase().replace(/[\s-]+/g, '_');
-  switch (key) {
-    case 'VERBAL_TTS':
-      return 'Voice Coaching';
-    case 'VERBAL_TEXT':
-      return 'Text Coaching';
-    case 'VISUAL_HIGHLIGHT':
-      return 'Visual Guidance';
-    default:
-      return modality.replaceAll('_', ' ');
-  }
-}
-
-export function preferredModalityCopy(opts: {
-  modality?: string | null;
-  source?: string | null;
-  n?: number | null;
-}): { title: string; detail: string } {
-  const n = opts.n ?? 0;
-  const source = (opts.source || 'DEFAULT').toUpperCase();
-  const modality = formatModalityLabel(opts.modality);
-  const detail =
-    n === 1
-      ? 'Based on 1 successful coaching response.'
-      : `Based on ${n} successful coaching responses.`;
-
-  if (source === 'LEARNED') {
-    return { title: `Preferred: ${modality}`, detail };
-  }
-  if (source === 'EXPLORING') {
-    return { title: `Still learning — trying ${modality}`, detail };
-  }
-  return {
-    title: 'Still learning preferred coaching style',
-    detail: n > 0 ? detail : 'Not enough successful coaching responses yet.',
-  };
-}
-
 /** Plain-language Learning Progress label (numeric APSLE value stays in tooltip). */
 export function formatLearningProgressLabel(
   value: number | null | undefined

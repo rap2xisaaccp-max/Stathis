@@ -11,6 +11,17 @@ import org.junit.jupiter.api.Test;
 public class ExerciseMasteryMathTest {
 
   @Test
+  void fromSessionErrorsDropsWithMoreCorrections() {
+    assertEquals(0.0, ExerciseMasteryMath.fromSessionErrors(0, 4), 1e-6);
+    assertEquals(0.75, ExerciseMasteryMath.fromSessionErrors(1, 1), 1e-6);
+    assertEquals(0, ExerciseMasteryMath.totalErrorCount(Map.of()));
+    Map<String, Object> errors = new LinkedHashMap<>();
+    errors.put("SAG", 2);
+    errors.put("PIKE", 1);
+    assertEquals(3, ExerciseMasteryMath.totalErrorCount(errors));
+  }
+
+  @Test
   void updateMasteryRewardsPositiveDelta() {
     double updated = ExerciseMasteryMath.updateMastery(0.40, 0.40, true);
     assertEquals(0.50, updated, 1e-6);

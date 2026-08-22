@@ -24,7 +24,7 @@ data class PendingIntervention(
     val deliveredAtEpochMs: Long,
     val baselineSeverity: Double,
     val policySource: PolicySource,
-    val experimentArm: String,
+    val experimentArm: String? = null,
     val baselineReps: Int,
     val windowMs: Long = 10_000L
 )
