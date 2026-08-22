@@ -386,7 +386,7 @@ fun ExerciseTemplateRenderer(
                 adaptiveHighlightBones = adaptiveHighlightBones,
                 adaptiveMessage = adaptiveFeedback?.message,
                 adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel,
-                onRawCameraFrame = { proxy -> adaptiveSessionViewModel.onRawCameraFrame(proxy) }
+                onCopiedPreviewFrame = { bitmap -> adaptiveSessionViewModel.onCopiedPreviewFrame(bitmap) }
             )
 
             ExerciseControlsOverlay(

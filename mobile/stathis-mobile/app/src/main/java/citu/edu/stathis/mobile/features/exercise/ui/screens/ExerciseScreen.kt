@@ -114,7 +114,7 @@ fun ExerciseScreen(
     adaptiveMessage: String? = null,
     /** Delivery channel label: text | visual | tts */
     adaptiveDeliveryChannel: String? = null,
-    onRawCameraFrame: ((androidx.camera.core.ImageProxy) -> Unit)? = null
+    onCopiedPreviewFrame: ((android.graphics.Bitmap) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
     val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
@@ -413,7 +413,7 @@ fun ExerciseScreen(
                                         }
                                     },
                                     isImageFlipped = useFrontCamera,
-                                    onRawFrame = { proxy -> onRawCameraFrame?.invoke(proxy) }
+                                    onCopiedPreview = { bitmap -> onCopiedPreviewFrame?.invoke(bitmap) }
                                 )
                             )
                         }

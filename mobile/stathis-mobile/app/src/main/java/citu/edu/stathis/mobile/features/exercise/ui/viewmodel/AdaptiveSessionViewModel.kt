@@ -1,6 +1,6 @@
 package citu.edu.stathis.mobile.features.exercise.ui.viewmodel
 
-import androidx.camera.core.ImageProxy
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveFeedbackEngine
@@ -64,8 +64,8 @@ class AdaptiveSessionViewModel @Inject constructor(
         _sessionSummary.value = AdaptiveSessionSummary()
     }
 
-    fun onRawCameraFrame(imageProxy: ImageProxy) {
-        frameBuffer.updateFromImageProxy(imageProxy)
+    fun onCopiedPreviewFrame(bitmap: Bitmap) {
+        frameBuffer.updateFromBitmap(bitmap)
     }
 
     fun onExerciseFeedback(feedback: OnDeviceFeedback) {

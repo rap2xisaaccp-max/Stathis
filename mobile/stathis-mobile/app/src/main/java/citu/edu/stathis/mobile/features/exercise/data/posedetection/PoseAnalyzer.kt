@@ -1,6 +1,7 @@
 package citu.edu.stathis.mobile.features.exercise.data.posedetection
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -23,7 +24,7 @@ class PoseAnalyzer(
     private val onPoseDetected: (Pose, Int, Int, Boolean, Int) -> Unit,
     private val isImageFlipped: Boolean = false,
     private val minAnalysisIntervalMs: Long = 100L, // throttle to ~10 FPS by default
-    private val onRawFrame: ((ImageProxy) -> Unit)? = null
+    private val onCopiedPreview: ((Bitmap) -> Unit)? = null
 ) : ImageAnalysis.Analyzer {
 
     // Configure the pose detector
@@ -47,45 +48,47 @@ class PoseAnalyzer(
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
             val rotation = imageProxy.imageInfo.rotationDegrees
+            val width = imageProxy.width
+            val height = imageProxy.height
             val image = InputImage.fromMediaImage(mediaImage, rotation)
 
-            // Process the image with ML Kit pose detector
-            poseDetector.process(image)
-                .addOnSuccessListener(executor) { pose ->
-                    if (BuildConfig.APP_ENV == "local") {
-                        val landmarks = pose.allPoseLandmarks
-                        val count = landmarks.size
-                        val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)?.position
-                        val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)?.position
-                        val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)?.position
-                        val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)?.position
-                        Log.d(
-                            "PoseAnalyzer",
-                            "Pose: count=" + count +
-                                ", LS=" + (leftShoulder?.x?.toInt()?.toString() + "," + leftShoulder?.y?.toInt()?.toString()) +
-                                ", RS=" + (rightShoulder?.x?.toInt()?.toString() + "," + rightShoulder?.y?.toInt()?.toString()) +
-                                ", LH=" + (leftHip?.x?.toInt()?.toString() + "," + leftHip?.y?.toInt()?.toString()) +
-                                ", RH=" + (rightHip?.x?.toInt()?.toString() + "," + rightHip?.y?.toInt()?.toString())
+            OwnedImageProxyPreview.copyThenStartDetection(
+                imageProxy = imageProxy,
+                onCopiedPreview = onCopiedPreview
+            ) {
+                poseDetector.process(image)
+                    .addOnSuccessListener(executor) { pose ->
+                        if (BuildConfig.APP_ENV == "local") {
+                            val landmarks = pose.allPoseLandmarks
+                            val count = landmarks.size
+                            val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)?.position
+                            val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)?.position
+                            val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)?.position
+                            val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)?.position
+                            Log.d(
+                                "PoseAnalyzer",
+                                "Pose: count=" + count +
+                                    ", LS=" + (leftShoulder?.x?.toInt()?.toString() + "," + leftShoulder?.y?.toInt()?.toString()) +
+                                    ", RS=" + (rightShoulder?.x?.toInt()?.toString() + "," + rightShoulder?.y?.toInt()?.toString()) +
+                                    ", LH=" + (leftHip?.x?.toInt()?.toString() + "," + leftHip?.y?.toInt()?.toString()) +
+                                    ", RH=" + (rightHip?.x?.toInt()?.toString() + "," + rightHip?.y?.toInt()?.toString())
+                            )
+                        }
+                        onPoseDetected(
+                            pose,
+                            width,
+                            height,
+                            isImageFlipped,
+                            rotation
                         )
                     }
-                    // One-slot preview for evidence snapshots — overwrite only, never upload here.
-                    onRawFrame?.invoke(imageProxy)
-                    onPoseDetected(
-                        pose,
-                        imageProxy.width,
-                        imageProxy.height,
-                        isImageFlipped,
-                        rotation
-                    )
-                }
-                .addOnFailureListener(executor) { e ->
-                    // Handle any errors
-                    e.printStackTrace()
-                }
-                .addOnCompleteListener {
-                    // Always close the image proxy to release resources
-                    imageProxy.close()
-                }
+                    .addOnFailureListener(executor) { e ->
+                        e.printStackTrace()
+                    }
+                    .addOnCompleteListener(executor) {
+                        imageProxy.close()
+                    }
+            }
         } else {
             imageProxy.close()
         }
