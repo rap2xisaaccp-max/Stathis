@@ -31,9 +31,17 @@ public class SupabaseFormCorrectionStorage implements FormCorrectionStorage {
       @Value("${apsle.evidence.supabase-url:}") String supabaseUrl,
       @Value("${apsle.evidence.supabase-service-key:}") String serviceKey,
       @Value("${apsle.evidence.supabase-bucket:form-correction-evidence}") String bucket) {
-    this.baseUrl = supabaseUrl == null ? "" : supabaseUrl.replaceAll("/$", "");
-    this.serviceKey = serviceKey == null ? "" : serviceKey;
-    this.bucket = bucket;
+    this.baseUrl = supabaseUrl == null ? "" : supabaseUrl.trim().replaceAll("/$", "");
+    this.serviceKey = serviceKey == null ? "" : serviceKey.trim();
+    this.bucket =
+        (bucket == null || bucket.isBlank()) ? "form-correction-evidence" : bucket.trim();
+    if (this.baseUrl.isBlank() || this.serviceKey.isBlank()) {
+      throw new IllegalStateException(
+          "apsle.evidence.storage=supabase requires a non-blank supabase URL and service key "
+              + "(set apsle.evidence.supabase-url / apsle.evidence.supabase-service-key, or "
+              + "APSLE_EVIDENCE_SUPABASE_URL / APSLE_EVIDENCE_SUPABASE_SERVICE_KEY). "
+              + "Refusing to start so evidence uploads cannot fail later with HTTP 502.");
+    }
   }
 
   @Override

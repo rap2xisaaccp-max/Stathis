@@ -74,7 +74,7 @@ public class FormCorrectionEvidenceService {
 
     String description =
         (errorDescription == null || errorDescription.isBlank())
-            ? FormErrorCopy.explanation(errorCode)
+            ? FormErrorCopy.explanation(errorCode, exerciseType)
             : errorDescription.trim();
     String correction =
         (correctionText == null || correctionText.isBlank())
@@ -256,7 +256,7 @@ public class FormCorrectionEvidenceService {
         .attemptNumber(row.getAttemptNumber())
         .exerciseType(row.getExerciseType())
         .errorCode(row.getErrorCode() != null ? row.getErrorCode().name() : null)
-        .errorLabel(FormErrorCopy.label(row.getErrorCode()))
+        .errorLabel(FormErrorCopy.label(row.getErrorCode(), row.getExerciseType()))
         .errorDescription(row.getErrorDescription())
         .correctionText(row.getCorrectionText())
         .capturedAt(row.getCapturedAt() != null ? row.getCapturedAt().toString() : null)

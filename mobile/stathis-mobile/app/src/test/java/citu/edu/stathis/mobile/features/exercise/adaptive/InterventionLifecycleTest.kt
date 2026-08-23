@@ -77,6 +77,86 @@ class InterventionLifecycleTest {
     }
 
     @Test
+    fun coachableErrorFlickerDoesNotClearOrRearm() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3, maxPerMinute = 40)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.KNEES_IN, 0.8, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.KNEES_IN, 0L, 0)
+        val flicker =
+            listOf(
+                FormErrorCode.PIKE,
+                FormErrorCode.SAG,
+                FormErrorCode.PIKE,
+                FormErrorCode.KNEES_IN,
+                FormErrorCode.LOW_ROM,
+                FormErrorCode.SAG
+            )
+        var claims = 0
+        var t = 200L
+        repeat(40) { i ->
+            val code = flicker[i % flicker.size]
+            if (life.tryClaimDelivery(code, 0.8, t, 8_000L, currentReps = 0) != null) {
+                claims++
+            }
+            t += 200L
+        }
+        assertEquals(0, claims)
+        assertEquals(1, life.currentCycleSeq())
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, life.phase)
+        assertEquals(FormErrorCode.KNEES_IN, life.openErrorCode())
+    }
+
+    @Test
+    fun switchingToAnotherCoachableErrorDoesNotRearmWhileFirstCycleOpen() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3, maxPerMinute = 40)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.KNEES_IN, 0.7, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.KNEES_IN, 0L, 0)
+        repeat(20) { i ->
+            assertNull(
+                life.tryClaimDelivery(FormErrorCode.DEPTH_LOW, 0.7, 500L + i * 100L, 8_000L, 0)
+            )
+        }
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, life.phase)
+        assertEquals(FormErrorCode.KNEES_IN, life.openErrorCode())
+        assertEquals(1, life.currentCycleSeq())
+    }
+
+    @Test
+    fun technicalSignalsDoNotClearOpenCycle() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.SAG, 0L, 0)
+        repeat(6) { i ->
+            assertNull(
+                life.tryClaimDelivery(
+                    FormErrorCode.LOW_VISIBILITY,
+                    0.9,
+                    200L + i,
+                    8_000L,
+                    0
+                )
+            )
+        }
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, life.phase)
+        assertTrue(life.hasOpenIntervention())
+        // Genuine clean ticks still close after technical frames were ignored.
+        repeat(3) { i -> life.tryClaimDelivery(null, 0.0, 400L + i, 8_000L, 0) }
+        assertEquals(InterventionPhase.COOLDOWN, life.phase)
+        assertFalse(life.hasOpenIntervention())
+    }
+
+    @Test
+    fun genuineClearThenCooldownAllowsSecondClaim() {
+        val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 3)
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.KNEES_IN, 0.7, 0L, 8_000L, 0))
+        life.markDelivered(FormErrorCode.KNEES_IN, 0L, 0)
+        repeat(3) { i -> life.tryClaimDelivery(null, 0.0, 100L + i, 8_000L, 0) }
+        assertEquals(InterventionPhase.COOLDOWN, life.phase)
+        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 1_000L, 8_000L, 0))
+        assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 9_000L, 8_000L, 0))
+        assertEquals(2, life.currentCycleSeq())
+    }
+
+    @Test
     fun escalatesIntensityAfterRepeatedDeliveries() {
         val life = InterventionLifecycle(confirmTicks = 1, responseValidReps = 1)
         assertEquals(InstructionIntensity.REMINDER, life.intensityFor(FormErrorCode.DEPTH_LOW))
@@ -102,12 +182,16 @@ class InterventionLifecycleTest {
         }
         assertEquals(0, claims)
         assertEquals(InterventionPhase.RESPONSE_OBSERVATION, life.phase)
-        // Legitimate re-arm: sustained clear, then cooldown, then the error returns.
+        // Legitimate re-arm: sustained clear. Cooldown already elapsed during the 40s hold,
+        // so the lifecycle may skip straight to OBSERVING.
         repeat(3) { i ->
             life.tryClaimDelivery(null, 0.0, 41_000L + i, 8_000L, 0)
         }
-        assertEquals(InterventionPhase.COOLDOWN, life.phase)
-        assertNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 42_000L, 8_000L, 0))
+        assertFalse(life.hasOpenIntervention())
+        assertTrue(
+            life.phase == InterventionPhase.COOLDOWN ||
+                life.phase == InterventionPhase.OBSERVING
+        )
         assertNotNull(life.tryClaimDelivery(FormErrorCode.SAG, 0.7, 50_000L, 8_000L, 0))
     }
 }

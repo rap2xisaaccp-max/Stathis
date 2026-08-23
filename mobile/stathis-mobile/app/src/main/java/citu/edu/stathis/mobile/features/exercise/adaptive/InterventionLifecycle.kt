@@ -221,11 +221,13 @@ class InterventionLifecycle(
     ) {
         if (phase != InterventionPhase.RESPONSE_OBSERVATION || openError == null) return
         val repsProgressed = currentReps - responseStartReps
-        val looksCleared = errorCode == null || errorCode != openError || severity < minSeverity
-        if (looksCleared) {
-            clearTicks += 1
-        } else {
-            clearTicks = 0
+        // A different coachable error is still incorrect form — not a successful clear.
+        // Technical/camera signals must not increment (false clear) or reset genuine clear ticks.
+        when {
+            FormErrorClassifier.isTechnical(errorCode) -> Unit
+            !FormErrorClassifier.isCoachable(errorCode) || severity < minSeverity ->
+                clearTicks += 1
+            else -> clearTicks = 0
         }
         val errorCleared = clearTicks >= clearConfirmTicks
         val repsDone = repsProgressed >= responseValidReps

@@ -8,6 +8,10 @@ object ModalityHighlightTargets {
     const val NOSE = 0
     const val LEFT_SHOULDER = 11
     const val RIGHT_SHOULDER = 12
+    const val LEFT_ELBOW = 13
+    const val RIGHT_ELBOW = 14
+    const val LEFT_WRIST = 15
+    const val RIGHT_WRIST = 16
     const val LEFT_HIP = 23
     const val RIGHT_HIP = 24
     const val LEFT_KNEE = 25
@@ -35,7 +39,44 @@ object ModalityHighlightTargets {
                     )
             )
         }
-        if (exercise == "LYING_LEG_RAISES" && errorCode == FormErrorCode.LEGS_BENT) {
+        if (exercise == "PUSH_UP" && errorCode == FormErrorCode.LOW_ROM) {
+            return Target(
+                joints =
+                    setOf(
+                        LEFT_SHOULDER,
+                        RIGHT_SHOULDER,
+                        LEFT_ELBOW,
+                        RIGHT_ELBOW,
+                        LEFT_WRIST,
+                        RIGHT_WRIST
+                    ),
+                bones =
+                    listOf(
+                        LEFT_SHOULDER to LEFT_ELBOW,
+                        LEFT_ELBOW to LEFT_WRIST,
+                        RIGHT_SHOULDER to RIGHT_ELBOW,
+                        RIGHT_ELBOW to RIGHT_WRIST
+                    )
+            )
+        }
+        if (exercise == "GLUTE_BRIDGE" &&
+            (errorCode == FormErrorCode.LOW_ROM || errorCode == FormErrorCode.SAG)
+        ) {
+            return Target(
+                joints = setOf(LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP, LEFT_KNEE, RIGHT_KNEE),
+                bones =
+                    listOf(
+                        LEFT_SHOULDER to LEFT_HIP,
+                        RIGHT_SHOULDER to RIGHT_HIP,
+                        LEFT_HIP to LEFT_KNEE,
+                        RIGHT_HIP to RIGHT_KNEE,
+                        LEFT_HIP to RIGHT_HIP
+                    )
+            )
+        }
+        if (exercise == "LYING_LEG_RAISES" &&
+            (errorCode == FormErrorCode.LEGS_BENT || errorCode == FormErrorCode.LOW_ROM)
+        ) {
             return Target(
                 joints = setOf(LEFT_HIP, RIGHT_HIP, LEFT_KNEE, RIGHT_KNEE, LEFT_ANKLE, RIGHT_ANKLE),
                 bones =
@@ -44,6 +85,18 @@ object ModalityHighlightTargets {
                         LEFT_KNEE to LEFT_ANKLE,
                         RIGHT_HIP to RIGHT_KNEE,
                         RIGHT_KNEE to RIGHT_ANKLE
+                    )
+            )
+        }
+        if (exercise == "LYING_LEG_RAISES" && errorCode == FormErrorCode.SAG) {
+            return Target(
+                joints = setOf(LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP),
+                bones =
+                    listOf(
+                        LEFT_SHOULDER to LEFT_HIP,
+                        RIGHT_SHOULDER to RIGHT_HIP,
+                        LEFT_HIP to RIGHT_HIP,
+                        LEFT_SHOULDER to RIGHT_SHOULDER
                     )
             )
         }

@@ -64,6 +64,12 @@ object CoachingInstructionCatalog {
         intensity: InstructionIntensity = InstructionIntensity.REMINDER
     ): String = resolve(exerciseType, errorCode).codeFor(intensity)
 
+    fun hasReviewedInstruction(exerciseType: String?, errorCode: FormErrorCode?): Boolean {
+        if (errorCode == null) return false
+        val exercise = normalizeExercise(exerciseType)
+        return catalog.containsKey("$exercise|${errorCode.name}")
+    }
+
     private fun entry(
         exercise: String,
         code: FormErrorCode,

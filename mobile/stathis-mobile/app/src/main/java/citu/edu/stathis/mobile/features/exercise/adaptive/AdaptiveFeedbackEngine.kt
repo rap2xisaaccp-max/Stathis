@@ -123,7 +123,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                 return@withLock activeDelivery
             }
 
-            val errorCode = FormErrorMapper.resolve(flags, formIssues)
+            val errorCode = FormErrorMapper.resolve(flags, formIssues, exerciseType)
 
             if (FormErrorClassifier.isTechnical(errorCode)) {
                 val guidance =
@@ -148,7 +148,13 @@ class AdaptiveFeedbackEngine @Inject constructor(
                 return@withLock techUi
             }
 
-            if (!FormErrorClassifier.isCoachable(errorCode)) {
+            if (errorCode == FormErrorCode.UNKNOWN) {
+                // Unmapped or cross-exercise signal: no coaching evidence, and do not treat
+                // it as a successful form correction that re-arms the lifecycle.
+                return@withLock activeDelivery
+            }
+
+            if (!FormErrorClassifier.isCoachableForExercise(exerciseType, errorCode)) {
                 // No physical error this tick (student corrected, or no issue). Observe a
                 // genuine clear so a later repeat can re-arm. Technical/camera signals
                 // already returned above and must not count as form-corrected.
@@ -234,8 +240,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     attemptNumber = attemptNumber,
                     exerciseType = exerciseType,
                     errorCode = resolvedCode,
-                    errorDescription = FormErrorCopy.explanation(resolvedCode).ifBlank {
-                        FormErrorCopy.label(resolvedCode)
+                    errorDescription = FormErrorCopy.explanation(resolvedCode, exerciseType).ifBlank {
+                        FormErrorCopy.label(resolvedCode, exerciseType)
                     },
                     correctionText = catalogText,
                     capturedAtIso = Instant.ofEpochMilli(now).toString()

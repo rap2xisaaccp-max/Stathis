@@ -1,6 +1,7 @@
 package citu.edu.stathis.mobile.features.exercise.adaptive
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,5 +34,25 @@ class ModalityHighlightTargetsTest {
         assertEquals(sag.joints, pike.joints)
         assertTrue(sag.joints.contains(ModalityHighlightTargets.LEFT_HIP))
         assertTrue(sag.joints.contains(ModalityHighlightTargets.LEFT_SHOULDER))
+    }
+
+    @Test
+    fun pushUpLowRomHighlightsArmsNotTorso() {
+        val target = ModalityHighlightTargets.forError(FormErrorCode.LOW_ROM, "PUSH_UP")
+        assertTrue(target.joints.contains(ModalityHighlightTargets.LEFT_ELBOW))
+        assertTrue(target.joints.contains(ModalityHighlightTargets.LEFT_WRIST))
+        assertFalse(target.joints.contains(ModalityHighlightTargets.NOSE))
+        assertFalse(target.joints.contains(ModalityHighlightTargets.LEFT_HIP))
+    }
+
+    @Test
+    fun gluteAndLegRaiseHighlightsMatchAnatomy() {
+        val glute = ModalityHighlightTargets.forError(FormErrorCode.LOW_ROM, "GLUTE_BRIDGE")
+        assertTrue(glute.joints.contains(ModalityHighlightTargets.LEFT_HIP))
+        assertTrue(glute.joints.contains(ModalityHighlightTargets.LEFT_KNEE))
+        val legSag = ModalityHighlightTargets.forError(FormErrorCode.SAG, "LYING_LEG_RAISES")
+        assertTrue(legSag.joints.contains(ModalityHighlightTargets.LEFT_HIP))
+        assertTrue(legSag.joints.contains(ModalityHighlightTargets.LEFT_SHOULDER))
+        assertFalse(legSag.joints.contains(ModalityHighlightTargets.LEFT_ANKLE))
     }
 }
