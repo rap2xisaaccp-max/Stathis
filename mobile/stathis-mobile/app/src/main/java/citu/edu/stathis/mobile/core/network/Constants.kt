@@ -6,6 +6,6 @@ object Constants {
 
 //    val BACKEND_URL_PROD = "http://188.166.246.153:5678/"
 
-    val BACKEND_URL_PROD = "https://stathis-u8s6.onrender.com/"
+    val BACKEND_URL_PROD = "https://stathis-backend-fresh.onrender.com/"
 
 }
