@@ -105,7 +105,7 @@ fun TaskDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
                         text = task?.name ?: "Assignment",
                         style = MaterialTheme.typography.titleLarge,
@@ -152,17 +152,17 @@ fun TaskDetailScreen(
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
                 // Error Banner
-            if (error != null) {
+                if (error != null) {
                     item {
                         TaskErrorMessage(
-                    message = error!!,
+                            message = error!!,
                             onDismiss = viewModel::clearError,
                             modifier = Modifier.padding(16.dp)
-                )
+                        )
                     }
-            }
+                }
 
-            task?.let { currentTask ->
+                task?.let { currentTask ->
                     val pastDeadline = runCatching { OffsetDateTime.parse(currentTask.closingDate) }
                         .getOrNull()?.isBefore(OffsetDateTime.now()) == true
                     val active = currentTask.isActive ?: true
@@ -195,7 +195,7 @@ fun TaskDetailScreen(
                         val canStartLesson = !isUnavailable && lessonAttempts < effectiveMaxAttempts
                         val lessonCompleted = (lessonAttempts > 0) || (progress?.lessonCompleted == true)
                         val lessonTemplatePhysicalId = currentTask.lessonTemplate?.physicalId ?: currentTask.lessonTemplateId
-                        
+
                         item {
                             TaskComponentCard(
                                 title = "Lesson",
@@ -239,8 +239,8 @@ fun TaskDetailScreen(
                         val exerciseAttempts = progress?.exerciseAttempts
                             ?: if (exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())) 1 else 0
                         val isExerciseCompleted = (progress?.exerciseCompleted == true)
-                            || exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
-                            || exerciseAttempts > 0
+                                || exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
+                                || exerciseAttempts > 0
                         val maxAttempts = currentTask.maxAttempts
                         val canStartExercise = !isUnavailable && (maxAttempts <= 0 || exerciseAttempts < maxAttempts)
                         val exerciseScore = progress?.exerciseScore
@@ -259,7 +259,7 @@ fun TaskDetailScreen(
                                 "Reps: ${exerciseReps}/${exerciseGoalReps ?: "—"}"
                             else -> null
                         }
-                        
+
                         val exerciseActionLabel = when {
                             !canStartExercise -> null
                             exerciseAttempts > 0 -> "Retry Exercise"
@@ -345,11 +345,11 @@ fun TaskDetailScreen(
                         val effectiveMaxAttempts = if (currentTask.maxAttempts > 0) currentTask.maxAttempts else 10
                         val isQuizCompleted = quizAttempts > 0
                         val canTakeQuiz = !isUnavailable && quizAttempts < effectiveMaxAttempts
-                        
+
                         val scoreText = if (quizScore != null && maxQuizScore != null && maxQuizScore > 0) {
                             "Score: ${quizScore}/${maxQuizScore}"
                         } else null
-                        
+
                         item {
                             TaskComponentCard(
                                 title = "Quiz",
@@ -386,7 +386,7 @@ fun TaskDetailScreen(
                             )
                         }
                     }
-                    
+
                     // Progress may still be loading — never show a fake 0/n "attempt" card.
                     if (progress == null) {
                         item {
@@ -663,12 +663,12 @@ private fun TaskDueDatesSection(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
-        Text(
-            text = "Due Dates",
-            style = MaterialTheme.typography.titleMedium,
+                Text(
+                    text = "Due Dates",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
-        )
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -937,9 +937,9 @@ private fun TaskComponentCard(
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isCompleted) 
+                            if (isCompleted)
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            else 
+                            else
                                 MaterialTheme.colorScheme.surfaceVariant
                         ),
                     contentAlignment = Alignment.Center
@@ -947,14 +947,14 @@ private fun TaskComponentCard(
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = if (isCompleted) 
-                            MaterialTheme.colorScheme.primary 
-                        else 
+                        tint = if (isCompleted)
+                            MaterialTheme.colorScheme.primary
+                        else
                             MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                
+
                 // Text content
                 Column(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -976,7 +976,7 @@ private fun TaskComponentCard(
                     )
                 }
             }
-            
+
             // Right side - Action button and optional progress badge (not the attempt session UI)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1003,13 +1003,13 @@ private fun TaskComponentCard(
                     modifier = Modifier.height(40.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (canStart) 
-                            MaterialTheme.colorScheme.primary 
-                        else 
+                        containerColor = if (canStart)
+                            MaterialTheme.colorScheme.primary
+                        else
                             MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (canStart) 
-                            MaterialTheme.colorScheme.onPrimary 
-                        else 
+                        contentColor = if (canStart)
+                            MaterialTheme.colorScheme.onPrimary
+                        else
                             MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
