@@ -75,7 +75,7 @@ public class SecurityConfig {
     configuration.setAllowedOrigins(List.of(
             "http://localhost:3000", 
             "https://stathis-x68s.onrender.com/",
-            "https://stathis-u8s6.onrender.com"
+            "https://stathis-backend-fresh.onrender.com/"
         ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
     configuration.setAllowedHeaders(List.of("*"));

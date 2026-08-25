@@ -10,7 +10,7 @@ from pathlib import Path
 import psycopg2
 
 LOG = Path(r"C:\Users\ASUS\Stathis\debug-b7147e.log")
-API = "https://stathis-u8s6.onrender.com/api"
+API = "https://stathis-backend-fresh.onrender.com/api"
 STUDENT = "stud4@gmail.com"
 PASSWORD = "Test123!"
 TASK_ONE = "TASK-03687C67-295C-4CC5-9CE4-648ACBE775A2"

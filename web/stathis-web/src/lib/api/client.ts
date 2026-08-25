@@ -7,7 +7,7 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.API_BASE_URL ||
-  'https://stathis-u8s6.onrender.com/api';
+  'https://stathis-backend-fresh.onrender.com/api';
 
 export interface ApiResponse<T = any> {
   data?: T;

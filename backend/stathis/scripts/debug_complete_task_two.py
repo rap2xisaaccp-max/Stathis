@@ -11,7 +11,7 @@ import bcrypt
 import psycopg2
 
 LOG = Path(r"C:\Users\ASUS\Stathis\debug-b7147e.log")
-API = "https://stathis-u8s6.onrender.com/api"
+API = "https://stathis-backend-fresh.onrender.com/api"
 EMAIL = "stud4@gmail.com"
 PASSWORD = "Test123!"
 STUDENT_ID = "26-6681-628"
