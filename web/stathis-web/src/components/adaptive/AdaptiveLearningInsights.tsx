@@ -63,9 +63,13 @@ export function AdaptiveLearningInsights({
       <div>
         <h3 className="text-lg font-semibold">Form Correction Evidence Log</h3>
         <p className="mb-3 text-sm text-muted-foreground">
-          One snapshot per exercise attempt when a form mistake is confirmed, with the correction the student heard.
+          Snapshots are grouped by task. Use the arrows to browse attempts, or click an image to enlarge it.
         </p>
-        <FormCorrectionEvidenceLog studentId={studentId} classroomId={classroomId} />
+        <FormCorrectionEvidenceLog
+          studentId={studentId}
+          classroomId={classroomId}
+          progressItems={progressItems}
+        />
       </div>
 
       {progressItems && progressItems.length > 0 ? (
