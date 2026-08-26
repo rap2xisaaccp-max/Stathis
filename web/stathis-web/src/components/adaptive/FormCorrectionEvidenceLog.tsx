@@ -8,6 +8,7 @@ import {
 } from '@/services/adaptive/api-adaptive-client';
 import { API_BASE_URL } from '@/lib/api/server-client';
 import { getClassroomById } from '@/services/api-classroom';
+import { getClassroomTasks } from '@/services/tasks/api-task-client';
 import {
   Card,
   CardContent,
@@ -38,14 +39,39 @@ type TaskEvidenceGroup = {
   taskKey: string;
   taskId: string | null;
   taskName: string;
+  taskIndex: number;
   classroomId: string | null;
   items: FormCorrectionEvidenceDTO[];
 };
 
-function formatWhen(iso: string | null | undefined): string {
-  if (!iso) return '—';
+function parseCapturedDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDate(iso: string | null | undefined): string {
+  const d = parseCapturedDate(iso);
+  if (!d) return '—';
+  return d.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatTime(iso: string | null | undefined): string {
+  const d = parseCapturedDate(iso);
+  if (!d) return '—';
+  return d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatWhen(iso: string | null | undefined): string {
+  const d = parseCapturedDate(iso);
+  if (!d) return '—';
   return d.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -60,15 +86,12 @@ function formatExercise(value: string | null | undefined): string {
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function shortTaskId(taskId: string): string {
-  return taskId.length > 12 ? `${taskId.slice(0, 8)}…` : taskId;
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }
 
 function evidenceTime(item: FormCorrectionEvidenceDTO): number {
-  const raw = item.capturedAt || item.createdAt;
-  if (!raw) return 0;
-  const t = new Date(raw).getTime();
-  return Number.isNaN(t) ? 0 : t;
+  return parseCapturedDate(item.capturedAt || item.createdAt)?.getTime() ?? 0;
 }
 
 function groupEvidenceByTask(
@@ -100,19 +123,23 @@ function groupEvidenceByTask(
     groups.push({
       taskKey,
       taskId,
-      taskName: taskId
-        ? named || `Task ${shortTaskId(taskId)}`
-        : 'Practice session',
+      taskName: taskId ? named || `Task ${shortId(taskId)}` : 'Practice session',
+      taskIndex: 0,
       classroomId,
       items: sorted,
     });
   }
 
-  return groups.sort((a, b) => {
+  const ordered = groups.sort((a, b) => {
     const latestA = Math.max(...a.items.map(evidenceTime), 0);
     const latestB = Math.max(...b.items.map(evidenceTime), 0);
     return latestB - latestA;
   });
+
+  return ordered.map((group, index) => ({
+    ...group,
+    taskIndex: index + 1,
+  }));
 }
 
 function useEvidenceImage(evidence: FormCorrectionEvidenceDTO | null) {
@@ -228,45 +255,20 @@ function EvidenceImage({
   );
 }
 
-function EvidenceDetails({ evidence }: { evidence: FormCorrectionEvidenceDTO }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-base font-semibold">{formatExercise(evidence.exerciseType)}</h4>
-        <Badge variant="secondary">
-          {evidence.errorLabel || formErrorLabel(evidence.errorCode)}
-        </Badge>
-        {evidence.attemptNumber != null ? (
-          <Badge variant="outline">Attempt {evidence.attemptNumber}</Badge>
-        ) : null}
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {evidence.errorDescription || 'Incorrect form was confirmed during the attempt.'}
-      </p>
-      <p className="text-sm">
-        <span className="font-medium">Correction delivered: </span>
-        {evidence.correctionText || '—'}
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {formatWhen(evidence.capturedAt || evidence.createdAt)}
-      </p>
-    </div>
-  );
-}
-
 function TaskEvidenceCarousel({
   group,
-  classroomLabel,
+  classroomName,
   onOpenLightbox,
 }: {
   group: TaskEvidenceGroup;
-  classroomLabel: string;
+  classroomName: string;
   onOpenLightbox: (index: number) => void;
 }) {
   const [index, setIndex] = useState(0);
   const total = group.items.length;
   const safeIndex = Math.min(index, Math.max(total - 1, 0));
   const current = group.items[safeIndex];
+  const capturedAt = current?.capturedAt || current?.createdAt;
 
   useEffect(() => {
     setIndex(0);
@@ -278,68 +280,86 @@ function TaskEvidenceCarousel({
   const goNext = () => setIndex((value) => (value + 1) % total);
 
   return (
-    <Card className="overflow-hidden border-border/50">
-      <CardHeader className="space-y-2 border-b border-border/40 bg-muted/20 pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {classroomLabel}
-            </p>
-            <CardTitle className="text-lg leading-snug">{group.taskName}</CardTitle>
-            <CardDescription>
-              {total} snapshot{total === 1 ? '' : 's'}
-              {(() => {
-                const latest = [...group.items].sort(
-                  (a, b) => evidenceTime(b) - evidenceTime(a)
-                )[0];
-                return latest
-                  ? ` · Latest ${formatWhen(latest.capturedAt || latest.createdAt)}`
-                  : '';
-              })()}
-            </CardDescription>
-          </div>
-          <Badge variant="outline" className="shrink-0">
-            Snapshot {safeIndex + 1} of {total}
-          </Badge>
+    <Card className="overflow-hidden border-border/60 shadow-sm">
+      <CardHeader className="space-y-3 border-b border-border/50 bg-muted/25 pb-4">
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">Classroom:</span> {classroomName}
+          </p>
+          <CardTitle className="text-xl leading-snug">
+            Task {group.taskIndex} – {group.taskName}
+          </CardTitle>
+          <CardDescription>
+            {total} snapshot{total === 1 ? '' : 's'} for this task
+          </CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-4 p-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              onClick={goPrev}
-              disabled={total <= 1}
-              aria-label="Previous snapshot"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              Snapshot {safeIndex + 1} of {total}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              onClick={goNext}
-              disabled={total <= 1}
-              aria-label="Next snapshot"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-          <EvidenceImage
-            evidence={current}
-            className="aspect-[4/3] max-h-72"
-            onClick={() => onOpenLightbox(safeIndex)}
-            priority
-          />
+
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <div className="flex items-center justify-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            onClick={goPrev}
+            disabled={total <= 1}
+            aria-label="Previous snapshot for this task"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <p className="min-w-[9rem] text-center text-sm font-medium">
+            Snapshot {safeIndex + 1} of {total}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            onClick={goNext}
+            disabled={total <= 1}
+            aria-label="Next snapshot for this task"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </Button>
         </div>
-        <EvidenceDetails evidence={current} />
+
+        <EvidenceImage
+          evidence={current}
+          className="aspect-[16/10] max-h-[22rem] w-full"
+          onClick={() => onOpenLightbox(safeIndex)}
+          priority
+        />
+
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-base font-semibold">{formatExercise(current.exerciseType)}</h4>
+              <Badge variant="secondary">
+                {current.errorLabel || formErrorLabel(current.errorCode)}
+              </Badge>
+              {current.attemptNumber != null ? (
+                <Badge variant="outline">Attempt {current.attemptNumber}</Badge>
+              ) : null}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {current.errorDescription || 'Incorrect form was confirmed during the attempt.'}
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">Correction delivered: </span>
+              {current.correctionText || '—'}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm sm:min-w-[11rem]">
+            <p>
+              <span className="font-medium">Date:</span> {formatDate(capturedAt)}
+            </p>
+            <p className="mt-1">
+              <span className="font-medium">Time:</span> {formatTime(capturedAt)}
+            </p>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -349,20 +369,21 @@ function EvidenceLightbox({
   open,
   group,
   index,
-  classroomLabel,
+  classroomName,
   onClose,
   onIndexChange,
 }: {
   open: boolean;
   group: TaskEvidenceGroup | null;
   index: number;
-  classroomLabel: string;
+  classroomName: string;
   onClose: () => void;
   onIndexChange: (index: number) => void;
 }) {
   const total = group?.items.length ?? 0;
   const evidence = group?.items[index] ?? null;
   const { src, failed, loading } = useEvidenceImage(evidence);
+  const capturedAt = evidence?.capturedAt || evidence?.createdAt;
 
   useEffect(() => {
     if (!open) return;
@@ -407,11 +428,15 @@ function EvidenceLightbox({
       />
       <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col gap-3">
         <div className="flex items-start justify-between gap-3 text-white">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-white/70">{classroomLabel}</p>
-            <h3 className="truncate text-lg font-semibold">{group.taskName}</h3>
+          <div className="min-w-0 space-y-1">
+            <p className="text-xs text-white/70">
+              <span className="font-medium text-white/85">Classroom:</span> {classroomName}
+            </p>
+            <h3 className="truncate text-lg font-semibold">
+              Task {group.taskIndex} – {group.taskName}
+            </h3>
             <p className="text-sm text-white/75">
-              Snapshot {index + 1} of {total} · {formatWhen(evidence.capturedAt || evidence.createdAt)}
+              Snapshot {index + 1} of {total} · {formatWhen(capturedAt)}
             </p>
           </div>
           <Button
@@ -434,7 +459,7 @@ function EvidenceLightbox({
               size="icon"
               className="absolute left-0 z-10 h-10 w-10 rounded-full bg-black/45 text-white hover:bg-black/60 md:-left-2"
               onClick={() => onIndexChange((index - 1 + total) % total)}
-              aria-label="Previous snapshot"
+              aria-label="Previous snapshot for this task"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
@@ -464,7 +489,7 @@ function EvidenceLightbox({
               size="icon"
               className="absolute right-0 z-10 h-10 w-10 rounded-full bg-black/45 text-white hover:bg-black/60 md:-right-2"
               onClick={() => onIndexChange((index + 1) % total)}
-              aria-label="Next snapshot"
+              aria-label="Next snapshot for this task"
             >
               <ChevronRight className="h-5 w-5" />
             </Button>
@@ -490,6 +515,14 @@ function EvidenceLightbox({
             <span className="font-medium text-white">Correction delivered: </span>
             {evidence.correctionText || '—'}
           </p>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-white/80">
+            <span>
+              <span className="font-medium text-white">Date:</span> {formatDate(capturedAt)}
+            </span>
+            <span>
+              <span className="font-medium text-white">Time:</span> {formatTime(capturedAt)}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -525,6 +558,17 @@ export function FormCorrectionEvidenceLog({
     staleTime: 1000 * 60 * 5,
   });
 
+  const classroomTasksQuery = useQuery({
+    queryKey: ['classroom-tasks-for-evidence', classroomId],
+    queryFn: async () => {
+      if (!classroomId) return [];
+      return getClassroomTasks(classroomId);
+    },
+    enabled: !!classroomId,
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
+  });
+
   const taskMetaById = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of progressItems ?? []) {
@@ -532,17 +576,24 @@ export function FormCorrectionEvidenceLog({
         map.set(item.taskId, item.taskName);
       }
     }
+    for (const task of classroomTasksQuery.data ?? []) {
+      const id = task.physicalId;
+      const name = task.name?.trim();
+      if (id && name && !map.has(id)) {
+        map.set(id, name);
+      }
+    }
     return map;
-  }, [progressItems]);
+  }, [progressItems, classroomTasksQuery.data]);
 
   const groups = useMemo(
     () => groupEvidenceByTask(query.data ?? [], taskMetaById),
     [query.data, taskMetaById]
   );
 
-  const classroomLabel =
+  const classroomName =
     classroomQuery.data ||
-    (classroomId ? `Classroom ${shortTaskId(classroomId)}` : 'Classroom');
+    (classroomId ? `Classroom ${shortId(classroomId)}` : 'Classroom');
 
   const [lightbox, setLightbox] = useState<{
     taskKey: string;
@@ -557,7 +608,7 @@ export function FormCorrectionEvidenceLog({
     return (
       <div className="space-y-4">
         {Array.from({ length: 2 }).map((_, i) => (
-          <Skeleton key={i} className="h-64 w-full rounded-2xl" />
+          <Skeleton key={i} className="h-72 w-full rounded-2xl" />
         ))}
       </div>
     );
@@ -593,16 +644,20 @@ export function FormCorrectionEvidenceLog({
 
   return (
     <>
-      <div className="space-y-5">
+      <div className="mb-4 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3">
+        <p className="text-sm text-muted-foreground">Classroom</p>
+        <p className="text-base font-semibold">{classroomName}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Snapshots are grouped by task. Use the arrows within a task, or click an image to enlarge it.
+        </p>
+      </div>
+
+      <div className="space-y-6">
         {groups.map((group) => (
           <TaskEvidenceCarousel
             key={group.taskKey}
             group={group}
-            classroomLabel={
-              group.classroomId && classroomId && group.classroomId !== classroomId
-                ? `Classroom ${shortTaskId(group.classroomId)}`
-                : classroomLabel
-            }
+            classroomName={classroomName}
             onOpenLightbox={(index) => setLightbox({ taskKey: group.taskKey, index })}
           />
         ))}
@@ -612,13 +667,7 @@ export function FormCorrectionEvidenceLog({
         open={!!lightboxGroup}
         group={lightboxGroup}
         index={lightbox?.index ?? 0}
-        classroomLabel={
-          lightboxGroup?.classroomId &&
-          classroomId &&
-          lightboxGroup.classroomId !== classroomId
-            ? `Classroom ${shortTaskId(lightboxGroup.classroomId)}`
-            : classroomLabel
-        }
+        classroomName={classroomName}
         onClose={() => setLightbox(null)}
         onIndexChange={(index) =>
           setLightbox((current) => (current ? { ...current, index } : current))
