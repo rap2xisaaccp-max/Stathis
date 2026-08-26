@@ -63,7 +63,7 @@ export function AdaptiveLearningInsights({
       <div>
         <h3 className="text-lg font-semibold">Form Correction Evidence Log</h3>
         <p className="mb-3 text-sm text-muted-foreground">
-          Classroom → Task → Snapshot gallery. Each task keeps its own carousel so snapshots are never mixed.
+          Compact task gallery: Classroom → Task → Attempt → Snapshot. Select an attempt tab, or click an image to enlarge it.
         </p>
         <FormCorrectionEvidenceLog
           studentId={studentId}

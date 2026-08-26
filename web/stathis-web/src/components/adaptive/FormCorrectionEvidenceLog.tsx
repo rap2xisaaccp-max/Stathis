@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchFormCorrectionEvidence,
@@ -54,7 +55,7 @@ function formatDate(iso: string | null | undefined): string {
   const d = parseCapturedDate(iso);
   if (!d) return '—';
   return d.toLocaleDateString(undefined, {
-    month: 'long',
+    month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
@@ -64,18 +65,6 @@ function formatTime(iso: string | null | undefined): string {
   const d = parseCapturedDate(iso);
   if (!d) return '—';
   return d.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function formatWhen(iso: string | null | undefined): string {
-  const d = parseCapturedDate(iso);
-  if (!d) return '—';
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   });
@@ -92,6 +81,10 @@ function shortId(value: string): string {
 
 function evidenceTime(item: FormCorrectionEvidenceDTO): number {
   return parseCapturedDate(item.capturedAt || item.createdAt)?.getTime() ?? 0;
+}
+
+function attemptLabel(item: FormCorrectionEvidenceDTO, fallbackIndex: number): string {
+  return item.attemptNumber != null ? `Attempt ${item.attemptNumber}` : `Attempt ${fallbackIndex}`;
 }
 
 function groupEvidenceByTask(
@@ -130,16 +123,13 @@ function groupEvidenceByTask(
     });
   }
 
-  const ordered = groups.sort((a, b) => {
-    const latestA = Math.max(...a.items.map(evidenceTime), 0);
-    const latestB = Math.max(...b.items.map(evidenceTime), 0);
-    return latestB - latestA;
-  });
-
-  return ordered.map((group, index) => ({
-    ...group,
-    taskIndex: index + 1,
-  }));
+  return groups
+    .sort((a, b) => {
+      const latestA = Math.max(...a.items.map(evidenceTime), 0);
+      const latestB = Math.max(...b.items.map(evidenceTime), 0);
+      return latestB - latestA;
+    })
+    .map((group, index) => ({ ...group, taskIndex: index + 1 }));
 }
 
 function useEvidenceImage(evidence: FormCorrectionEvidenceDTO | null) {
@@ -200,11 +190,13 @@ function useEvidenceImage(evidence: FormCorrectionEvidenceDTO | null) {
 function EvidenceImage({
   evidence,
   className,
+  frameClassName,
   onClick,
   priority = false,
 }: {
   evidence: FormCorrectionEvidenceDTO;
   className?: string;
+  frameClassName?: string;
   onClick?: () => void;
   priority?: boolean;
 }) {
@@ -216,17 +208,18 @@ function EvidenceImage({
       <div
         className={cn(
           'flex items-center justify-center rounded-xl bg-muted text-muted-foreground',
+          frameClassName,
           className
         )}
       >
         <Camera className="mr-2 h-4 w-4" />
-        Snapshot unavailable
+        Unavailable
       </div>
     );
   }
 
   if (loading || !src) {
-    return <Skeleton className={cn('rounded-xl', className)} />;
+    return <Skeleton className={cn('rounded-xl', frameClassName, className)} />;
   }
 
   return (
@@ -234,8 +227,9 @@ function EvidenceImage({
       type="button"
       onClick={onClick}
       className={cn(
-        'group relative block w-full overflow-hidden rounded-xl bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'group relative flex w-full items-center justify-center overflow-hidden rounded-xl bg-muted/70 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         onClick ? 'cursor-zoom-in' : 'cursor-default',
+        frameClassName,
         className
       )}
       aria-label={onClick ? `Enlarge snapshot: ${alt}` : alt}
@@ -244,10 +238,10 @@ function EvidenceImage({
         src={src}
         alt={alt}
         loading={priority ? 'eager' : 'lazy'}
-        className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.01]"
+        className="max-h-full max-w-full object-contain"
       />
       {onClick ? (
-        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-2 text-xs text-white opacity-0 transition group-hover:opacity-100">
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-2 py-1.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100">
           Click to enlarge
         </span>
       ) : null}
@@ -255,107 +249,82 @@ function EvidenceImage({
   );
 }
 
-function TaskEvidenceCarousel({
+function TaskEvidenceCard({
   group,
-  classroomName,
   onOpenLightbox,
 }: {
   group: TaskEvidenceGroup;
-  classroomName: string;
   onOpenLightbox: (index: number) => void;
 }) {
-  const [index, setIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const total = group.items.length;
-  const safeIndex = Math.min(index, Math.max(total - 1, 0));
+  const safeIndex = Math.min(selectedIndex, Math.max(total - 1, 0));
   const current = group.items[safeIndex];
   const capturedAt = current?.capturedAt || current?.createdAt;
 
   useEffect(() => {
-    setIndex(0);
+    setSelectedIndex(0);
   }, [group.taskKey]);
 
   if (!current) return null;
 
-  const goPrev = () => setIndex((value) => (value - 1 + total) % total);
-  const goNext = () => setIndex((value) => (value + 1) % total);
-
   return (
-    <Card className="overflow-hidden border-border/60 shadow-sm">
-      <CardHeader className="space-y-3 border-b border-border/50 bg-muted/25 pb-4">
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground/80">Classroom:</span> {classroomName}
-          </p>
-          <CardTitle className="text-xl leading-snug">
-            Task {group.taskIndex} – {group.taskName}
-          </CardTitle>
-          <CardDescription>
-            {total} snapshot{total === 1 ? '' : 's'} for this task
-          </CardDescription>
-        </div>
+    <Card className="flex h-full flex-col overflow-hidden border-border/60 shadow-sm">
+      <CardHeader className="space-y-1 border-b border-border/40 bg-muted/20 px-3 py-3">
+        <CardTitle className="line-clamp-2 text-sm font-semibold leading-snug">
+          Task {group.taskIndex} – {group.taskName}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {total} attempt{total === 1 ? '' : 's'} with evidence
+        </CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <div className="flex items-center justify-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={goPrev}
-            disabled={total <= 1}
-            aria-label="Previous snapshot for this task"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <p className="min-w-[9rem] text-center text-sm font-medium">
-            Snapshot {safeIndex + 1} of {total}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={goNext}
-            disabled={total <= 1}
-            aria-label="Next snapshot for this task"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Button>
+      <CardContent className="flex flex-1 flex-col gap-3 p-3">
+        <div className="flex flex-wrap gap-1.5">
+          {group.items.map((item, index) => {
+            const active = index === safeIndex;
+            return (
+              <button
+                key={item.physicalId}
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                className={cn(
+                  'rounded-md border px-2 py-1 text-[11px] font-medium transition',
+                  active
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border/60 bg-background text-muted-foreground hover:bg-muted/50'
+                )}
+              >
+                {attemptLabel(item, index + 1)}
+              </button>
+            );
+          })}
         </div>
 
         <EvidenceImage
           evidence={current}
-          className="aspect-[16/10] max-h-[22rem] w-full"
+          frameClassName="aspect-[3/4] max-h-56"
           onClick={() => onOpenLightbox(safeIndex)}
-          priority
+          priority={group.taskIndex <= 3}
         />
 
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-base font-semibold">{formatExercise(current.exerciseType)}</h4>
-              <Badge variant="secondary">
-                {current.errorLabel || formErrorLabel(current.errorCode)}
-              </Badge>
-              {current.attemptNumber != null ? (
-                <Badge variant="outline">Attempt {current.attemptNumber}</Badge>
-              ) : null}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {current.errorDescription || 'Incorrect form was confirmed during the attempt.'}
-            </p>
-            <p className="text-sm">
-              <span className="font-medium">Correction delivered: </span>
-              {current.correctionText || '—'}
-            </p>
+        <div className="mt-auto space-y-1.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium">{formatExercise(current.exerciseType)}</span>
+            <Badge variant="secondary" className="text-[10px]">
+              {current.errorLabel || formErrorLabel(current.errorCode)}
+            </Badge>
           </div>
-
-          <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm sm:min-w-[11rem]">
+          <p className="line-clamp-2 text-muted-foreground">
+            {current.correctionText ||
+              current.errorDescription ||
+              'Form correction recorded for this attempt.'}
+          </p>
+          <div className="rounded-lg border border-border/50 bg-muted/25 px-2.5 py-2">
             <p>
               <span className="font-medium">Date:</span> {formatDate(capturedAt)}
             </p>
-            <p className="mt-1">
+            <p>
               <span className="font-medium">Time:</span> {formatTime(capturedAt)}
             </p>
           </div>
@@ -380,13 +349,19 @@ function EvidenceLightbox({
   onClose: () => void;
   onIndexChange: (index: number) => void;
 }) {
+  const [mounted, setMounted] = useState(false);
   const total = group?.items.length ?? 0;
   const evidence = group?.items[index] ?? null;
   const { src, failed, loading } = useEvidenceImage(evidence);
   const capturedAt = evidence?.capturedAt || evidence?.createdAt;
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
@@ -402,41 +377,50 @@ function EvidenceLightbox({
         onIndexChange((index + 1) % total);
       }
     };
-    document.addEventListener('keydown', onKeyDown);
+
     const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarGap = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = 'hidden';
+    if (scrollbarGap > 0) {
+      document.body.style.paddingRight = `${scrollbarGap}px`;
+    }
+
+    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
     };
   }, [open, group, index, total, onClose, onIndexChange]);
 
-  if (!open || !group || !evidence) return null;
+  if (!mounted || !open || !group || !evidence) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-y-0 right-0 z-[45] flex w-full flex-col bg-black/75 backdrop-blur-[1px] md:left-64"
       role="dialog"
       aria-modal="true"
       aria-label="Form correction snapshot"
     >
       <button
         type="button"
-        className="absolute inset-0 bg-black/80 backdrop-blur-[2px]"
+        className="absolute inset-0 cursor-default"
         aria-label="Close enlarged snapshot"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col gap-3">
-        <div className="flex items-start justify-between gap-3 text-white">
+
+      <div className="relative z-10 flex h-full min-h-0 flex-col p-4 md:p-6">
+        <div className="mb-3 flex items-start justify-between gap-3 text-white">
           <div className="min-w-0 space-y-1">
             <p className="text-xs text-white/70">
-              <span className="font-medium text-white/85">Classroom:</span> {classroomName}
+              <span className="font-medium text-white/90">Classroom:</span> {classroomName}
             </p>
             <h3 className="truncate text-lg font-semibold">
               Task {group.taskIndex} – {group.taskName}
             </h3>
             <p className="text-sm text-white/75">
-              Snapshot {index + 1} of {total} · {formatWhen(capturedAt)}
+              {attemptLabel(evidence, index + 1)} of {total}
             </p>
           </div>
           <Button
@@ -451,28 +435,51 @@ function EvidenceLightbox({
           </Button>
         </div>
 
-        <div className="relative flex min-h-0 flex-1 items-center justify-center">
+        {total > 1 ? (
+          <div className="relative z-10 mb-3 flex flex-wrap gap-1.5">
+            {group.items.map((item, itemIndex) => {
+              const active = itemIndex === index;
+              return (
+                <button
+                  key={item.physicalId}
+                  type="button"
+                  onClick={() => onIndexChange(itemIndex)}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 text-xs font-medium transition',
+                    active
+                      ? 'border-white/50 bg-white/20 text-white'
+                      : 'border-white/20 bg-black/30 text-white/75 hover:bg-white/10'
+                  )}
+                >
+                  {attemptLabel(item, itemIndex + 1)}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center gap-2">
           {total > 1 ? (
             <Button
               type="button"
               variant="secondary"
               size="icon"
-              className="absolute left-0 z-10 h-10 w-10 rounded-full bg-black/45 text-white hover:bg-black/60 md:-left-2"
+              className="h-10 w-10 shrink-0 rounded-full bg-black/45 text-white hover:bg-black/60"
               onClick={() => onIndexChange((index - 1 + total) % total)}
-              aria-label="Previous snapshot for this task"
+              aria-label="Previous attempt"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
           ) : null}
 
-          <div className="mx-auto flex max-h-[70vh] w-full items-center justify-center overflow-hidden rounded-2xl bg-black/30">
+          <div className="flex h-full max-h-full w-full max-w-md items-center justify-center overflow-hidden rounded-2xl bg-black/25 p-2">
             {failed ? (
               <div className="flex h-64 w-full items-center justify-center text-white/80">
                 <Camera className="mr-2 h-4 w-4" />
                 Snapshot unavailable
               </div>
             ) : loading || !src ? (
-              <Skeleton className="h-64 w-full max-w-3xl rounded-2xl" />
+              <Skeleton className="h-[70vh] w-full max-w-sm rounded-2xl" />
             ) : (
               <img
                 src={src}
@@ -487,26 +494,21 @@ function EvidenceLightbox({
               type="button"
               variant="secondary"
               size="icon"
-              className="absolute right-0 z-10 h-10 w-10 rounded-full bg-black/45 text-white hover:bg-black/60 md:-right-2"
+              className="h-10 w-10 shrink-0 rounded-full bg-black/45 text-white hover:bg-black/60"
               onClick={() => onIndexChange((index + 1) % total)}
-              aria-label="Next snapshot for this task"
+              aria-label="Next attempt"
             >
               <ChevronRight className="h-5 w-5" />
             </Button>
           ) : null}
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-black/45 p-4 text-white backdrop-blur-sm">
+        <div className="relative z-10 mt-3 rounded-2xl border border-white/10 bg-black/50 p-4 text-white">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{formatExercise(evidence.exerciseType)}</span>
             <Badge variant="secondary" className="bg-white/15 text-white hover:bg-white/20">
               {evidence.errorLabel || formErrorLabel(evidence.errorCode)}
             </Badge>
-            {evidence.attemptNumber != null ? (
-              <Badge variant="outline" className="border-white/30 text-white">
-                Attempt {evidence.attemptNumber}
-              </Badge>
-            ) : null}
           </div>
           <p className="mt-2 text-sm text-white/80">
             {evidence.errorDescription || 'Incorrect form was confirmed during the attempt.'}
@@ -525,7 +527,8 @@ function EvidenceLightbox({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -606,9 +609,9 @@ export function FormCorrectionEvidenceLog({
 
   if (query.isLoading) {
     return (
-      <div className="space-y-4">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <Skeleton key={i} className="h-72 w-full rounded-2xl" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-80 w-full rounded-2xl" />
         ))}
       </div>
     );
@@ -644,20 +647,19 @@ export function FormCorrectionEvidenceLog({
 
   return (
     <>
-      <div className="mb-4 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3">
-        <p className="text-sm text-muted-foreground">Classroom</p>
-        <p className="text-base font-semibold">{classroomName}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Snapshots are grouped by task. Use the arrows within a task, or click an image to enlarge it.
+      <div className="mb-4 rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+        <p className="text-xs text-muted-foreground">Classroom</p>
+        <p className="text-sm font-semibold">{classroomName}</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          Classroom → Task → Attempt → Snapshot. Up to 3 tasks per row.
         </p>
       </div>
 
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {groups.map((group) => (
-          <TaskEvidenceCarousel
+          <TaskEvidenceCard
             key={group.taskKey}
             group={group}
-            classroomName={classroomName}
             onOpenLightbox={(index) => setLightbox({ taskKey: group.taskKey, index })}
           />
         ))}
