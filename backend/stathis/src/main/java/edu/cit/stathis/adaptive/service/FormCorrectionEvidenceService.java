@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +71,15 @@ public class FormCorrectionEvidenceService {
     FormCorrectionEvidenceDTO existingDto = existingOwned(studentId, interventionId);
     if (existingDto != null) {
       return existingDto;
+    }
+
+    // One snapshot per exercise attempt/session (mobile assigns a new SES-* per start/retry).
+    if (sessionId != null && !sessionId.isBlank()) {
+      Optional<FormCorrectionEvidence> sameSession =
+          evidenceRepository.findFirstByStudentIdAndSessionId(studentId, sessionId);
+      if (sameSession.isPresent()) {
+        return toDto(sameSession.get());
+      }
     }
 
     String description =

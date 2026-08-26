@@ -18,7 +18,7 @@ import timber.log.Timber
 /**
  * On-device coaching orchestrator.
  *
- * Confirmed physical form error → one highlight + one TTS cue → one evidence snapshot.
+ * Confirmed physical form error → highlight + TTS cue; at most one evidence snapshot per attempt.
  * Form signals are serialized; lifecycle claims before delivery.
  */
 @Singleton

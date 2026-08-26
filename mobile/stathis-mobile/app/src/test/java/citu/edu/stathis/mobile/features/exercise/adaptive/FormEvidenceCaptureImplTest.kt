@@ -27,11 +27,32 @@ class FormEvidenceCaptureImplTest {
     }
 
     @Test
-    fun oneConfirmedInterventionEnqueuesAtMostOnceAcrossManyFrames() {
-        val event = coachableEvent("FI-HOLD")
-        repeat(50) { capture.onConfirmedCoaching(event.copy()) }
+    fun oneConfirmedAttemptEnqueuesAtMostOnceAcrossManyCorrections() {
+        val first = coachableEvent("FI-HOLD", sessionId = "SES-HOLD")
+        repeat(50) { index ->
+            capture.onConfirmedCoaching(
+                first.copy(
+                    interventionId = "FI-HOLD-$index",
+                    errorCode = if (index % 2 == 0) FormErrorCode.SAG else FormErrorCode.KNEES_IN
+                )
+            )
+        }
         assertEquals(1, queue.pendingCount)
-        assertEquals("FI-HOLD", queue.pending().single().event.interventionId)
+        assertEquals("FI-HOLD-0", queue.pending().single().event.interventionId)
+    }
+
+    @Test
+    fun eachRetrySessionMayEnqueueItsOwnSnapshot() {
+        capture.onConfirmedCoaching(coachableEvent("FI-A1", sessionId = "SES-ATTEMPT-1"))
+        capture.onConfirmedCoaching(coachableEvent("FI-A1b", sessionId = "SES-ATTEMPT-1"))
+        capture.onConfirmedCoaching(coachableEvent("FI-A2", sessionId = "SES-ATTEMPT-2", attemptNumber = 2))
+        capture.onConfirmedCoaching(coachableEvent("FI-A3", sessionId = "SES-ATTEMPT-3", attemptNumber = 3))
+
+        assertEquals(3, queue.pendingCount)
+        assertEquals(
+            listOf("FI-A1", "FI-A2", "FI-A3"),
+            queue.pending().map { it.event.interventionId }
+        )
     }
 
     @Test
@@ -42,23 +63,27 @@ class FormEvidenceCaptureImplTest {
             FormErrorCode.BODY_NOT_VISIBLE,
             FormErrorCode.UNKNOWN
         ).forEachIndexed { index, code ->
-            capture.onConfirmedCoaching(coachableEvent("FI-TECH-$index").copy(errorCode = code))
+            capture.onConfirmedCoaching(
+                coachableEvent("FI-TECH-$index", sessionId = "SES-TECH-$index").copy(errorCode = code)
+            )
         }
-        capture.onConfirmedCoaching(coachableEvent("").copy(errorCode = FormErrorCode.SAG))
+        capture.onConfirmedCoaching(
+            coachableEvent("", sessionId = "SES-BLANK").copy(errorCode = FormErrorCode.SAG)
+        )
         assertTrue(queue.isEmpty())
     }
 
     @Test
     fun doesNotCaptureWithoutABufferedFrame() {
         buffer.clear()
-        capture.onConfirmedCoaching(coachableEvent("FI-NO-FRAME"))
+        capture.onConfirmedCoaching(coachableEvent("FI-NO-FRAME", sessionId = "SES-NO-FRAME"))
         assertTrue(queue.isEmpty())
     }
 
     @Test
     fun coldBufferAtConfirmationStillCapturesExactlyOnceOnALaterFrame() {
         buffer.clear()
-        capture.onConfirmedCoaching(coachableEvent("FI-LATE"))
+        capture.onConfirmedCoaching(coachableEvent("FI-LATE", sessionId = "SES-LATE"))
         assertTrue(queue.isEmpty())
 
         val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
@@ -72,18 +97,22 @@ class FormEvidenceCaptureImplTest {
 
     @Test
     fun recordedInterventionIdIsReportedOnlyOnce() {
-        capture.onConfirmedCoaching(coachableEvent("FI-NOTICE"))
+        capture.onConfirmedCoaching(coachableEvent("FI-NOTICE", sessionId = "SES-NOTICE"))
         assertEquals("FI-NOTICE", capture.consumeRecordedInterventionId())
         assertNull(capture.consumeRecordedInterventionId())
     }
 
-    private fun coachableEvent(id: String) =
+    private fun coachableEvent(
+        id: String,
+        sessionId: String = "SES-1",
+        attemptNumber: Int = 1
+    ) =
         FormEvidenceEvent(
             interventionId = id,
-            sessionId = "SES-1",
+            sessionId = sessionId,
             taskId = "TASK-1",
             classroomId = "ROOM-1",
-            attemptNumber = 1,
+            attemptNumber = attemptNumber,
             exerciseType = "SQUATS",
             errorCode = FormErrorCode.SAG,
             errorDescription = "Hips sagging",

@@ -194,6 +194,8 @@ class FormCorrectionEvidenceServiceTest {
   @Test
   void storesNewSnapshotOnce() {
     when(evidenceRepository.findByInterventionPhysicalId("FI-NEW")).thenReturn(Optional.empty());
+    when(evidenceRepository.findFirstByStudentIdAndSessionId("STUDENT-1", "SES-1"))
+        .thenReturn(Optional.empty());
     when(adaptiveFeedbackService.saveIntervention(eq("STUDENT-1"), any()))
         .thenReturn(
             FeedbackIntervention.builder()
@@ -229,6 +231,49 @@ class FormCorrectionEvidenceServiceTest {
   }
 
   @Test
+  void secondUploadForSameAttemptSessionReturnsExisting() {
+    FormCorrectionEvidence existing =
+        FormCorrectionEvidence.builder()
+            .physicalId("FCE-1")
+            .interventionPhysicalId("FI-FIRST")
+            .studentId("STUDENT-1")
+            .sessionId("SES-ATTEMPT-1")
+            .attemptNumber(1)
+            .exerciseType("SQUATS")
+            .errorCode(FormErrorCode.SAG)
+            .errorDescription("Hips sagging")
+            .correctionText("Keep hips level")
+            .capturedAt(OffsetDateTime.parse("2026-08-21T00:00:00Z"))
+            .storageKey("STUDENT-1/FI-FIRST.jpg")
+            .contentType("image/jpeg")
+            .byteSize(3)
+            .build();
+    when(evidenceRepository.findByInterventionPhysicalId("FI-SECOND")).thenReturn(Optional.empty());
+    when(evidenceRepository.findFirstByStudentIdAndSessionId("STUDENT-1", "SES-ATTEMPT-1"))
+        .thenReturn(Optional.of(existing));
+
+    MockMultipartFile file =
+        new MockMultipartFile("file", "x.jpg", "image/jpeg", new byte[] {1, 2, 3});
+    FormCorrectionEvidenceDTO dto =
+        service.upload(
+            "STUDENT-1",
+            "FI-SECOND",
+            "SES-ATTEMPT-1",
+            "TASK-1",
+            "ROOM-1",
+            1,
+            "SQUATS",
+            "KNEES_IN",
+            "Knees caving",
+            "Push knees out",
+            "2026-08-21T00:01:00Z",
+            file);
+    assertEquals("FCE-1", dto.getPhysicalId());
+    assertEquals("FI-FIRST", dto.getInterventionPhysicalId());
+    verify(storage, never()).put(any(), any(), any());
+  }
+
+  @Test
   void concurrentDuplicateUploadReturnsExistingWithoutDeletingObject() {
     FormCorrectionEvidence existing =
         FormCorrectionEvidence.builder()
@@ -246,6 +291,8 @@ class FormCorrectionEvidenceServiceTest {
     when(evidenceRepository.findByInterventionPhysicalId("FI-RACE"))
         .thenReturn(Optional.empty())
         .thenReturn(Optional.of(existing));
+    when(evidenceRepository.findFirstByStudentIdAndSessionId("STUDENT-1", "SES-1"))
+        .thenReturn(Optional.empty());
     when(adaptiveFeedbackService.saveIntervention(eq("STUDENT-1"), any()))
         .thenReturn(
             FeedbackIntervention.builder()
@@ -299,7 +346,6 @@ class FormCorrectionEvidenceServiceTest {
                     .build()));
     Classroom other = org.mockito.Mockito.mock(Classroom.class);
     when(other.getPhysicalId()).thenReturn("ROOM-A");
-    when(other.getTeacherId()).thenReturn("TEACHER-1");
     when(classroomRepository.findByClassroomStudents_Student_User_PhysicalId("STUDENT-1"))
         .thenReturn(List.of(other));
 

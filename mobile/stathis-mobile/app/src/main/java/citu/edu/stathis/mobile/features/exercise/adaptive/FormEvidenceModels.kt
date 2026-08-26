@@ -17,8 +17,8 @@ interface FormEvidenceCapture {
     fun onConfirmedCoaching(event: FormEvidenceEvent)
 
     /**
-     * Retries confirmed events that had no usable preview frame yet. Still at most one
-     * snapshot per confirmed event.
+     * Retries the pending attempt snapshot when no usable preview frame was available yet.
+     * Still at most one snapshot per attempt/session.
      */
     fun onPreviewFrameAvailable() {}
 

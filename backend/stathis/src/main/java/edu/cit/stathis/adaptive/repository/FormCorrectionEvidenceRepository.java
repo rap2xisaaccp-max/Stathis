@@ -14,5 +14,8 @@ public interface FormCorrectionEvidenceRepository
 
   List<FormCorrectionEvidence> findByStudentIdOrderByCapturedAtDesc(String studentId);
 
+  Optional<FormCorrectionEvidence> findFirstByStudentIdAndSessionId(
+      String studentId, String sessionId);
+
   List<FormCorrectionEvidence> findByCapturedAtBefore(java.time.OffsetDateTime cutoff);
 }

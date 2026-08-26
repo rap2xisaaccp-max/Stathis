@@ -7,8 +7,10 @@ import javax.inject.Singleton
 import timber.log.Timber
 
 /**
- * Copies the 1-slot preview JPEG only when a confirmed coaching intervention is claimed.
- * Never runs from the camera frame loop.
+ * Copies the 1-slot preview JPEG only for the first confirmed coaching event in an attempt.
+ *
+ * Attempt identity is [FormEvidenceEvent.sessionId] (engine assigns a new SES-* per
+ * [AdaptiveFeedbackEngine.startSession] / retry). Never runs from the camera frame loop.
  */
 @Singleton
 class FormEvidenceCaptureImpl @Inject constructor(
@@ -16,7 +18,8 @@ class FormEvidenceCaptureImpl @Inject constructor(
     private val evidenceQueue: EvidenceQueue
 ) : FormEvidenceCapture {
 
-    private val capturedInterventionIds = ConcurrentHashMap.newKeySet<String>()
+    /** Sessions (attempts) that already claimed their single evidence snapshot. */
+    private val capturedSessionIds = ConcurrentHashMap.newKeySet<String>()
 
     /** Claimed events still waiting for the first usable preview frame. */
     private val awaitingFrame = ConcurrentHashMap<String, FormEvidenceEvent>()
@@ -25,20 +28,22 @@ class FormEvidenceCaptureImpl @Inject constructor(
 
     override fun onConfirmedCoaching(event: FormEvidenceEvent) {
         if (event.interventionId.isBlank()) return
+        if (event.sessionId.isBlank()) return
         if (!FormErrorClassifier.isCoachable(event.errorCode)) {
             Timber.d("Skipping evidence snapshot for non-coachable %s", event.errorCode)
             return
         }
-        if (!capturedInterventionIds.add(event.interventionId)) {
+        // One snapshot per attempt/retry (session), not per later correction in the same attempt.
+        if (!capturedSessionIds.add(event.sessionId)) {
             return
         }
         if (!enqueueSnapshot(event)) {
-            // The claim is kept so this correction event still yields exactly one snapshot,
+            // Keep the session claim so this attempt still yields exactly one snapshot,
             // taken from the next preview frame instead of being dropped for good.
-            awaitingFrame[event.interventionId] = event
+            awaitingFrame[event.sessionId] = event
             Timber.w(
-                "No camera frame buffered for evidence %s; retrying on the next preview frame",
-                event.interventionId
+                "No camera frame buffered for evidence session %s; retrying on the next preview frame",
+                event.sessionId
             )
         }
     }
@@ -62,7 +67,11 @@ class FormEvidenceCaptureImpl @Inject constructor(
         }
         evidenceQueue.enqueue(event, jpeg)
         lastRecordedId.set(event.interventionId)
-        Timber.d("Evidence snapshot queued for %s", event.interventionId)
+        Timber.d(
+            "Evidence snapshot queued for attempt session=%s intervention=%s",
+            event.sessionId,
+            event.interventionId
+        )
         return true
     }
 }
