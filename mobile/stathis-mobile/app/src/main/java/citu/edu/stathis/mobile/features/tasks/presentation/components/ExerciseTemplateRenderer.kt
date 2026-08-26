@@ -165,6 +165,7 @@ fun ExerciseTemplateRenderer(
     val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
     val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
     val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
+    val adaptiveEvidenceNotice by adaptiveSessionViewModel.evidenceNotice.collectAsState()
     val context = LocalContext.current
 
     fun endAdaptiveSession() {
@@ -386,6 +387,7 @@ fun ExerciseTemplateRenderer(
                 adaptiveHighlightBones = adaptiveHighlightBones,
                 adaptiveMessage = adaptiveFeedback?.message,
                 adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel,
+                adaptiveEvidenceNotice = adaptiveEvidenceNotice,
                 onCopiedPreviewFrame = { bitmap -> adaptiveSessionViewModel.onCopiedPreviewFrame(bitmap) }
             )
 

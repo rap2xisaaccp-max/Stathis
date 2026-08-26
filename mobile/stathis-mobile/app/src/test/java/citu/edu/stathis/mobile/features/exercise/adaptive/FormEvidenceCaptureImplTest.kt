@@ -2,6 +2,7 @@ package citu.edu.stathis.mobile.features.exercise.adaptive
 
 import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -52,6 +53,28 @@ class FormEvidenceCaptureImplTest {
         buffer.clear()
         capture.onConfirmedCoaching(coachableEvent("FI-NO-FRAME"))
         assertTrue(queue.isEmpty())
+    }
+
+    @Test
+    fun coldBufferAtConfirmationStillCapturesExactlyOnceOnALaterFrame() {
+        buffer.clear()
+        capture.onConfirmedCoaching(coachableEvent("FI-LATE"))
+        assertTrue(queue.isEmpty())
+
+        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        buffer.updateFromBitmap(bitmap)
+        bitmap.recycle()
+        repeat(20) { capture.onPreviewFrameAvailable() }
+
+        assertEquals(1, queue.pendingCount)
+        assertEquals("FI-LATE", queue.pending().single().event.interventionId)
+    }
+
+    @Test
+    fun recordedInterventionIdIsReportedOnlyOnce() {
+        capture.onConfirmedCoaching(coachableEvent("FI-NOTICE"))
+        assertEquals("FI-NOTICE", capture.consumeRecordedInterventionId())
+        assertNull(capture.consumeRecordedInterventionId())
     }
 
     private fun coachableEvent(id: String) =

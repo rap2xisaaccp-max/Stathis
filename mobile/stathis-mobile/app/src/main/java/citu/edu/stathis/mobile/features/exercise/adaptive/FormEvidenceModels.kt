@@ -15,6 +15,15 @@ data class FormEvidenceEvent(
 
 interface FormEvidenceCapture {
     fun onConfirmedCoaching(event: FormEvidenceEvent)
+
+    /**
+     * Retries confirmed events that had no usable preview frame yet. Still at most one
+     * snapshot per confirmed event.
+     */
+    fun onPreviewFrameAvailable() {}
+
+    /** Intervention id of a snapshot recorded since the previous call; null when none. */
+    fun consumeRecordedInterventionId(): String? = null
 }
 
 interface EvidenceQueue {

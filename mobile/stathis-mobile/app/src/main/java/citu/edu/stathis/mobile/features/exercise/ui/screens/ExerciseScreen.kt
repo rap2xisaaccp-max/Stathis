@@ -114,6 +114,8 @@ fun ExerciseScreen(
     adaptiveMessage: String? = null,
     /** Delivery channel label: text | visual | tts */
     adaptiveDeliveryChannel: String? = null,
+    /** Shown once per correction event once its evidence snapshot is stored. */
+    adaptiveEvidenceNotice: String? = null,
     onCopiedPreviewFrame: ((android.graphics.Bitmap) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
@@ -814,7 +816,7 @@ fun ExerciseScreen(
             }
         }
 
-        if (!adaptiveMessage.isNullOrBlank()) {
+        if (!adaptiveMessage.isNullOrBlank() || !adaptiveEvidenceNotice.isNullOrBlank()) {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
@@ -835,12 +837,22 @@ fun ExerciseScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = adaptiveMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    if (!adaptiveMessage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = adaptiveMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    if (!adaptiveEvidenceNotice.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = adaptiveEvidenceNotice,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
             }
         }
