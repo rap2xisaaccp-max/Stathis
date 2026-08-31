@@ -30,6 +30,10 @@ import {
 } from 'lucide-react';
 import { formErrorLabel } from '@/components/adaptive/form-error-labels';
 import { cn } from '@/lib/utils';
+import {
+  formCorrectionEvidenceQueryKey,
+  teacherStudentViewQueryOptions,
+} from '@/lib/query/teacher-student-freshness';
 
 export type EvidenceTaskMeta = {
   taskId: string;
@@ -542,12 +546,11 @@ export function FormCorrectionEvidenceLog({
   progressItems?: EvidenceTaskMeta[];
 }) {
   const query = useQuery({
-    queryKey: ['form-correction-evidence', studentId, classroomId],
+    queryKey: formCorrectionEvidenceQueryKey(studentId, classroomId),
     queryFn: () => fetchFormCorrectionEvidence(studentId, classroomId),
     enabled: !!studentId,
-    staleTime: 1000 * 30,
-    refetchOnWindowFocus: true,
     retry: 1,
+    ...teacherStudentViewQueryOptions,
   });
 
   const classroomQuery = useQuery({

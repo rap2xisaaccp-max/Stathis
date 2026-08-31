@@ -30,12 +30,22 @@ class TaskTemplateViewModel @Inject constructor(
     private val _exerciseAttempts = MutableStateFlow(0)
     val exerciseAttempts: StateFlow<Int> = _exerciseAttempts.asStateFlow()
 
+    private val _submitState = MutableStateFlow<TemplateSubmitState>(TemplateSubmitState.Idle)
+    val submitState: StateFlow<TemplateSubmitState> = _submitState.asStateFlow()
+
     /** Prevents double POST of the same in-progress exercise attempt (auto-complete + Finish race). */
     private val exerciseSubmissionGuard = ExerciseSubmissionGuard()
+
+    private val lessonSubmissionGuard = ExerciseSubmissionGuard()
+
+    private var pendingExercise: ExercisePerformance? = null
 
     /** Call when the student starts a new exercise attempt (or retries after results). */
     fun prepareExerciseAttempt() {
         exerciseSubmissionGuard.reset()
+        pendingExercise = null
+        _submitState.value = TemplateSubmitState.Idle
+        _error.value = null
     }
 
     fun loadTemplate(taskId: String, templateType: String, templateId: String? = null) {
@@ -43,6 +53,9 @@ class TaskTemplateViewModel @Inject constructor(
             try {
                 _templateState.value = TemplateState.Loading
                 _error.value = null
+                _submitState.value = TemplateSubmitState.Idle
+                pendingExercise = null
+                lessonSubmissionGuard.reset()
 
                 // Classroom tasks require teacher Start before any template session opens.
                 // Practice catalog uses a separate practice_session route (not this ViewModel).
@@ -145,23 +158,27 @@ class TaskTemplateViewModel @Inject constructor(
     }
 
     fun submitLesson(taskId: String, lessonTemplateId: String) {
+        if (!lessonSubmissionGuard.tryAcquire()) {
+            android.util.Log.w("TaskTemplateViewModel", "Ignoring duplicate lesson submit for task=$taskId")
+            return
+        }
+        _submitState.value = TemplateSubmitState.Saving
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting lesson completion for task: $taskId, template: $lessonTemplateId")
-                
-                // Submit lesson completion to backend
-                taskRepository.completeLesson(taskId, lessonTemplateId)
-                
-                // Increment lesson attempts in cache
+                GradedSubmitScope.runUncancelled {
+                    taskRepository.completeLesson(taskId, lessonTemplateId)
+                }
                 LessonAttemptsCache.increment(taskId)
-                
-                // Mark task as completed for immediate UI feedback
                 TaskCompletionCache.markCompleted(taskId)
-                
+                _submitState.value = TemplateSubmitState.Success
                 android.util.Log.d("TaskTemplateViewModel", "Lesson submitted successfully")
             } catch (e: Exception) {
                 android.util.Log.e("TaskTemplateViewModel", "Failed to submit lesson", e)
-                _error.value = e.message
+                val message = e.message ?: "Failed to save lesson"
+                _error.value = message
+                _submitState.value = TemplateSubmitState.Failed(message)
+                lessonSubmissionGuard.reset()
             }
         }
     }
@@ -194,6 +211,7 @@ class TaskTemplateViewModel @Inject constructor(
     }
 
     fun submitExercise(taskId: String, performance: ExercisePerformance) {
+        pendingExercise = performance
         if (!exerciseSubmissionGuard.tryAcquire()) {
             android.util.Log.w(
                 "TaskTemplateViewModel",
@@ -201,6 +219,8 @@ class TaskTemplateViewModel @Inject constructor(
             )
             return
         }
+        _submitState.value = TemplateSubmitState.Saving
+        _error.value = null
         viewModelScope.launch {
             try {
                 android.util.Log.d("TaskTemplateViewModel", "Submitting exercise completion for task: $taskId, template: ${performance.templateId}")
@@ -215,32 +235,37 @@ class TaskTemplateViewModel @Inject constructor(
                     classroomId = performance.classroomId
                 )
 
-                val score = taskRepository.completeExercise(taskId, performance.templateId, submission)
+                val score = GradedSubmitScope.runUncancelled {
+                    taskRepository.completeExercise(taskId, performance.templateId, submission)
+                }
 
-                // Increment exercise attempts in cache (using LessonAttemptsCache for now)
-                LessonAttemptsCache.increment(taskId)
-
-                // Optimistic completion for UI
                 TaskCompletionCache.markCompleted(taskId)
 
                 _exerciseAttempts.value = score?.attempts
                     ?: (_exerciseAttempts.value + 1)
 
                 android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully (calories=${performance.caloriesBurned}, attempts=${_exerciseAttempts.value})")
-                // Refresh progress so list reflects completion immediately
                 runCatching { taskRepository.getTaskProgress(taskId).first() }
                     .onSuccess { progress ->
                         progress.exerciseAttempts?.let { _exerciseAttempts.value = it }
                     }
-                // Record streak
                 streakManager.recordActivity()
+                _submitState.value = TemplateSubmitState.Success
             } catch (e: Exception) {
                 android.util.Log.e("TaskTemplateViewModel", "Failed to submit exercise", e)
-                _error.value = e.message
-                // Allow a deliberate retry after a failed network submit
+                val message = e.message ?: "Failed to save exercise"
+                _error.value = message
+                _submitState.value = TemplateSubmitState.Failed(message)
                 exerciseSubmissionGuard.reset()
             }
         }
+    }
+
+    fun retryExerciseSubmit(taskId: String) {
+        val pending = pendingExercise ?: return
+        if (!GradedSubmitPolicy.canRetrySave(_submitState.value)) return
+        exerciseSubmissionGuard.reset()
+        submitExercise(taskId, pending)
     }
 
     fun submitQuizScore(taskId: String, templateId: String, score: Int) {

@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.activity.compose.BackHandler
 import androidx.navigation.NavHostController
 import citu.edu.stathis.mobile.features.tasks.data.model.*
 import citu.edu.stathis.mobile.features.tasks.presentation.components.ExerciseTemplateRenderer
@@ -29,10 +30,20 @@ fun TaskTemplateScreen(
     val templateState by viewModel.templateState.collectAsState()
     val error by viewModel.error.collectAsState()
     val taskDetail by viewModel.taskDetail.collectAsState()
+    val submitState by viewModel.submitState.collectAsState()
 
     LaunchedEffect(taskId, templateType, templateId) {
         viewModel.loadTemplate(taskId, templateType, templateId)
     }
+
+    LaunchedEffect(submitState, templateType) {
+        if (templateType == "LESSON" && GradedSubmitPolicy.canNavigateAway(submitState)) {
+            onTaskCompleted()
+        }
+    }
+
+    val saveInFlight = GradedSubmitPolicy.isSaveInFlight(submitState)
+    BackHandler(enabled = saveInFlight) { }
 
     Scaffold(
         topBar = {
@@ -48,7 +59,11 @@ fun TaskTemplateScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = {
+                            if (!saveInFlight) onNavigateBack()
+                        }
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -80,9 +95,10 @@ fun TaskTemplateScreen(
                             if (lessonTemplate != null) {
                                 LessonTemplateRenderer(
                                     template = lessonTemplate,
+                                    isSaving = saveInFlight,
+                                    saveError = (submitState as? TemplateSubmitState.Failed)?.message,
                                     onComplete = {
                                         viewModel.submitLesson(taskId, lessonTemplate.physicalId)
-                                        onTaskCompleted()
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -192,7 +208,13 @@ fun TaskTemplateScreen(
                                         viewModel.submitExercise(taskId, performance)
                                     },
                                     onExerciseAttemptReady = { viewModel.prepareExerciseAttempt() },
-                                    onFinishSession = onTaskCompleted,
+                                    onFinishSession = {
+                                        if (GradedSubmitPolicy.canNavigateAway(submitState)) {
+                                            onTaskCompleted()
+                                        }
+                                    },
+                                    submitState = submitState,
+                                    onRetrySave = { viewModel.retryExerciseSubmit(taskId) },
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {

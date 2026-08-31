@@ -67,18 +67,20 @@ class TaskRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 val raw = response.body()
                 if (raw != null) {
-                    // Derive progress and completion if missing using backend fields
-                    val flags = listOfNotNull(raw.lessonCompleted, raw.exerciseCompleted, raw.quizCompleted)
-                    val derivedProgress: Float? = if (flags.isNotEmpty()) {
-                        flags.count { it }.toFloat() / flags.size
-                    } else if (raw.maxQuizScore != null && raw.maxQuizScore > 0 && raw.quizScore != null) {
-                        (raw.quizScore.toFloat() / raw.maxQuizScore.toFloat()).coerceIn(0f, 1f)
-                    } else raw.progress
-                    val derivedCompleted = (raw.lessonCompleted == true) && (raw.exerciseCompleted == true) && (raw.quizCompleted == true)
-
+                    val lessonDone = raw.lessonCompleted == true
+                    val quizDone = raw.quizCompleted == true || (raw.quizAttempts ?: 0) > 0
+                    val exerciseDone = raw.exerciseCompleted == true || (raw.exerciseAttempts ?: 0) > 0
+                    val doneFlags = listOf(lessonDone, quizDone, exerciseDone).count { it }
+                    val derivedProgress: Float? = when {
+                        doneFlags > 0 -> (doneFlags / 3f).coerceIn(0f, 1f)
+                        raw.maxQuizScore != null && raw.maxQuizScore > 0 && raw.quizScore != null ->
+                            (raw.quizScore.toFloat() / raw.maxQuizScore.toFloat()).coerceIn(0f, 1f)
+                        else -> raw.progress
+                    }
+                    // Trust backend `completed` (required-component). Do not AND all three flags.
                     return raw.copy(
                         progress = derivedProgress,
-                        isCompleted = derivedCompleted
+                        isCompleted = raw.isCompleted
                     )
                 }
                 return null

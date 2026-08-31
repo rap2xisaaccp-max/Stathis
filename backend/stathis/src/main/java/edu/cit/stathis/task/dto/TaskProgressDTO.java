@@ -24,4 +24,6 @@ public class TaskProgressDTO {
     private String completedAt;
     private boolean submittedForReview;
     private String submittedAt;
+    /** Fully complete for the templates this task actually requires. */
+    private boolean completed;
 } 

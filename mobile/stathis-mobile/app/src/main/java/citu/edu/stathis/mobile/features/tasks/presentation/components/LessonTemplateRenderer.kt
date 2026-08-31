@@ -25,6 +25,8 @@ import citu.edu.stathis.mobile.features.tasks.data.model.LessonPage
 fun LessonTemplateRenderer(
     template: LessonTemplate,
     onComplete: () -> Unit,
+    isSaving: Boolean = false,
+    saveError: String? = null,
     modifier: Modifier = Modifier
 ) {
     var currentPageIndex by remember { mutableIntStateOf(0) }
@@ -57,9 +59,22 @@ fun LessonTemplateRenderer(
         }
         
         // Navigation Footer
+        if (saveError != null) {
+            Text(
+                text = saveError,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
         LessonNavigationFooter(
             currentPage = currentPageIndex,
             totalPages = pages.size,
+            isSaving = isSaving,
             onPrevious = { 
                 if (currentPageIndex > 0) {
                     currentPageIndex--
@@ -68,7 +83,7 @@ fun LessonTemplateRenderer(
             onNext = { 
                 if (currentPageIndex < pages.size - 1) {
                     currentPageIndex++
-                } else {
+                } else if (!isSaving) {
                     onComplete()
                 }
             },
@@ -189,6 +204,7 @@ private fun LessonNavigationFooter(
     totalPages: Int,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    isSaving: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -208,7 +224,7 @@ private fun LessonNavigationFooter(
             // Previous Button
             Button(
                 onClick = onPrevious,
-                enabled = currentPage > 0,
+                enabled = currentPage > 0 && !isSaving,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                     contentColor = MaterialTheme.colorScheme.onSurface
@@ -229,6 +245,7 @@ private fun LessonNavigationFooter(
             // Next/Complete Button
             Button(
                 onClick = onNext,
+                enabled = currentPage < totalPages - 1 || !isSaving,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -236,7 +253,13 @@ private fun LessonNavigationFooter(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    if (currentPage < totalPages - 1) "Next" else "Complete Lesson"
+                    if (currentPage < totalPages - 1) {
+                        "Next"
+                    } else if (isSaving) {
+                        "Saving…"
+                    } else {
+                        "Complete Lesson"
+                    }
                 )
                 if (currentPage < totalPages - 1) {
                     Spacer(modifier = Modifier.width(8.dp))

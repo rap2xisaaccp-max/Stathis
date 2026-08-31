@@ -7,10 +7,10 @@ import javax.inject.Singleton
 import timber.log.Timber
 
 /**
- * Copies the 1-slot preview JPEG only for the first confirmed coaching event in an attempt.
+ * Composites one camera-frame + highlight JPEG for the first confirmed coaching event
+ * in an attempt. Attempt identity is [FormEvidenceEvent.sessionId].
  *
- * Attempt identity is [FormEvidenceEvent.sessionId] (engine assigns a new SES-* per
- * [AdaptiveFeedbackEngine.startSession] / retry). Never runs from the camera frame loop.
+ * Never runs from the camera frame loop. Never screenshots the Android UI.
  */
 @Singleton
 class FormEvidenceCaptureImpl @Inject constructor(
@@ -21,7 +21,7 @@ class FormEvidenceCaptureImpl @Inject constructor(
     /** Sessions (attempts) that already claimed their single evidence snapshot. */
     private val capturedSessionIds = ConcurrentHashMap.newKeySet<String>()
 
-    /** Claimed events still waiting for the first usable preview frame. */
+    /** Claimed events still waiting for a usable copied frame + pose. */
     private val awaitingFrame = ConcurrentHashMap<String, FormEvidenceEvent>()
 
     private val lastRecordedId = AtomicReference<String?>(null)
@@ -29,8 +29,12 @@ class FormEvidenceCaptureImpl @Inject constructor(
     override fun onConfirmedCoaching(event: FormEvidenceEvent) {
         if (event.interventionId.isBlank()) return
         if (event.sessionId.isBlank()) return
-        if (!FormErrorClassifier.isCoachable(event.errorCode)) {
-            Timber.d("Skipping evidence snapshot for non-coachable %s", event.errorCode)
+        if (!FormErrorClassifier.isCoachableForExercise(event.exerciseType, event.errorCode)) {
+            Timber.d(
+                "Skipping evidence snapshot for non-coachable %s/%s",
+                event.exerciseType,
+                event.errorCode
+            )
             return
         }
         // One snapshot per attempt/retry (session), not per later correction in the same attempt.
@@ -38,11 +42,9 @@ class FormEvidenceCaptureImpl @Inject constructor(
             return
         }
         if (!enqueueSnapshot(event)) {
-            // Keep the session claim so this attempt still yields exactly one snapshot,
-            // taken from the next preview frame instead of being dropped for good.
             awaitingFrame[event.sessionId] = event
             Timber.w(
-                "No camera frame buffered for evidence session %s; retrying on the next preview frame",
+                "No camera frame+pose buffered for evidence session %s; retrying on the next preview",
                 event.sessionId
             )
         }
@@ -61,7 +63,24 @@ class FormEvidenceCaptureImpl @Inject constructor(
     override fun consumeRecordedInterventionId(): String? = lastRecordedId.getAndSet(null)
 
     private fun enqueueSnapshot(event: FormEvidenceEvent): Boolean {
-        val jpeg = frameBuffer.copyJpeg()
+        val snapshot = frameBuffer.snapshot() ?: return false
+        val pose = snapshot.pose
+        if (pose == null || pose.landmarks.isEmpty()) {
+            snapshot.recycleCopy()
+            return false
+        }
+        val jpeg =
+            runCatching {
+                EvidenceHighlightCompositor.composeJpeg(
+                    cameraFrame = snapshot.bitmap,
+                    geometry = pose,
+                    errorCode = event.errorCode,
+                    exerciseType = event.exerciseType
+                )
+            }.onFailure { err ->
+                Timber.w(err, "Evidence composite failed for session %s", event.sessionId)
+            }.getOrNull()
+        snapshot.recycleCopy()
         if (jpeg == null || !JpegCompressor.isAcceptableSize(jpeg)) {
             return false
         }

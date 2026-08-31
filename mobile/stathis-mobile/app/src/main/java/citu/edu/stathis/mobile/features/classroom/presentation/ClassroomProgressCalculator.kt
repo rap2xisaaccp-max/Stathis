@@ -12,8 +12,8 @@ import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
  * (`GET /api/student/tasks/{taskId}/progress`) which is the reliable backend
  * data source used throughout the app.
  *
- * Rule: A task is considered completed for the student if they have made at
- * least one attempt on any component (quiz, lesson, or exercise).
+ * Rule: a started/active task is complete when every template it actually
+ * has (lesson/quiz/exercise) is done on the progress DTO.
  */
 object ClassroomProgressCalculator {
 
@@ -27,7 +27,6 @@ object ClassroomProgressCalculator {
     ): Float {
         if (tasks.isEmpty()) return 0f
 
-        // Filter out deactivated / unstarted tasks for progress calculation
         val activeTasks = tasks.filter { task ->
             val active = task.isActive ?: true
             val started = task.isStarted == true
@@ -37,13 +36,10 @@ object ClassroomProgressCalculator {
         if (activeTasks.isEmpty()) return 0f
 
         val completed = activeTasks.count { task ->
-            val progress = taskProgressMap[task.physicalId]
-            val lessonAttempts = citu.edu.stathis.mobile.features.tasks.presentation.LessonAttemptsCache.getAttempts(task.physicalId)
-            val hasAnyAttempt = (progress?.quizAttempts ?: 0) > 0 ||
-                (progress?.lessonCompleted == true) ||
-                (progress?.exerciseCompleted == true) ||
-                (lessonAttempts > 0)
-            hasAnyAttempt
+            citu.edu.stathis.mobile.features.tasks.presentation.TaskCompletionTruth.isFullyComplete(
+                task,
+                taskProgressMap[task.physicalId]
+            )
         }
 
         return completed.toFloat() / activeTasks.size

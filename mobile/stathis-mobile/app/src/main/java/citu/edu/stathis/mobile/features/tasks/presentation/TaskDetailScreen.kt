@@ -237,10 +237,8 @@ fun TaskDetailScreen(
                     val exerciseTemplatePhysicalId = currentTask.exerciseTemplateId ?: currentTask.exerciseTemplate?.physicalId
                     if (!exerciseTemplatePhysicalId.isNullOrEmpty()) {
                         val exerciseAttempts = progress?.exerciseAttempts
-                            ?: if (exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())) 1 else 0
-                        val isExerciseCompleted = (progress?.exerciseCompleted == true)
-                            || exerciseTemplatePhysicalId in (progress?.completedExercises ?: emptyList())
-                            || exerciseAttempts > 0
+                            ?: if (TaskCompletionTruth.isExerciseDone(progress)) 1 else 0
+                        val isExerciseCompleted = TaskCompletionTruth.isExerciseDone(progress)
                         val maxAttempts = currentTask.maxAttempts
                         val canStartExercise = !isUnavailable && (maxAttempts <= 0 || exerciseAttempts < maxAttempts)
                         val exerciseScore = progress?.exerciseScore

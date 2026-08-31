@@ -10,6 +10,7 @@ import citu.edu.stathis.mobile.features.exercise.adaptive.ExerciseMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorMapper
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormEvidenceCapture
 import citu.edu.stathis.mobile.features.exercise.adaptive.LatestFrameBuffer
+import citu.edu.stathis.mobile.features.exercise.adaptive.PoseGeometry
 import citu.edu.stathis.mobile.features.exercise.adaptive.StudentLearningProfileDto
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi
@@ -68,6 +69,7 @@ class AdaptiveSessionViewModel @Inject constructor(
         classroomId: String? = null,
         attemptNumber: Int? = null
     ) {
+        frameBuffer.clear()
         engine.startSession(exerciseType, taskId, classroomId, attemptNumber)
         _sessionSummary.value = AdaptiveSessionSummary()
         _evidenceNotice.value = null
@@ -76,6 +78,12 @@ class AdaptiveSessionViewModel @Inject constructor(
     fun onCopiedPreviewFrame(bitmap: Bitmap) {
         frameBuffer.updateFromBitmap(bitmap)
         // Fulfils any confirmed correction event whose snapshot had no frame to copy yet.
+        evidenceCapture.onPreviewFrameAvailable()
+        publishEvidenceNotice()
+    }
+
+    fun onPoseGeometry(geometry: PoseGeometry) {
+        frameBuffer.updatePose(geometry)
         evidenceCapture.onPreviewFrameAvailable()
         publishEvidenceNotice()
     }

@@ -24,6 +24,7 @@ import edu.cit.stathis.task.dto.QuizSubmissionDTO;
 import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
 import edu.cit.stathis.task.dto.ExerciseProgressDTO;
 import edu.cit.stathis.task.entity.ExerciseTemplate;
+import edu.cit.stathis.task.TaskComponentCompletion;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.List;
@@ -89,27 +90,6 @@ public class StudentTaskService {
     }
 
     private void requireTaskStarted(Task task) {
-        // #region agent log
-        try {
-            java.nio.file.Path logPath = java.nio.file.Paths.get("debug-b7147e.log");
-            if (!java.nio.file.Files.exists(logPath)) {
-                logPath = java.nio.file.Paths.get(System.getProperty("user.dir"), "..", "..", "debug-b7147e.log")
-                        .normalize();
-            }
-            String line = String.format(
-                    "{\"sessionId\":\"b7147e\",\"hypothesisId\":\"H-E\",\"location\":\"StudentTaskService.requireTaskStarted\",\"message\":\"gate_check\",\"timestamp\":%d,\"runId\":\"verify1\",\"data\":{\"taskId\":\"%s\",\"isStarted\":%s,\"isActive\":%s}}%n",
-                    System.currentTimeMillis(),
-                    task.getPhysicalId() != null ? task.getPhysicalId().replace("\"", "") : "",
-                    task.isStarted(),
-                    task.isActive());
-            java.nio.file.Files.writeString(
-                    logPath,
-                    line,
-                    java.nio.file.StandardOpenOption.CREATE,
-                    java.nio.file.StandardOpenOption.APPEND);
-        } catch (Exception ignored) {
-        }
-        // #endregion
         if (!task.isStarted()) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
@@ -135,27 +115,35 @@ public class StudentTaskService {
             ? scoreRepository.findExerciseScore(studentId, taskId, task.getExerciseTemplateId()).orElse(null)
             : null;
 
+        boolean lessonDone = completion != null && completion.isLessonCompleted();
+        boolean quizDone = (completion != null && completion.isQuizCompleted())
+            || (quizScore != null && quizScore.getAttempts() > 0);
+        boolean exerciseDone = (completion != null && completion.isExerciseCompleted())
+            || (exerciseScore != null && (exerciseScore.getAttempts() > 0 || exerciseScore.isCompleted()));
+        boolean fullyComplete = isTaskFullyComplete(task, lessonDone, quizDone, exerciseDone);
+
         if (completion == null) {
             return TaskProgressDTO.builder()
                 .lessonCompleted(false)
-                .exerciseCompleted(false)
-                .quizCompleted(false)
+                .exerciseCompleted(exerciseDone)
+                .quizCompleted(quizDone)
                 .quizScore(0)
                 .maxQuizScore(0)
-                .quizAttempts(0)
+                .quizAttempts(quizScore != null ? quizScore.getAttempts() : 0)
                 .exerciseAttempts(exerciseScore != null ? exerciseScore.getAttempts() : 0)
                 .exerciseScore(exerciseScore != null ? exerciseScore.getScore() : 0)
                 .maxExerciseScore(exerciseScore != null ? exerciseScore.getMaxScore() : 100)
                 .exerciseReps(exerciseScore != null ? exerciseScore.getReps() : 0)
                 .exerciseGoalReps(exerciseScore != null ? exerciseScore.getGoalReps() : null)
                 .totalTimeTaken(0L)
+                .completed(fullyComplete)
                 .build();
         }
 
         return TaskProgressDTO.builder()
             .lessonCompleted(completion.isLessonCompleted())
-            .exerciseCompleted(completion.isExerciseCompleted())
-            .quizCompleted(completion.isQuizCompleted())
+            .exerciseCompleted(exerciseDone)
+            .quizCompleted(quizDone)
             .quizScore(quizScore != null ? quizScore.getScore() : 0)
             .maxQuizScore(quizScore != null ? quizScore.getMaxScore() : 0)
             .quizAttempts(quizScore != null ? quizScore.getAttempts() : 0)
@@ -167,6 +155,7 @@ public class StudentTaskService {
             .totalTimeTaken(completion.getTotalTimeTaken())
             .startedAt(completion.getStartedAt().toString())
             .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null)
+            .completed(fullyComplete)
             .build();
     }
 
@@ -546,15 +535,11 @@ public class StudentTaskService {
         // Get the task to check which components are required
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
-        boolean hasLesson = task.getLessonTemplateId() != null;
-        boolean hasQuiz = task.getQuizTemplateId() != null;
-        boolean hasExercise = task.getExerciseTemplateId() != null;
-
-        // Check if all required components are completed
-        boolean allRequiredCompleted = true;
-        if (hasLesson && !completion.isLessonCompleted()) allRequiredCompleted = false;
-        if (hasQuiz && !completion.isQuizCompleted()) allRequiredCompleted = false;
-        if (hasExercise && !completion.isExerciseCompleted()) allRequiredCompleted = false;
+        boolean allRequiredCompleted = isTaskFullyComplete(
+            task,
+            completion.isLessonCompleted(),
+            completion.isQuizCompleted(),
+            completion.isExerciseCompleted());
 
         if (allRequiredCompleted) {
             completion.setFullyCompleted(true);
@@ -575,12 +560,39 @@ public class StudentTaskService {
         return String.format("TASK-%s-%s-%s", year, secondPart, thirdPart);
     }
 
+    private boolean isTaskFullyComplete(
+            Task task,
+            boolean lessonCompleted,
+            boolean quizCompleted,
+            boolean exerciseCompleted) {
+        return TaskComponentCompletion.isFullyComplete(
+            task.getLessonTemplateId() != null,
+            task.getQuizTemplateId() != null,
+            task.getExerciseTemplateId() != null,
+            lessonCompleted,
+            quizCompleted,
+            exerciseCompleted);
+    }
+
     private StudentTaskResponseDTO buildStudentTaskResponse(Task task, String studentId) {
-        Score score = null;
-        if (task.getQuizTemplateId() != null) {
-            score = scoreRepository.findQuizScore(studentId, task.getPhysicalId(), task.getQuizTemplateId())
-                .orElse(null);
-        }
+        String taskId = task.getPhysicalId();
+        Score quizScore = task.getQuizTemplateId() != null
+            ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
+            : null;
+        Score exerciseScore = task.getExerciseTemplateId() != null
+            ? scoreRepository.findExerciseScore(studentId, taskId, task.getExerciseTemplateId()).orElse(null)
+            : null;
+        java.util.List<TaskCompletion> completionRows =
+            taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
+        TaskCompletion completion = completionRows.isEmpty() ? null : completionRows.get(0);
+
+        boolean lessonDone = completion != null && completion.isLessonCompleted();
+        boolean quizDone = (completion != null && completion.isQuizCompleted())
+            || (quizScore != null && quizScore.getAttempts() > 0);
+        boolean exerciseDone = (completion != null && completion.isExerciseCompleted())
+            || (exerciseScore != null && (exerciseScore.getAttempts() > 0 || exerciseScore.isCompleted()));
+
+        Score score = quizScore != null ? quizScore : exerciseScore;
 
         return StudentTaskResponseDTO.builder()
             .physicalId(task.getPhysicalId())
@@ -601,7 +613,7 @@ public class StudentTaskService {
             .exerciseTemplate(task.getExerciseTemplateId() != null ? 
                 buildExerciseTemplateDTO(task.getExerciseTemplateId()) : null)
             .score(score != null ? buildScoreDTO(score) : null)
-            .isCompleted(score != null && score.isCompleted())
+            .isCompleted(isTaskFullyComplete(task, lessonDone, quizDone, exerciseDone))
             .isStarted(task.isStarted())
             .createdAt(task.getCreatedAt().toString())
             .updatedAt(task.getUpdatedAt().toString())

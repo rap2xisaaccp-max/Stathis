@@ -133,6 +133,9 @@ fun ExerciseTemplateRenderer(
     onCancel: (() -> Unit)? = null,
     /** Practice sessions skip graded Complete API; coaching still runs. */
     sessionContext: String = "TASK",
+    submitState: citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState =
+        citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState.Idle,
+    onRetrySave: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isExerciseStarted by remember { mutableStateOf(false) }
@@ -388,7 +391,8 @@ fun ExerciseTemplateRenderer(
                 adaptiveMessage = adaptiveFeedback?.message,
                 adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel,
                 adaptiveEvidenceNotice = adaptiveEvidenceNotice,
-                onCopiedPreviewFrame = { bitmap -> adaptiveSessionViewModel.onCopiedPreviewFrame(bitmap) }
+                onCopiedPreviewFrame = { bitmap -> adaptiveSessionViewModel.onCopiedPreviewFrame(bitmap) },
+                onPoseGeometry = { geometry -> adaptiveSessionViewModel.onPoseGeometry(geometry) }
             )
 
             ExerciseControlsOverlay(
@@ -438,7 +442,6 @@ fun ExerciseTemplateRenderer(
                     sessionInProgress = false
                     sessionCountingActive = false
                     resumeTimerAfterReverify = false
-                    displayedAttempts = maxOf(displayedAttempts + 1, attemptsUsed + 1)
                     endAdaptiveSession()
                     onSessionFinished(performance)
                 },
@@ -469,6 +472,11 @@ fun ExerciseTemplateRenderer(
                     maxAttempts = maxAttempts,
                     adaptiveSummary = adaptiveSessionSummary,
                     onRetry = {
+                        val allowRetry = sessionContext != "TASK" ||
+                            citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.canStartNewAttempt(submitState)
+                        if (!allowRetry) {
+                            return@ExerciseResults
+                        }
                         onExerciseAttemptReady()
                         sessionRepAccumulator.reset()
                         sessionReps = 0
@@ -481,7 +489,16 @@ fun ExerciseTemplateRenderer(
                         isExerciseCompleted = false
                         exercisePerformance = null
                     },
-                    onComplete = onFinishSession,
+                    onComplete = {
+                        val canLeave = sessionContext != "TASK" ||
+                            citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.canNavigateAway(submitState)
+                        if (canLeave) {
+                            onFinishSession()
+                        }
+                    },
+                    submitState = submitState,
+                    onRetrySave = onRetrySave,
+                    gradedPersistence = sessionContext == "TASK",
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -1846,9 +1863,21 @@ private fun ExerciseResults(
     adaptiveSummary: AdaptiveSessionSummary = AdaptiveSessionSummary(),
     onRetry: () -> Unit,
     onComplete: () -> Unit,
+    submitState: citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState =
+        citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState.Idle,
+    onRetrySave: () -> Unit = {},
+    gradedPersistence: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val canRetry = maxAttempts <= 0 || attemptsUsed < maxAttempts
+    val canRetryAttempt = (maxAttempts <= 0 || attemptsUsed < maxAttempts) &&
+        (!gradedPersistence || citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.canStartNewAttempt(submitState))
+    val saveInFlight = gradedPersistence &&
+        citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.isSaveInFlight(submitState)
+    val canLeave = !gradedPersistence ||
+        citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.canNavigateAway(submitState)
+    val canRetrySave = gradedPersistence &&
+        citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.canRetrySave(submitState)
+    val failedMessage = (submitState as? citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState.Failed)?.message
     val attemptsLabel = if (maxAttempts <= 0) {
         "Attempt $attemptsUsed"
     } else {
@@ -1987,11 +2016,50 @@ private fun ExerciseResults(
 
             AdaptiveSessionSummaryCard(summary = adaptiveSummary)
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            if (!canRetry) {
+            when {
+                saveInFlight -> {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Saving results…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                failedMessage != null -> {
+                    Text(
+                        text = failedMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onRetrySave,
+                        enabled = canRetrySave,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Retry save")
+                    }
+                }
+                canLeave -> {
+                    Text(
+                        text = "Results saved.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (!canRetryAttempt && !saveInFlight) {
                 Text(
-                    text = "Maximum attempts reached. Tap Complete to finish.",
+                    text = "Maximum attempts reached. Tap Complete to finish after save succeeds.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
@@ -1999,10 +2067,9 @@ private fun ExerciseResults(
                 )
             }
 
-            // Try Again
             Button(
                 onClick = onRetry,
-                enabled = canRetry,
+                enabled = canRetryAttempt && !saveInFlight,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -2020,9 +2087,9 @@ private fun ExerciseResults(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Complete â€” always available to exit regardless of remaining attempts
             OutlinedButton(
                 onClick = onComplete,
+                enabled = canLeave,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
@@ -2031,7 +2098,7 @@ private fun ExerciseResults(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Complete")
+                Text(if (saveInFlight) "Saving…" else "Complete")
             }
         }
     }

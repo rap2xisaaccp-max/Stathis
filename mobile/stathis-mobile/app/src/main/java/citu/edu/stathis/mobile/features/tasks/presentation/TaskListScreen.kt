@@ -265,37 +265,14 @@ fun TaskListScreen(
                     // Status logic: prioritize deactivation over completion
                     val progress = taskProgressMap[task.physicalId]
                     val active = task.isActive ?: true
-                    val started = task.isStarted ?: false
                     val isUnavailable = pastDeadline || !active
-                    
-                    // Debug logging for status determination
-                    android.util.Log.d("TaskListScreen", "Status logic for ${task.name}:")
-                    android.util.Log.d("TaskListScreen", "  - Past deadline: $pastDeadline")
-                    android.util.Log.d("TaskListScreen", "  - Active: $active")
-                    android.util.Log.d("TaskListScreen", "  - Started: $started")
-                    android.util.Log.d("TaskListScreen", "  - Is unavailable: $isUnavailable")
-                    android.util.Log.d("TaskListScreen", "  - Progress data: ${progress?.isCompleted}")
-                    android.util.Log.d("TaskListScreen", "  - Cache completion: ${TaskCompletionCache.isCompleted(task.physicalId)}")
-                    
-                    // If task is unavailable (deactivated or past deadline), it's unavailable regardless of completion
-                    val hasAnyTemplate = hasLesson || hasQuiz || hasExercise
-                    
-                    // Check individual component completions - task is completed if student has made at least one attempt
-                    val hasQuizAttempts = (progress?.quizAttempts ?: 0) > 0
-                    val hasLessonAttempts = (progress?.lessonCompleted == true) || LessonAttemptsCache.getAttempts(task.physicalId) > 0
-                    val hasExerciseAttempts = (progress?.completedExercises?.isNotEmpty() == true)
-                    
-                    val isCompleted = if (isUnavailable) {
-                        false // Deactivated tasks are never considered completed
-                    } else {
-                        // Task is completed if student has made at least one attempt on any component
-                        hasQuizAttempts || hasLessonAttempts || hasExerciseAttempts || 
-                        TaskCompletionCache.isCompleted(task.physicalId) ||
-                        progress?.isCompleted == true
-                    }
+
+                    val isCompleted = TaskCompletionTruth.isCompletedForStudentList(
+                        task = task,
+                        progress = progress,
+                        unavailable = isUnavailable
+                    )
                     val isOngoing = !isUnavailable && !isCompleted && active
-                    
-                    android.util.Log.d("TaskListScreen", "  - Final status - Completed: $isCompleted, Ongoing: $isOngoing, Unavailable: $isUnavailable")
 
                     val statusOk = when (statusFilter) {
                         "COMPLETED" -> isCompleted
@@ -405,27 +382,11 @@ private fun TaskCard(
     // Status logic: prioritize deactivation over completion
     val active = task.isActive ?: true
     val isUnavailable = pastDeadline || !active
-    // Check individual component completions - task is completed if student has made at least one attempt
-    val hasQuizAttempts = (progress?.quizAttempts ?: 0) > 0
-    val hasLessonAttempts = (progress?.lessonCompleted == true) || LessonAttemptsCache.getAttempts(task.physicalId) > 0
-    val hasExerciseAttempts = (progress?.completedExercises?.isNotEmpty() == true)
-    
-    val isCompleted = if (isUnavailable) {
-        false // Deactivated tasks are never considered completed
-    } else {
-        // Task is completed if student has made at least one attempt on any component
-        hasQuizAttempts || hasLessonAttempts || hasExerciseAttempts || 
-        TaskCompletionCache.isCompleted(task.physicalId) ||
-        progress?.isCompleted == true
-    }
-    
-    // Debug logging for TaskCard
-    android.util.Log.d("TaskCard", "TaskCard for ${task.name}:")
-    android.util.Log.d("TaskCard", "  - Past deadline: $pastDeadline")
-    android.util.Log.d("TaskCard", "  - Active: $active")
-    android.util.Log.d("TaskCard", "  - Is unavailable: $isUnavailable")
-    android.util.Log.d("TaskCard", "  - Progress completed: ${progress?.isCompleted}")
-    android.util.Log.d("TaskCard", "  - Final completed: $isCompleted")
+    val isCompleted = TaskCompletionTruth.isCompletedForStudentList(
+        task = task,
+        progress = progress,
+        unavailable = isUnavailable
+    )
     // Make deactivated or past-deadline tasks show banner when tapped
     val clickableModifier = Modifier.clickable(onClick = { 
         if (isUnavailable) {

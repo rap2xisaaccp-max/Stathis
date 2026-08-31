@@ -36,6 +36,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AdaptiveLearningInsights } from '@/components/adaptive/AdaptiveLearningInsights';
+import {
+  studentProgressQueryKey,
+  teacherStudentViewQueryOptions,
+} from '@/lib/query/teacher-student-freshness';
 import { 
   User, 
   ArrowLeft, 
@@ -76,12 +80,11 @@ export default function StudentProgressDetailPage() {
     isError: isProgressError,
     error: progressError
   } = useQuery({
-    queryKey: ['student-progress-items', studentId, classroomId],
+    queryKey: studentProgressQueryKey(studentId, classroomId),
     queryFn: () => fetchStudentProgressItems(studentId, classroomId),
     enabled: !!studentId && !!classroomId, // Only run if we have both IDs
     retry: 2, // Retry failed requests up to 2 times
-    staleTime: 1000 * 30, // Prefer fresher Scores/Adaptive snapshot after student completes
-    refetchOnWindowFocus: true,
+    ...teacherStudentViewQueryOptions,
   });
 
   // Fetch student badges

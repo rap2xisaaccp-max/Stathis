@@ -116,7 +116,9 @@ fun ExerciseScreen(
     adaptiveDeliveryChannel: String? = null,
     /** Shown once per correction event once its evidence snapshot is stored. */
     adaptiveEvidenceNotice: String? = null,
-    onCopiedPreviewFrame: ((android.graphics.Bitmap) -> Unit)? = null
+    onCopiedPreviewFrame: ((android.graphics.Bitmap) -> Unit)? = null,
+    /** Latest copied-pose geometry for evidence compositing (not a live ImageProxy). */
+    onPoseGeometry: ((citu.edu.stathis.mobile.features.exercise.adaptive.PoseGeometry) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
     val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
@@ -307,6 +309,15 @@ fun ExerciseScreen(
                                         frameWidth = w
                                         frameHeight = h
                                         rotation = rot
+                                        onPoseGeometry?.invoke(
+                                            citu.edu.stathis.mobile.features.exercise.adaptive.PoseGeometry.fromPose(
+                                                pose = pose,
+                                                frameWidth = w,
+                                                frameHeight = h,
+                                                rotationDegrees = rot,
+                                                mirrored = flipped
+                                            )
+                                        )
                                         onPoseUpdated?.invoke(pose)
 
                                         if (monitorSkeletonPresence) {

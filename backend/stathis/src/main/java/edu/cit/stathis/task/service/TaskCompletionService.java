@@ -26,23 +26,6 @@ public class TaskCompletionService {
     private void requireTaskStarted(String taskId) {
         Task task = taskRepository.findByPhysicalId(taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
-        // #region agent log
-        try {
-            java.nio.file.Path logPath = java.nio.file.Paths.get("debug-b7147e.log");
-            String line = String.format(
-                    "{\"sessionId\":\"b7147e\",\"hypothesisId\":\"H-E\",\"location\":\"TaskCompletionService.requireTaskStarted\",\"message\":\"completion_gate\",\"timestamp\":%d,\"runId\":\"post-fix\",\"data\":{\"taskId\":\"%s\",\"isStarted\":%s,\"isActive\":%s}}%n",
-                    System.currentTimeMillis(),
-                    task.getPhysicalId() != null ? task.getPhysicalId().replace("\"", "") : "",
-                    task.isStarted(),
-                    task.isActive());
-            java.nio.file.Files.writeString(
-                    logPath,
-                    line,
-                    java.nio.file.StandardOpenOption.CREATE,
-                    java.nio.file.StandardOpenOption.APPEND);
-        } catch (Exception ignored) {
-        }
-        // #endregion
         if (!task.isStarted()) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
