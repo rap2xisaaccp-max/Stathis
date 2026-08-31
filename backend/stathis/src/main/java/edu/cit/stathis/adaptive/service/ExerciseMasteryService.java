@@ -17,6 +17,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Coaching diagnostics and soft difficulty suggestions from claimed form-correction
+ * events. {@code mastery_level} remains the coaching-frequency formula and must not
+ * be treated as Form Mastery (see {@link FormMasteryService}).
+ */
 @Service
 public class ExerciseMasteryService {
 
@@ -88,9 +93,9 @@ public class ExerciseMasteryService {
   }
 
   /**
-   * Sessions alone do not imply form mastery. When sessions ran but mastery is still ~0,
-   * withhold Beginner/goalReps so teachers see an honest "insufficient form-correction data"
-   * signal instead of a false difficulty suggestion.
+   * Coaching-frequency gate for soft difficulty suggestions only. When sessions ran but
+   * {@code exercise_mastery.mastery_level} is still ~0, withhold Beginner/goalReps.
+   * Do not apply this threshold to Form Mastery (classroom accuracy).
    */
   public static boolean isInsufficientFormEvidence(Integer sessionsCount, double masteryLevel) {
     int sessions = sessionsCount == null ? 0 : sessionsCount;
@@ -159,6 +164,7 @@ public class ExerciseMasteryService {
     return masteryRepository.save(mastery);
   }
 
+  /** Coaching-frequency only. Form Mastery is computed separately from score_attempt accuracy. */
   private void recomputeMastery(ExerciseMastery mastery) {
     int sessions = mastery.getSessionsCount() == null ? 0 : mastery.getSessionsCount();
     int errors = ExerciseMasteryMath.totalErrorCount(mastery.getCommonErrorsJson());

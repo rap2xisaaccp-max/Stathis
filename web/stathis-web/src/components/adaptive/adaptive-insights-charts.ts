@@ -7,16 +7,22 @@ import {
   formErrorDisplay,
   formErrorLabel,
 } from '@/components/adaptive/form-error-labels';
+import {
+  buildFormMasteryByExerciseChartData,
+  formMasteryDisplayPercent,
+} from '@/components/adaptive/form-mastery-chart';
+
+export { buildFormMasteryByExerciseChartData, formMasteryDisplayPercent };
 
 export const MASTERY_CHART_Y_DOMAIN: [number, number] = [0, 100];
 
 export const TIMELINE_CATEGORY_NAMES: Record<string, string> = {
-  masteryPct: 'APSLE Form Mastery',
+  masteryPct: 'Coaching-frequency (legacy)',
   consistencyPct: 'Coaching success',
 };
 
 export const MASTERY_CATEGORY_NAMES: Record<string, string> = {
-  masteryPct: 'APSLE Form Mastery',
+  masteryPct: 'Form quality',
 };
 
 export function buildRecurringErrorsChartData(
@@ -37,6 +43,7 @@ export function recurringErrorTeacherLabel(code: string): string {
   return formErrorDisplay(code);
 }
 
+/** @deprecated Coaching-frequency chart. Do not use for Form Mastery. */
 export function buildMasteryByExerciseChartData(
   mastery: ExerciseMasteryDTO[] | null | undefined
 ): Array<{ exercise: string; masteryPct: number }> {
@@ -63,6 +70,8 @@ function shortDate(iso: string | null | undefined): string {
 export function buildMasteryTimelineChartData(
   history: ProfileHistoryPointDTO[] | null | undefined
 ): Array<{ date: string; masteryPct: number; consistencyPct: number }> {
+  // Uses LearningProfileHistory.meanMasteryLevel (coaching-frequency snapshots).
+  // Not Form Mastery. Do not wire this into Form Mastery by Exercise.
   return [...(history || [])]
     .sort((a, b) => {
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -80,6 +89,6 @@ export function hasChartableInsights(data: AdaptiveInsightsDTO | null | undefine
   if (!data) return false;
   return (
     Object.keys(data.topRecurringErrors || {}).length > 0 ||
-    (data.mastery || []).length > 0
+    (data.formMastery || []).length > 0
   );
 }

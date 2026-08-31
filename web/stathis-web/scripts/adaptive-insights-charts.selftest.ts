@@ -1,46 +1,86 @@
 import assert from 'node:assert/strict';
 import {
-  buildMasteryByExerciseChartData,
-  buildRecurringErrorsChartData,
-  hasChartableInsights,
-  MASTERY_CATEGORY_NAMES,
-  MASTERY_CHART_Y_DOMAIN,
-} from '../src/components/adaptive/adaptive-insights-charts';
+  buildFormMasteryByExerciseChartData,
+  formMasteryDisplayPercent,
+} from '../src/components/adaptive/form-mastery-chart.ts';
 
-assert.equal(buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1).length, 1);
+assert.equal(formMasteryDisplayPercent(0), 0);
+assert.equal(formMasteryDisplayPercent(0.5), 50);
+assert.equal(formMasteryDisplayPercent(1), 100);
 assert.equal(
-  buildRecurringErrorsChartData({ DEPTH_LOW: 3, SAG: 1 }, 1)[0].error,
-  'Not deep enough'
+  formMasteryDisplayPercent((40 + 60) / 2 / 100),
+  50,
+  'retries 40 and 60 average to 50 for student and teacher'
 );
+
 assert.equal(
-  buildRecurringErrorsChartData({ SAG: 2, LOW_ROM: 1 }, 2)
-    .map((r) => r.error)
-    .join('|'),
-  'Hips sagging|Incomplete movement'
-);
-assert.equal(
-  buildMasteryByExerciseChartData([
-    { physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.42 },
+  buildFormMasteryByExerciseChartData([
+    {
+      studentId: 's',
+      exerciseType: 'SQUATS',
+      formMasteryLevel: 0.5,
+      formMasteryPercent: 50,
+      eligibleAttemptCount: 2,
+    },
   ])[0].masteryPct,
-  42
+  50
 );
 
-const zeroMastery = buildMasteryByExerciseChartData([
-  { physicalId: 'm1', studentId: 's', exerciseType: 'SQUATS', masteryLevel: 0 },
-  { physicalId: 'm2', studentId: 's', exerciseType: 'LUNGES', masteryLevel: 0 },
-]);
-assert.equal(zeroMastery.length, 2);
-assert.equal(zeroMastery[0].masteryPct, 0);
-assert.deepEqual(MASTERY_CHART_Y_DOMAIN, [0, 100]);
-assert.equal(MASTERY_CATEGORY_NAMES.masteryPct, 'APSLE Form Mastery');
+assert.equal(
+  buildFormMasteryByExerciseChartData([]).length,
+  0,
+  'no-data must not render 0% bars'
+);
 
 assert.equal(
-  hasChartableInsights({
+  buildFormMasteryByExerciseChartData(undefined).length,
+  0,
+  'missing Form Mastery payload cannot invent bars from coaching-frequency'
+);
+
+const measuredZero = buildFormMasteryByExerciseChartData([
+  {
     studentId: 's',
-    totalInterventions: 1,
-    successfulInterventions: 0,
-    overallSuccessRate: 0,
-    mastery: [{ physicalId: 'm1', studentId: 's', exerciseType: 'SQUAT', masteryLevel: 0.5 }],
+    exerciseType: 'SQUATS',
+    formMasteryLevel: 0,
+    formMasteryPercent: 0,
+    eligibleAttemptCount: 1,
+  },
+]);
+assert.equal(measuredZero.length, 1);
+assert.equal(measuredZero[0].masteryPct, 0);
+
+const measuredHundred = buildFormMasteryByExerciseChartData([
+  {
+    studentId: 's',
+    exerciseType: 'PUSH_UP',
+    formMasteryLevel: 1,
+    formMasteryPercent: 100,
+    eligibleAttemptCount: 1,
+  },
+]);
+assert.equal(measuredHundred[0].masteryPct, 100);
+
+function hasChartableFormMastery(data: {
+  topRecurringErrors?: Record<string, number>;
+  mastery?: unknown[];
+  formMastery?: unknown[];
+}): boolean {
+  return (
+    Object.keys(data.topRecurringErrors || {}).length > 0 ||
+    (data.formMastery || []).length > 0
+  );
+}
+assert.equal(
+  hasChartableFormMastery({
+    mastery: [{ masteryLevel: 1 }],
+  }),
+  false,
+  'old mastery_level rows must not make Form Mastery chartable'
+);
+assert.equal(
+  hasChartableFormMastery({
+    formMastery: [{ formMasteryLevel: 0 }],
   }),
   true
 );

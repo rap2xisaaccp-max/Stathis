@@ -66,6 +66,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.analysis.OnDeviceExerciseAnalyzer
+import citu.edu.stathis.mobile.features.exercise.adaptive.LiveCoachingUiPolicy
 import citu.edu.stathis.mobile.features.exercise.data.facerecognition.FaceAnalyzer
 import citu.edu.stathis.mobile.features.exercise.data.facerecognition.SkeletonPresenceTracker
 import citu.edu.stathis.mobile.features.exercise.data.posedetection.PoseAnalyzer
@@ -110,12 +111,10 @@ fun ExerciseScreen(
     /** Landmark type ids to emphasize when [adaptiveHighlight] is true. */
     adaptiveHighlightLandmarks: Set<Int> = emptySet(),
     adaptiveHighlightBones: List<Pair<Int, Int>> = emptyList(),
-    /** Adaptive coaching message to display (closed-loop feedback). */
+    /** Highlight from claimed coaching. Live text is technical/camera guidance only. */
     adaptiveMessage: String? = null,
-    /** Delivery channel label: text | visual | tts */
+    /** Delivery channel for the live text banner: technical only on the student path. */
     adaptiveDeliveryChannel: String? = null,
-    /** Shown once per correction event once its evidence snapshot is stored. */
-    adaptiveEvidenceNotice: String? = null,
     onCopiedPreviewFrame: ((android.graphics.Bitmap) -> Unit)? = null,
     /** Latest copied-pose geometry for evidence compositing (not a live ImageProxy). */
     onPoseGeometry: ((citu.edu.stathis.mobile.features.exercise.adaptive.PoseGeometry) -> Unit)? = null
@@ -371,7 +370,16 @@ fun ExerciseScreen(
                                         // #endregion
                                         // Prefer live AtomicBoolean so Start/Stop is not stuck on a stale CameraX closure.
                                         if (trackingLive && exerciseType != null) {
-                                            val analyzed = onDeviceExerciseAnalyzer.analyzePose(pose, exerciseType)
+                                            val analyzed = onDeviceExerciseAnalyzer.analyzePose(
+                                                pose = pose,
+                                                exerciseType = exerciseType,
+                                                frameWidth = w,
+                                                frameHeight = h,
+                                                rotationDegrees = rot,
+                                                mirrored = flipped,
+                                                previewWidth = previewView.width,
+                                                previewHeight = previewView.height
+                                            )
                                             // #region agent log
                                             if (analyzed.repCount > 0 && analyzed.repCount <= 2) {
                                                 DebugSessionLog.log(
@@ -388,8 +396,18 @@ fun ExerciseScreen(
                                             }
                                             // #endregion
                                             exerciseFeedback = analyzed.copy(
-                                                backendFlags = backendSignalRef.flags,
-                                                ruleSeverity = backendSignalRef.ruleSeverity
+                                                backendFlags =
+                                                    if (analyzed.framingInvalid) {
+                                                        emptyList()
+                                                    } else {
+                                                        backendSignalRef.flags
+                                                    },
+                                                ruleSeverity =
+                                                    if (analyzed.framingInvalid) {
+                                                        null
+                                                    } else {
+                                                        backendSignalRef.ruleSeverity
+                                                    }
                                             )
                                             onExerciseFeedback?.invoke(exerciseFeedback!!)
                                         } else if (trackingCapture && !trackingLive) {
@@ -696,7 +714,9 @@ fun ExerciseScreen(
                 .take(3)
         }
 
-        if (exerciseState.predictedClass.isNotEmpty() || probabilityRows.isNotEmpty()) {
+        if (LiveCoachingUiPolicy.showClassifierDebug(showExerciseFeedbackOverlay) &&
+            (exerciseState.predictedClass.isNotEmpty() || probabilityRows.isNotEmpty())
+        ) {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
@@ -827,10 +847,14 @@ fun ExerciseScreen(
             }
         }
 
-        if (!adaptiveMessage.isNullOrBlank() || !adaptiveEvidenceNotice.isNullOrBlank()) {
+        if (LiveCoachingUiPolicy.showCameraGuidanceBanner(
+                adaptiveMessage,
+                adaptiveDeliveryChannel
+            )
+        ) {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(start = 16.dp, end = 16.dp, bottom = 96.dp)
@@ -839,31 +863,17 @@ fun ExerciseScreen(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Text(
-                        text = when (adaptiveDeliveryChannel) {
-                            "tts" -> "Adaptive coach (voice)"
-                            "visual" -> "Adaptive coach (form focus)"
-                            else -> "Adaptive coach"
-                        },
+                        text = "Camera guidance",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    if (!adaptiveMessage.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = adaptiveMessage,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                    if (!adaptiveEvidenceNotice.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = adaptiveEvidenceNotice,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = adaptiveMessage.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
                 }
             }
         }

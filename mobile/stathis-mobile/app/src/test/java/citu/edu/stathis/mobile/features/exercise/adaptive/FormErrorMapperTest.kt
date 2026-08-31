@@ -15,14 +15,94 @@ class FormErrorMapperTest {
         }
 
     @Test
+    fun framingIssueBeatsStalePhysicalFlags() {
+        assertEquals(
+            FormErrorCode.BODY_NOT_VISIBLE,
+            FormErrorMapper.resolve(
+                flags = listOf("pike"),
+                formIssues = listOf("Step back so your head, hands, and feet stay in the camera frame."),
+                exerciseType = "PUSH_UP"
+            )
+        )
+        assertEquals(
+            FormErrorCode.BODY_NOT_VISIBLE,
+            FormErrorMapper.resolve(
+                flags = listOf("knees_in"),
+                formIssues = listOf("Move to the center of the camera frame."),
+                exerciseType = "SQUATS"
+            )
+        )
+        assertEquals(
+            FormErrorCode.LOW_CONFIDENCE,
+            FormErrorMapper.resolve(
+                flags = listOf("depth_low"),
+                formIssues = listOf("Hold still briefly so your form can be read clearly."),
+                exerciseType = "SQUATS"
+            )
+        )
+    }
+
+    @Test
     fun prefersBackendFlagsOverFormIssues() {
         val code =
+            FormErrorMapper.resolve(
+                flags = listOf("chest_up"),
+                formIssues = emptyList(),
+                exerciseType = "SQUATS"
+            )
+        assertEquals(FormErrorCode.CHEST_UP, code)
+    }
+
+    @Test
+    fun simultaneousPhysicalErrorsAreDeterministicBySeverityThenPriority() {
+        assertEquals(
+            FormErrorCode.KNEES_IN,
+            FormErrorMapper.resolve(
+                flags = listOf("chest_up", "knees_in", "depth_low"),
+                formIssues = emptyList(),
+                exerciseType = "SQUATS"
+            )
+        )
+        assertEquals(
+            FormErrorCode.KNEES_IN,
             FormErrorMapper.resolve(
                 flags = listOf("chest_up"),
                 formIssues = listOf("Push knees outward over toes."),
                 exerciseType = "SQUATS"
             )
-        assertEquals(FormErrorCode.CHEST_UP, code)
+        )
+        assertEquals(
+            FormErrorCode.SAG,
+            FormErrorMapper.resolve(
+                flags = listOf("low_rom", "sag", "pike"),
+                formIssues = emptyList(),
+                exerciseType = "PUSH_UP"
+            )
+        )
+        assertEquals(
+            FormErrorCode.SAG,
+            FormErrorMapper.resolve(
+                flags = listOf("low_rom", "sag"),
+                formIssues = emptyList(),
+                exerciseType = "GLUTE_BRIDGE"
+            )
+        )
+        assertEquals(
+            FormErrorCode.SAG,
+            FormErrorMapper.resolve(
+                flags = listOf("low_rom", "legs_bent", "sag"),
+                formIssues = emptyList(),
+                exerciseType = "LYING_LEG_RAISES"
+            )
+        )
+        assertEquals(
+            FormErrorCode.KNEES_IN,
+            FormErrorMapper.resolve(
+                flags = listOf("depth_low", "knees_in"),
+                formIssues = emptyList(),
+                exerciseType = "STATIC_LUNGES"
+            )
+        )
     }
 
     @Test
@@ -272,7 +352,11 @@ class FormErrorMapperTest {
         )
         assertEquals(
             FormErrorCode.SAG,
-            FormErrorMapper.resolve(listOf("sag"), listOf("Keep your hips lifted evenly."), "GLUTE_BRIDGE")
+            FormErrorMapper.resolve(
+                listOf("sag"),
+                listOf("Keep your hips lifted; do not let them drop."),
+                "GLUTE_BRIDGE"
+            )
         )
         assertEquals(
             FormErrorCode.UNKNOWN,
@@ -333,6 +417,74 @@ class FormErrorMapperTest {
         assertEquals(
             FormErrorCode.UNKNOWN,
             FormErrorMapper.resolve(emptyList(), listOf("Watch your hips."), "PUSH_UP")
+        )
+    }
+
+    @Test
+    fun detectedButUncoachedStringsStayUnknown() {
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Fully extend your arms at the top."),
+                "PUSH_UP"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Stand tall and fully extend your knees."),
+                "SQUATS"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Keep the back leg more extended."),
+                "STATIC_LUNGES"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Drop your back knee a little closer to the floor with control."),
+                "STATIC_LUNGES"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Return to a tall stance between lunges."),
+                "STATIC_LUNGES"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Lower your hips with control before the next bridge."),
+                "GLUTE_BRIDGE"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Raise both legs together."),
+                "LYING_LEG_RAISES"
+            )
+        )
+        assertEquals(
+            FormErrorCode.UNKNOWN,
+            FormErrorMapper.resolve(
+                emptyList(),
+                listOf("Movement too abrupt — slow the raise."),
+                "LYING_LEG_RAISES"
+            )
         )
     }
 }

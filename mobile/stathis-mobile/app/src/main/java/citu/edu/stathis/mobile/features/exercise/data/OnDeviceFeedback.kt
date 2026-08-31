@@ -18,5 +18,7 @@ data class OnDeviceFeedback(
      * Exercise form quality for this frame [0,1], or null when form cannot be assessed.
      * Session accuracy averages these samples and defaults to 0.
      */
-    val formScore: Float? = null
+    val formScore: Float? = null,
+    /** True when the live framing gate rejected this pose. Physical flags must not be attached. */
+    val framingInvalid: Boolean = false
 )

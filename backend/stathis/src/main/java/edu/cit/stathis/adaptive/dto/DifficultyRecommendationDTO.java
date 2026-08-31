@@ -14,6 +14,10 @@ import lombok.*;
 public class DifficultyRecommendationDTO {
   private String studentId;
   private String exerciseType;
+  /**
+   * Coaching-frequency {@code exercise_mastery.mastery_level}. Isolated from Form Mastery;
+   * thresholds are not recalibrated against classroom accuracy.
+   */
   private double masteryLevel;
   private Integer sessionsCount;
   private String recommendedDifficulty;

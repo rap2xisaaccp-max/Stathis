@@ -101,6 +101,10 @@ public final class ExerciseMasteryMath {
     return sb.toString();
   }
 
+  /**
+   * Coaching-frequency ratio: 1 - totalCoachableErrors / (sessions * 4).
+   * Not Form Mastery and not percent of correct reps.
+   */
   public static double fromSessionErrors(int sessions, int totalErrors) {
     if (sessions <= 0) {
       return 0.0;

@@ -36,6 +36,7 @@ import java.time.OffsetDateTime
 import java.time.temporal.ChronoUnit
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import citu.edu.stathis.mobile.features.common.refresh.VisibleScreenRefresh
 import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
 import coil3.compose.AsyncImage
@@ -68,6 +69,15 @@ fun TaskDetailScreen(
         // Use suppressError = true to avoid showing 403 error banners
         viewModel.loadTaskProgressWithSuppressError(taskId)
     }
+
+    VisibleScreenRefresh(
+        refreshKey = taskId,
+        pollIntervalMs = null,
+        onResume = {
+            viewModel.loadTaskDetails(taskId)
+            viewModel.refreshTaskProgress(taskId)
+        }
+    )
 
     // Load scores when task is available
     LaunchedEffect(task) {

@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
+import android.os.SystemClock
+import citu.edu.stathis.mobile.features.common.refresh.StudentDataFreshness
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -61,7 +63,20 @@ class TaskViewModel @Inject constructor(
     private val _exerciseHistoryError = MutableStateFlow<String?>(null)
     val exerciseHistoryError: StateFlow<String?> = _exerciseHistoryError
 
-    fun loadTasksForClassroom(classroomId: String) {
+    private var lastTasksClassroomId: String? = null
+    private var lastTasksLoadAtElapsedMs: Long = 0L
+
+    fun loadTasksForClassroom(classroomId: String, force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (
+            !force &&
+            classroomId == lastTasksClassroomId &&
+            StudentDataFreshness.shouldSkipDuplicateFetch(lastTasksLoadAtElapsedMs, now)
+        ) {
+            return
+        }
+        lastTasksClassroomId = classroomId
+        lastTasksLoadAtElapsedMs = now
         viewModelScope.launch {
             when (val result = getTasksForClassroomResultUseCase(classroomId)) {
                 is Result.Success -> _tasks.value = result.data

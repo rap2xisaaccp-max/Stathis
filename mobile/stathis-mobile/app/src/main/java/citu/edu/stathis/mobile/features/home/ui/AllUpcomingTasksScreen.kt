@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import citu.edu.stathis.mobile.features.common.refresh.StudentDataFreshness
+import citu.edu.stathis.mobile.features.common.refresh.VisibleScreenRefresh
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +40,13 @@ fun AllUpcomingTasksScreen(
         // Ensure data is loaded when arriving at this screen directly
         dashboardViewModel.initializeDashboard()
     }
+
+    VisibleScreenRefresh(
+        refreshKey = "upcoming-tasks",
+        pollIntervalMs = StudentDataFreshness.pollIntervalMsForTeacherStart(),
+        onResume = { dashboardViewModel.refreshUpcomingTasksSilent() },
+        onPoll = { dashboardViewModel.refreshUpcomingTasksSilent() }
+    )
 
     val classroomNameById: Map<String, String> = when (val s = classroomsState) {
         is ClassroomsState.Success -> s.classrooms.associate { it.physicalId to it.name }

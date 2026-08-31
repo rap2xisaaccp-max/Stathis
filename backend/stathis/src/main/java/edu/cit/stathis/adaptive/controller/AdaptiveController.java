@@ -158,7 +158,9 @@ public class AdaptiveController {
 
   @GetMapping("/mastery")
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "List exercise mastery for current student")
+  @Operation(
+      summary =
+          "List coaching-frequency exercise mastery for current student (not Form Mastery)")
   public ResponseEntity<List<ExerciseMasteryDTO>> getOwnMastery() {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(adaptiveFeedbackService.getMastery(studentId));
@@ -166,12 +168,36 @@ public class AdaptiveController {
 
   @GetMapping("/mastery/{studentId}")
   @PreAuthorize("hasRole('TEACHER')")
-  @Operation(summary = "List exercise mastery for a student (teacher)")
+  @Operation(
+      summary =
+          "List coaching-frequency exercise mastery for a student (not Form Mastery)")
   public ResponseEntity<List<ExerciseMasteryDTO>> getStudentMastery(
       @PathVariable String studentId) {
     String teacherId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(
         adaptiveFeedbackService.getInsights(teacherId, studentId).getMastery());
+  }
+
+  @GetMapping("/form-mastery")
+  @PreAuthorize("hasRole('STUDENT')")
+  @Operation(
+      summary =
+          "List attempt-level Form Mastery from completed classroom exercise accuracy")
+  public ResponseEntity<List<FormMasteryDTO>> getOwnFormMastery() {
+    String studentId = physicalIdService.getCurrentUserPhysicalId();
+    return ResponseEntity.ok(adaptiveFeedbackService.getFormMastery(studentId));
+  }
+
+  @GetMapping("/form-mastery/{studentId}")
+  @PreAuthorize("hasRole('TEACHER')")
+  @Operation(
+      summary =
+          "List attempt-level Form Mastery from completed classroom exercise accuracy (teacher)")
+  public ResponseEntity<List<FormMasteryDTO>> getStudentFormMastery(
+      @PathVariable String studentId) {
+    String teacherId = physicalIdService.getCurrentUserPhysicalId();
+    return ResponseEntity.ok(
+        adaptiveFeedbackService.getFormMasteryForTeacher(teacherId, studentId));
   }
 
   @GetMapping("/difficulty-recommendations/{studentId}")
@@ -196,7 +222,7 @@ public class AdaptiveController {
 
   @GetMapping("/insights/{studentId}")
   @PreAuthorize("hasRole('TEACHER')")
-  @Operation(summary = "Teacher coaching insights: recurring errors and mastery")
+  @Operation(summary = "Teacher coaching insights: recurring errors, Form Mastery, and diagnostics")
   public ResponseEntity<AdaptiveInsightsDTO> getInsights(@PathVariable String studentId) {
     String teacherId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(adaptiveFeedbackService.getInsights(teacherId, studentId));

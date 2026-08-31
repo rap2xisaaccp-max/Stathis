@@ -12,6 +12,8 @@ public interface ScoreAttemptRepository extends JpaRepository<ScoreAttempt, UUID
 
     List<ScoreAttempt> findByStudentIdAndTaskIdOrderByAttemptNumberAsc(String studentId, String taskId);
 
+    List<ScoreAttempt> findByStudentIdAndExerciseTemplateIdIsNotNull(String studentId);
+
     List<ScoreAttempt> findByScorePhysicalIdOrderByAttemptNumberAsc(String scorePhysicalId);
 
     long countByScorePhysicalId(String scorePhysicalId);

@@ -119,19 +119,26 @@ class AdaptiveFeedbackEngine @Inject constructor(
             clearActiveFeedbackIfExpired(now)
             closeExpiredWindows(now, severity)
 
-            if (!visibilityOk) {
-                return@withLock activeDelivery
-            }
+            // Framing/camera problems must become Camera guidance, not a silent skip.
+            // visibilityOk=false is a fallback when callers did not attach a technical issue.
+            val effectiveIssues =
+                if (!visibilityOk &&
+                    formIssues.none { issue ->
+                        FormErrorClassifier.isTechnical(
+                            FormErrorMapper.resolve(emptyList(), listOf(issue), exerciseType)
+                        )
+                    }
+                ) {
+                    formIssues + "Make sure the required body regions are visible in the camera."
+                } else {
+                    formIssues
+                }
 
-            val errorCode = FormErrorMapper.resolve(flags, formIssues, exerciseType)
+            val errorCode = FormErrorMapper.resolve(flags, effectiveIssues, exerciseType)
 
             if (FormErrorClassifier.isTechnical(errorCode)) {
                 val guidance =
-                    CoachingInstructionCatalog.messageText(
-                        exerciseType,
-                        errorCode!!,
-                        InstructionIntensity.REMINDER
-                    )
+                    technicalGuidanceMessage(effectiveIssues, errorCode!!, exerciseType)
                 val techUi =
                     DeliveredFeedback(
                         interventionId = "",
@@ -165,6 +172,10 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     cooldownMs,
                     currentReps
                 )
+                return@withLock activeDelivery
+            }
+
+            if (!CoachingInstructionCatalog.hasReviewedInstruction(exerciseType, errorCode)) {
                 return@withLock activeDelivery
             }
 
@@ -265,7 +276,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
     /**
      * Ends the on-device response-observation *window* (banner / highlight timeout).
      * Does **not** re-arm the lifecycle: a continuously present error stays disarmed
-     * until sustained clear frames, a meaningful rep boundary, or [startSession] reset.
+     * until sustained clear frames or [startSession] reset.
      */
     private fun closeExpiredWindows(
         now: Long,
@@ -368,9 +379,47 @@ class AdaptiveFeedbackEngine @Inject constructor(
         }
     }
 
+    /**
+     * Hide live physical highlight/TTS without closing Policy B.
+     * Used when identity re-verification freezes counting.
+     */
+    suspend fun suppressPhysicalCoaching() =
+        signalMutex.withLock {
+            delivery.stopSpeaking()
+            val active = activeDelivery ?: return@withLock
+            if (active.interventionId.isBlank() && !active.highlightJoints && !active.speak) {
+                return@withLock
+            }
+            activeDelivery =
+                active.copy(
+                    highlightJoints = false,
+                    speak = false,
+                    highlightLandmarkIds = emptySet(),
+                    highlightBones = emptyList()
+                )
+        }
+
     fun endSession() {
         delivery.stopSpeaking()
         activeDelivery = null
+    }
+
+    private fun technicalGuidanceMessage(
+        formIssues: List<String>,
+        errorCode: FormErrorCode,
+        exerciseType: String
+    ): String {
+        val fromLive =
+            formIssues.firstOrNull { issue ->
+                FormErrorMapper.resolve(emptyList(), listOf(issue), exerciseType) == errorCode &&
+                    issue.isNotBlank()
+            }
+        return fromLive
+            ?: CoachingInstructionCatalog.messageText(
+                exerciseType,
+                errorCode,
+                InstructionIntensity.REMINDER
+            )
     }
 
     companion object {

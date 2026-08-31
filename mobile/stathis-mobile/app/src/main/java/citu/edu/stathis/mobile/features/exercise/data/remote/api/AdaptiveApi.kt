@@ -3,6 +3,7 @@ package citu.edu.stathis.mobile.features.exercise.data.remote.api
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveBatchIngestDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveBatchResultDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.ExerciseMasteryDto
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.StudentLearningProfileDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -43,4 +44,7 @@ interface AdaptiveApi {
 
     @GET("api/adaptive/mastery")
     suspend fun getOwnMastery(): List<ExerciseMasteryDto>
+
+    @GET("api/adaptive/form-mastery")
+    suspend fun getOwnFormMastery(): List<FormMasteryDto>
 }

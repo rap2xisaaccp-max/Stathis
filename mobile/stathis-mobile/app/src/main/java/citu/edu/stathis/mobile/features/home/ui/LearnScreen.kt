@@ -36,7 +36,10 @@ import citu.edu.stathis.mobile.features.classroom.presentation.ClassroomProgress
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomViewModel
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.EnrollmentState
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomsState
+import citu.edu.stathis.mobile.features.common.refresh.StudentDataFreshness
+import citu.edu.stathis.mobile.features.common.refresh.VisibleScreenRefresh
 import citu.edu.stathis.mobile.features.tasks.navigation.navigateToTaskList
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskCompletionCache
 import citu.edu.stathis.mobile.features.tasks.presentation.TaskViewModel
 import kotlinx.coroutines.launch
 
@@ -61,6 +64,17 @@ fun LearnScreen(
         dashboardViewModel.initializeDashboard()
     }
 
+    VisibleScreenRefresh(
+        refreshKey = "learn",
+        pollIntervalMs = StudentDataFreshness.pollIntervalMsForTeacherStart(),
+        onResume = {
+            viewModel.loadStudentClassrooms(silent = true)
+            dashboardViewModel.refreshUpcomingTasksSilent()
+            dashboardViewModel.refreshStudentProgressSilent()
+        },
+        onPoll = { dashboardViewModel.refreshUpcomingTasksSilent() }
+    )
+
     var enrollDialog by remember { mutableStateOf(false) }
     var classroomCode by remember { mutableStateOf("") }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -73,7 +87,8 @@ fun LearnScreen(
     var classroomTasksMap by remember { mutableStateOf<Map<String, List<Task>>>(emptyMap()) }
 
     // Fetch tasks + per-task progress for each enrolled/pending classroom
-    LaunchedEffect(classroomsState) {
+    val completionUpdates by TaskCompletionCache.completionUpdates.collectAsState()
+    LaunchedEffect(classroomsState, completionUpdates) {
         val current = classroomsState
         if (current is ClassroomsState.Success) {
             val progressMap = mutableMapOf<String, Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>()

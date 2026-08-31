@@ -64,12 +64,15 @@ class AdaptiveControllerContractTest {
     assertPreAuthorize(method("createResponse"), "hasRole('STUDENT')");
     assertPreAuthorize(method("uploadEvidence"), "hasRole('STUDENT')");
     assertPreAuthorize(method("getOwnProfile"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("getOwnMastery"), "hasRole('STUDENT')");
+    assertPreAuthorize(method("getOwnFormMastery"), "hasRole('STUDENT')");
   }
 
   @Test
   void teacherReadEndpointsRequireTeacherRole() throws Exception {
     assertPreAuthorize(method("getStudentProfile"), "hasRole('TEACHER')");
     assertPreAuthorize(method("getStudentMastery"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("getStudentFormMastery"), "hasRole('TEACHER')");
     assertPreAuthorize(method("getDifficultyRecommendations"), "hasRole('TEACHER')");
     assertPreAuthorize(method("getInsights"), "hasRole('TEACHER')");
     assertPreAuthorize(method("listStudentEvidence"), "hasRole('TEACHER')");
@@ -276,6 +279,42 @@ class AdaptiveControllerContractTest {
         .andExpect(jsonPath("$.studentId").value("STUDENT-9"));
 
     verify(adaptiveFeedbackService).getInsights("TEACHER-1", "STUDENT-9");
+  }
+
+  @Test
+  void getOwnFormMasteryReturnsAttemptLevelRows() throws Exception {
+    when(physicalIdService.getCurrentUserPhysicalId()).thenReturn("STUDENT-1");
+    when(adaptiveFeedbackService.getFormMastery("STUDENT-1"))
+        .thenReturn(
+            List.of(
+                FormMasteryDTO.builder()
+                    .studentId("STUDENT-1")
+                    .exerciseType("SQUATS")
+                    .formMasteryLevel(0.5)
+                    .formMasteryPercent(50.0)
+                    .eligibleAttemptCount(2)
+                    .build()));
+
+    mockMvc
+        .perform(get("/api/adaptive/form-mastery"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].exerciseType").value("SQUATS"))
+        .andExpect(jsonPath("$[0].formMasteryLevel").value(0.5))
+        .andExpect(jsonPath("$[0].formMasteryPercent").value(50.0))
+        .andExpect(jsonPath("$[0].eligibleAttemptCount").value(2));
+  }
+
+  @Test
+  void getTeacherFormMasteryUsesClassroomGuard() throws Exception {
+    when(physicalIdService.getCurrentUserPhysicalId()).thenReturn("TEACHER-1");
+    when(adaptiveFeedbackService.getFormMasteryForTeacher("TEACHER-1", "STUDENT-9"))
+        .thenReturn(List.of());
+
+    mockMvc
+        .perform(get("/api/adaptive/form-mastery/STUDENT-9"))
+        .andExpect(status().isOk());
+
+    verify(adaptiveFeedbackService).getFormMasteryForTeacher("TEACHER-1", "STUDENT-9");
   }
 
   @Test

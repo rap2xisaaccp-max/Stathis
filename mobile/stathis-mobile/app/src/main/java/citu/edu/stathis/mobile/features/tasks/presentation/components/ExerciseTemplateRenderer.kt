@@ -58,6 +58,7 @@ import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
+import citu.edu.stathis.mobile.features.exercise.adaptive.LiveCoachingUiPolicy
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
@@ -168,7 +169,6 @@ fun ExerciseTemplateRenderer(
     val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
     val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
     val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
-    val adaptiveEvidenceNotice by adaptiveSessionViewModel.evidenceNotice.collectAsState()
     val context = LocalContext.current
 
     fun endAdaptiveSession() {
@@ -342,10 +342,13 @@ fun ExerciseTemplateRenderer(
                 exerciseTitle = template.title,
                 showExerciseFeedbackOverlay = false,
                 onExerciseFeedback = { feedback ->
-                    if (sessionCountingActive && identityPhase == IdentityPhase.VERIFIED) {
+                    val counting =
+                        sessionCountingActive && identityPhase == IdentityPhase.VERIFIED
+                    if (counting) {
                         latestExerciseFeedback = feedback
-                        adaptiveSessionViewModel.onExerciseFeedback(feedback)
+                        adaptiveSessionViewModel.onExerciseFeedback(feedback, countingActive = true)
                     } else {
+                        adaptiveSessionViewModel.onExerciseFeedback(feedback, countingActive = false)
                         // #region agent log
                         if (feedback.repCount > 0) {
                             DebugSessionLog.log(
@@ -383,6 +386,7 @@ fun ExerciseTemplateRenderer(
                         identityMessage =
                             "You left the camera for 5 seconds. Verify your face to resume tracking."
                         faceIdentityViewModel.resetVerification()
+                        adaptiveSessionViewModel.suppressPhysicalCoaching()
                     }
                 },
                 adaptiveHighlight = adaptiveHighlight,
@@ -390,7 +394,6 @@ fun ExerciseTemplateRenderer(
                 adaptiveHighlightBones = adaptiveHighlightBones,
                 adaptiveMessage = adaptiveFeedback?.message,
                 adaptiveDeliveryChannel = adaptiveFeedback?.deliveryChannel,
-                adaptiveEvidenceNotice = adaptiveEvidenceNotice,
                 onCopiedPreviewFrame = { bitmap -> adaptiveSessionViewModel.onCopiedPreviewFrame(bitmap) },
                 onPoseGeometry = { geometry -> adaptiveSessionViewModel.onPoseGeometry(geometry) }
             )
@@ -1041,7 +1044,9 @@ private fun ExerciseControlsOverlay(
             exerciseConfidence = feedback.confidence
             exerciseFeedback = feedback.formIssues.filterNot { isDetectionIssue(it) }
             // Accuracy measures exercise form, not pose-detection confidence.
-            formAccuracyTracker.record(feedback.formScore)
+            formAccuracyTracker.record(
+                if (feedback.framingInvalid) null else feedback.formScore
+            )
             currentAccuracy = formAccuracyTracker.currentAccuracyPercent()
         }
     }
@@ -1599,7 +1604,7 @@ private fun ExerciseControlsOverlay(
         // Live form accuracy cues while the student is performing
         if (identityPhase == IdentityPhase.VERIFIED && isTimerRunning) {
             LiveFormCuesCard(
-                formIssues = exerciseFeedback,
+                formIssues = LiveCoachingUiPolicy.studentLiveFormCueIssues(exerciseFeedback),
                 accuracy = currentAccuracy.toInt(),
                 goalAccuracy = template.goalAccuracy,
                 modifier = Modifier

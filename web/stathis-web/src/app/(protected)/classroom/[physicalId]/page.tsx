@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import ThemeSwitcher from '@/components/theme-switcher';
 import { Progress } from '@/components/ui/progress';
+import { teacherOverviewQueryOptions } from '@/lib/query/teacher-student-freshness';
 
 // We'll use the standard Dialog component since AlertDialog isn't available
 
@@ -326,7 +327,7 @@ export default function ClassroomDetailPage() {
     queryKey: ['classroom-tasks', physicalId],
     queryFn: () => getClassroomTasks(physicalId),
     enabled: !!physicalId,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    ...teacherOverviewQueryOptions,
   });
 
   // Fetch task scores per task so the Students tab can show task workflow/scoring.
@@ -336,7 +337,7 @@ export default function ClassroomDetailPage() {
           queryKey: ['task-scores', task.physicalId],
           queryFn: () => getTaskScores(task.physicalId),
           enabled: !!task.physicalId,
-          staleTime: 1000 * 60 * 5,
+          ...teacherOverviewQueryOptions,
         }))
       : [],
   });

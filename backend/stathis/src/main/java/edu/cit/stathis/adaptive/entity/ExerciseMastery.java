@@ -47,7 +47,10 @@ public class ExerciseMastery {
   @Column(name = "updated_at")
   private OffsetDateTime updatedAt;
 
-  /** 0.0 – 1.0 estimated mastery. */
+  /**
+   * 0.0–1.0 coaching-frequency estimate from sessions and claimed form-correction events.
+   * Not Form Mastery (classroom attempt accuracy). See FormMasteryService.
+   */
   @Column(name = "mastery_level", nullable = false)
   private double masteryLevel;
 

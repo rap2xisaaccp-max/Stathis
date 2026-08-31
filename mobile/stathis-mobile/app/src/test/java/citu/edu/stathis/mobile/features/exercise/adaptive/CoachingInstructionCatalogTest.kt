@@ -48,7 +48,22 @@ class CoachingInstructionCatalogTest {
         val pushPike =
             CoachingInstructionCatalog.messageText("PUSH_UP", FormErrorCode.PIKE, InstructionIntensity.REMINDER)
         assertNotEquals(pushPike, squatPike)
+        assertTrue(squatPike.isEmpty())
         assertFalse(CoachingInstructionCatalog.hasReviewedInstruction("SQUATS", FormErrorCode.PIKE))
+        assertFalse(CoachingInstructionCatalog.hasReviewedInstruction("GLUTE_BRIDGE", FormErrorCode.CHEST_UP))
+        assertFalse(CoachingInstructionCatalog.hasReviewedInstruction("SQUATS", FormErrorCode.LOW_VISIBILITY))
+    }
+
+    @Test
+    fun reviewedPhysicalKeysMatchAllowedClassifierMatrix() {
+        val expected =
+            FormErrorClassifier.allowedPhysicalCodes("SQUATS").map { "SQUATS|${it.name}" } +
+                FormErrorClassifier.allowedPhysicalCodes("PUSH_UP").map { "PUSH_UP|${it.name}" } +
+                FormErrorClassifier.allowedPhysicalCodes("STATIC_LUNGES").map { "STATIC_LUNGES|${it.name}" } +
+                FormErrorClassifier.allowedPhysicalCodes("GLUTE_BRIDGE").map { "GLUTE_BRIDGE|${it.name}" } +
+                FormErrorClassifier.allowedPhysicalCodes("LYING_LEG_RAISES").map { "LYING_LEG_RAISES|${it.name}" }
+        assertEquals(expected.toSet(), CoachingInstructionCatalog.reviewedPhysicalKeys())
+        assertFalse(CoachingInstructionCatalog.reviewedPhysicalKeys().contains("GLUTE_BRIDGE|CHEST_UP"))
     }
 
     @Test

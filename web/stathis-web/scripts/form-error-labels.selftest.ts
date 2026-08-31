@@ -4,13 +4,14 @@ import {
   formErrorLabel,
   formatLearningProgressLabel,
   isInsufficientFormCorrectionData,
-} from '../src/components/adaptive/form-error-labels';
+} from '../src/components/adaptive/form-error-labels.ts';
 
 assert.equal(formErrorLabel('SAG'), 'Hips sagging');
 assert.equal(formErrorLabel('KNEES_IN'), 'Knees moving inward');
 assert.equal(formErrorDisplay('LOW_ROM'), 'Incomplete movement');
 assert.ok(!formErrorDisplay('SAG').includes('SAG'));
 assert.equal(formErrorDisplay('DEPTH_LOW'), 'Not deep enough');
+assert.equal(formErrorLabel('CHEST_UP'), 'Torso leaning');
 
 assert.equal(formatLearningProgressLabel(0.35), 'Improving');
 assert.equal(isInsufficientFormCorrectionData(3, 0), true);

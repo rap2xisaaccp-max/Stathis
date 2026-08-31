@@ -21,6 +21,9 @@ import edu.cit.stathis.adaptive.repository.FeedbackInterventionRepository;
 import edu.cit.stathis.adaptive.repository.FeedbackResponseRepository;
 import edu.cit.stathis.adaptive.service.AdaptiveFeedbackService;
 import edu.cit.stathis.adaptive.service.ExerciseMasteryService;
+import edu.cit.stathis.adaptive.dto.FormMasteryDTO;
+import edu.cit.stathis.adaptive.service.FormMasteryMath;
+import edu.cit.stathis.adaptive.service.FormMasteryService;
 import edu.cit.stathis.adaptive.service.StudentLearningProfileService;
 import edu.cit.stathis.classroom.entity.Classroom;
 import edu.cit.stathis.classroom.repository.ClassroomRepository;
@@ -44,6 +47,7 @@ class AdaptiveFeedbackServiceContractTest {
   @Mock private FeedbackResponseRepository responseRepository;
   @Mock private StudentLearningProfileService profileService;
   @Mock private ExerciseMasteryService masteryService;
+  @Mock private FormMasteryService formMasteryService;
   @Mock private ClassroomRepository classroomRepository;
 
   @InjectMocks private AdaptiveFeedbackService service;
@@ -236,6 +240,7 @@ class AdaptiveFeedbackServiceContractTest {
                 .consistencyScore(0.5)
                 .build());
     when(masteryService.listForStudent("STUDENT-1")).thenReturn(List.of());
+    when(formMasteryService.listForStudent("STUDENT-1")).thenReturn(List.of());
 
     AdaptiveInsightsDTO insights = service.getInsights("TEACHER-1", "STUDENT-1");
 
@@ -244,5 +249,70 @@ class AdaptiveFeedbackServiceContractTest {
     assertFalse(insights.getTopRecurringErrors().containsKey("LOW_CONFIDENCE"));
     assertTrue(insights.getTopRecurringErrors().containsKey("SAG"));
     assertTrue(insights.getTopRecurringErrors().containsKey("LOW_ROM"));
+    assertNotNull(insights.getFormMastery());
+    assertTrue(insights.getFormMastery().isEmpty());
+    verify(formMasteryService).listForStudent("STUDENT-1");
+  }
+
+  @Test
+  void getInsightsFormMasteryIgnoresCoachingFrequencyMasteryRows() {
+    Classroom classroom = org.mockito.Mockito.mock(Classroom.class);
+    when(classroom.getTeacherId()).thenReturn("TEACHER-1");
+    when(classroomRepository.findByClassroomStudents_Student_User_PhysicalId("STUDENT-1"))
+        .thenReturn(List.of(classroom));
+    when(interventionRepository.findByStudentIdOrderByDeliveredAtDesc("STUDENT-1"))
+        .thenReturn(List.of());
+    when(profileService.getOrCreate("STUDENT-1"))
+        .thenReturn(
+            StudentLearningProfile.builder()
+                .physicalId("SLP-1")
+                .studentId("STUDENT-1")
+                .build());
+    when(profileService.toDto(any()))
+        .thenReturn(StudentLearningProfileDTO.builder().studentId("STUDENT-1").build());
+    when(masteryService.listForStudent("STUDENT-1"))
+        .thenReturn(
+            List.of(
+                edu.cit.stathis.adaptive.dto.ExerciseMasteryDTO.builder()
+                    .studentId("STUDENT-1")
+                    .exerciseType("SQUATS")
+                    .masteryLevel(1.0)
+                    .sessionsCount(4)
+                    .build()));
+    when(formMasteryService.listForStudent("STUDENT-1")).thenReturn(List.of());
+
+    AdaptiveInsightsDTO insights = service.getInsights("TEACHER-1", "STUDENT-1");
+
+    assertEquals(1, insights.getMastery().size());
+    assertEquals(1.0, insights.getMastery().get(0).getMasteryLevel(), 1e-9);
+    assertTrue(insights.getFormMastery().isEmpty());
+  }
+
+  @Test
+  void studentAndTeacherFormMasteryUseTheSameListForStudentResult() {
+    Classroom classroom = org.mockito.Mockito.mock(Classroom.class);
+    when(classroom.getTeacherId()).thenReturn("TEACHER-1");
+    when(classroomRepository.findByClassroomStudents_Student_User_PhysicalId("STUDENT-1"))
+        .thenReturn(List.of(classroom));
+    FormMasteryDTO row =
+        FormMasteryDTO.builder()
+            .studentId("STUDENT-1")
+            .exerciseType("SQUATS")
+            .formMasteryLevel(0.5)
+            .formMasteryPercent(50.0)
+            .eligibleAttemptCount(2)
+            .build();
+    when(formMasteryService.listForStudent("STUDENT-1")).thenReturn(List.of(row));
+
+    List<FormMasteryDTO> studentView = service.getFormMastery("STUDENT-1");
+    List<FormMasteryDTO> teacherView = service.getFormMasteryForTeacher("TEACHER-1", "STUDENT-1");
+
+    assertEquals(1, studentView.size());
+    assertEquals(1, teacherView.size());
+    assertEquals(studentView.get(0).getFormMasteryLevel(), teacherView.get(0).getFormMasteryLevel(), 1e-9);
+    assertEquals(studentView.get(0).getFormMasteryPercent(), teacherView.get(0).getFormMasteryPercent(), 1e-9);
+    assertEquals(studentView.get(0).getExerciseType(), teacherView.get(0).getExerciseType());
+    assertEquals(50, FormMasteryMath.displayPercent(studentView.get(0).getFormMasteryLevel()));
+    verify(formMasteryService, org.mockito.Mockito.times(2)).listForStudent("STUDENT-1");
   }
 }

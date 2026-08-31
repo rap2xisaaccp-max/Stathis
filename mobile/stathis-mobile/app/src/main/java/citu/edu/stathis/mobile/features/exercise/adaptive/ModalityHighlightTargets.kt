@@ -126,7 +126,7 @@ object ModalityHighlightTargets {
                 )
             FormErrorCode.CHEST_UP ->
                 Target(
-                    joints = setOf(LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP, NOSE),
+                    joints = setOf(LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP),
                     bones =
                         listOf(
                             LEFT_SHOULDER to RIGHT_SHOULDER,

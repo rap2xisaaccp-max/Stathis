@@ -188,6 +188,7 @@ class FormCorrectionEvidenceServiceTest {
   @Test
   void formErrorCopyHasTeacherFriendlyLabels() {
     assertEquals("Hips sagging", FormErrorCopy.label(FormErrorCode.SAG));
+    assertEquals("Torso leaning", FormErrorCopy.label(FormErrorCode.CHEST_UP, "SQUATS"));
     assertFalse(FormErrorCopy.explanation(FormErrorCode.DEPTH_LOW).isBlank());
   }
 

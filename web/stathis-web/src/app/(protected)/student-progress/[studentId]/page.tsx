@@ -38,6 +38,8 @@ import { Progress } from '@/components/ui/progress';
 import { AdaptiveLearningInsights } from '@/components/adaptive/AdaptiveLearningInsights';
 import {
   studentProgressQueryKey,
+  studentBadgesQueryKey,
+  studentLeaderboardQueryKey,
   teacherStudentViewQueryOptions,
 } from '@/lib/query/teacher-student-freshness';
 import { 
@@ -92,9 +94,10 @@ export default function StudentProgressDetailPage() {
     data: studentBadges, 
     isLoading: isBadgesLoading 
   } = useQuery({
-    queryKey: ['student-badges', studentId],
+    queryKey: studentBadgesQueryKey(studentId),
     queryFn: () => getStudentBadges(studentId),
     enabled: !!studentId,
+    ...teacherStudentViewQueryOptions,
   });
 
   // Fetch student leaderboard position
@@ -102,9 +105,10 @@ export default function StudentProgressDetailPage() {
     data: leaderboardData, 
     isLoading: isLeaderboardLoading 
   } = useQuery({
-    queryKey: ['student-leaderboard', studentId],
+    queryKey: studentLeaderboardQueryKey(studentId),
     queryFn: () => getStudentLeaderboardPosition(studentId),
     enabled: !!studentId,
+    ...teacherStudentViewQueryOptions,
   });
 
   // Fetch classroom students to get student details and enrollment date

@@ -15,7 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
-import citu.edu.stathis.mobile.features.exercise.adaptive.ExerciseMasteryDto
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDisplay
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.StudentLearningProfileDto
 
 @Composable
@@ -75,24 +76,30 @@ fun AdaptiveSessionSummaryCard(
 @Composable
 fun StudentMasterySection(
     profile: StudentLearningProfileDto?,
-    mastery: List<ExerciseMasteryDto>,
+    formMastery: List<FormMasteryDto>,
     loading: Boolean,
     error: String?,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Form coaching",
+            text = "Form Mastery by Exercise",
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Average form quality across completed classroom attempts. This is not percent of correct reps.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(8.dp))
 
         when {
             loading -> {
                 Text(
-                    text = "Loading coaching profile…",
+                    text = "Loading form mastery…",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -105,46 +112,15 @@ fun StudentMasterySection(
                 )
             }
             else -> {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Coaching cues: ${profile?.totalInterventions ?: 0}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Successful corrections: ${profile?.totalSuccessfulInterventions ?: 0}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        profile?.consistencyScore?.let { score ->
-                            Text(
-                                text = "Consistency: ${kotlin.math.round(score * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                if (mastery.isEmpty()) {
+                if (formMastery.isEmpty()) {
                     Text(
-                        text = "No exercise mastery yet. Complete a practice or task session to build your profile.",
+                        text = "Not enough data. Complete a classroom exercise attempt with counted reps to measure form quality.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        mastery.forEach { item ->
+                        formMastery.forEach { item ->
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -158,20 +134,36 @@ fun StudentMasterySection(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "Mastery ${kotlin.math.round(item.masteryLevel * 100).toInt()}% · ${item.sessionsCount ?: 0} sessions",
+                                        text = "${FormMasteryDisplay.percentLabel(item.formMasteryLevel)} form quality · ${item.eligibleAttemptCount} classroom ${if (item.eligibleAttemptCount == 1) "attempt" else "attempts"}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    item.recommendedDifficulty?.let { difficulty ->
-                                        Text(
-                                            text = "Soft tip: $difficulty · ~${item.recommendedGoalReps ?: 8} reps (teacher approves)",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
                                 }
                             }
                         }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Form coaching",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Coaching cues: ${profile?.totalInterventions ?: 0}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
             }

@@ -180,4 +180,23 @@ class ExerciseDetectorLyingLegRaiseTest {
         detector.resetExercise()
         assertEquals(0, detector.lyingLegRaiseRepCountForTests())
     }
+
+    @Test
+    fun resetPhaseKeepRepsAbortsCycleWithoutClearingCount() {
+        holdLowered()
+        holdRaised()
+        t += 900
+        repeat(3) { frame(520f, 520f) }
+        assertEquals(1, detector.lyingLegRaiseRepCountForTests())
+        holdRaised()
+        detector.resetPhaseKeepReps()
+        assertEquals(1, detector.currentRepCount(ExerciseType.LYING_LEG_RAISE))
+        t += 900
+        holdLowered()
+        assertEquals(1, detector.lyingLegRaiseRepCountForTests())
+        holdRaised()
+        t += 900
+        holdLowered()
+        assertEquals(2, detector.lyingLegRaiseRepCountForTests())
+    }
 }

@@ -20,13 +20,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomViewModel
+import citu.edu.stathis.mobile.features.common.refresh.StudentDataFreshness
+import citu.edu.stathis.mobile.features.common.refresh.VisibleScreenRefresh
 import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse
 import java.time.OffsetDateTime
 import kotlinx.coroutines.launch
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,81 +48,42 @@ fun TaskListScreen(
     var taskProgressMap by remember { mutableStateOf<Map<String, TaskProgressResponse?>>(emptyMap()) }
 
     LaunchedEffect(classroomId) {
-        viewModel.loadTasksForClassroom(classroomId)
+        viewModel.loadTasksForClassroom(classroomId, force = true)
     }
     LaunchedEffect(verifiedMap.isEmpty()) {
         if (verifiedMap.isEmpty()) classroomViewModel.loadStudentClassrooms()
     }
-    
-    // Fetch progress data for all tasks when tasks change
-    LaunchedEffect(tasks) {
-        if (tasks.isNotEmpty()) {
-            val progressMap = mutableMapOf<String, TaskProgressResponse?>()
-            tasks.forEach { task ->
-                try {
-                    // Add detailed logging for debugging
-                    android.util.Log.d("TaskListScreen", "Fetching progress for task: ${task.name} (${task.physicalId})")
-                    android.util.Log.d("TaskListScreen", "Task details - Active: ${task.isActive}, Started: ${task.isStarted}, Closing: ${task.closingDate}")
-                    
-                    val progress = viewModel.getTaskProgress(task.physicalId, suppressError = true)
-                    if (progress != null) {
-                        android.util.Log.d("TaskListScreen", "Progress fetched for ${task.name}: completed=${progress.isCompleted}, progress=${progress.progress}")
-                    } else {
-                        android.util.Log.w("TaskListScreen", "No progress data for task ${task.name}")
-                    }
-                    progressMap[task.physicalId] = progress
-                } catch (e: Exception) {
-                    // If progress fetch fails, continue without it
-                    android.util.Log.e("TaskListScreen", "Failed to fetch progress for task ${task.physicalId}: ${e.message}", e)
-                }
-            }
-            taskProgressMap = progressMap
-            android.util.Log.d("TaskListScreen", "Final progress map: $progressMap")
-        }
-    }
 
-    // Refresh progress when a task is completed (e.g. exercise submit) without waiting for resume
+    val taskIdsKey = remember(tasks) { StudentDataFreshness.taskIdsKey(tasks.map { it.physicalId }) }
     val completionUpdates by TaskCompletionCache.completionUpdates.collectAsState()
-    LaunchedEffect(completionUpdates, tasks) {
-        if (completionUpdates > 0 && tasks.isNotEmpty()) {
-            val progressMap = mutableMapOf<String, TaskProgressResponse?>()
-            tasks.forEach { task ->
-                try {
-                    progressMap[task.physicalId] =
-                        viewModel.getTaskProgress(task.physicalId, suppressError = true)
-                } catch (_: Exception) {
-                }
-            }
-            taskProgressMap = progressMap
+    var resumeTick by remember { mutableStateOf(0) }
+
+    LaunchedEffect(taskIdsKey, completionUpdates, resumeTick) {
+        if (tasks.isEmpty()) {
+            taskProgressMap = emptyMap()
+            return@LaunchedEffect
         }
+        val progressMap = mutableMapOf<String, TaskProgressResponse?>()
+        tasks.forEach { task ->
+            try {
+                progressMap[task.physicalId] =
+                    viewModel.getTaskProgress(task.physicalId, suppressError = true)
+            } catch (_: Exception) {
+            }
+        }
+        taskProgressMap = progressMap
     }
 
-    // Ensure tasks and progress refresh when returning to this screen
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, classroomId) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                // Reload tasks and progress so completion reflects immediately after actions
-                viewModel.loadTasksForClassroom(classroomId)
-                // Recompute progress after tasks update completes asynchronously
-                coroutineScope.launch {
-                    // small delay to allow tasks state to settle
-                    kotlinx.coroutines.delay(150)
-                    val progressMap = mutableMapOf<String, TaskProgressResponse?>()
-                    tasks.forEach { task ->
-                        try {
-                            val progress = viewModel.getTaskProgress(task.physicalId, suppressError = true)
-                            progressMap[task.physicalId] = progress
-                        } catch (_: Exception) {}
-                    }
-                    taskProgressMap = progressMap
-                }
-            }
-        }
-        val lifecycle = lifecycleOwner.lifecycle
-        lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
-    }
+    VisibleScreenRefresh(
+        refreshKey = classroomId,
+        pollIntervalMs = StudentDataFreshness.pollIntervalMsForTeacherStart(),
+        onResume = {
+            resumeTick += 1
+            viewModel.loadTasksForClassroom(classroomId)
+            classroomViewModel.loadStudentClassrooms(silent = true)
+        },
+        onPoll = { viewModel.loadTasksForClassroom(classroomId) }
+    )
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },

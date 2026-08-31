@@ -933,6 +933,34 @@ class ExerciseDetector {
     }
 
 
+    /** Current counted reps for [type]; used when framing fails so the session total is preserved. */
+    fun currentRepCount(type: ExerciseType): Int =
+        when (type) {
+            ExerciseType.SQUAT -> squatRepCount
+            ExerciseType.PUSHUP -> pushupRepCount
+            ExerciseType.SIT_UP -> situpRepCount
+            ExerciseType.GLUTE_BRIDGE -> gluteBridgeRepCount
+            ExerciseType.STATIC_LUNGE -> staticLungeRepCount
+            ExerciseType.LYING_LEG_RAISE -> lyingLegRaiseRepCount
+        }
+
+    /**
+     * Abort an in-progress rep cycle without clearing the session count.
+     * Framing failures must not complete a DOWN→UP transition from a cropped pose.
+     */
+    fun resetPhaseKeepReps() {
+        squatStableFrames = 0
+        resetSquatStateInternals()
+        pushupStableFrames = 0
+        resetPushupStateInternals()
+        gluteBridgeStableFrames = 0
+        resetGluteBridgeStateInternals()
+        resetStaticLungeStateInternals()
+        resetLyingLegRaiseStateInternals()
+        situpStableFrames = 0
+        resetSitupStateInternals()
+    }
+
     fun resetExercise() {
         squatState = ExerciseState.WAITING
         squatRepCount = 0

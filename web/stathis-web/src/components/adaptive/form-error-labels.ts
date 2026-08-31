@@ -21,8 +21,8 @@ const FORM_ERROR_LABELS: Record<string, FormErrorLabel> = {
     explanation: 'Knees collapsing inward instead of tracking over the toes.',
   },
   CHEST_UP: {
-    label: 'Chest / torso dropping',
-    explanation: 'Torso collapsing or not staying upright.',
+    label: 'Torso leaning',
+    explanation: 'Torso not staying upright.',
   },
   PIKE: {
     label: 'Hips too high',
@@ -120,6 +120,10 @@ export function closedLoopSuccessCopy(
   return `${s} of ${t} coaching sessions resulted in measurable improvements to the student's form.`;
 }
 
+/**
+ * Coaching-frequency gate for soft difficulty suggestions only.
+ * Do not apply this to Form Mastery (classroom attempt accuracy).
+ */
 export function isInsufficientFormCorrectionData(
   sessionsCount: number | null | undefined,
   masteryLevel: number | null | undefined

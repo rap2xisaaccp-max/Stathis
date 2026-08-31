@@ -290,9 +290,148 @@ class AdaptiveFeedbackEngineHeldErrorTest {
         assertTrue(capture.events.isEmpty())
         assertTrue(engine.sessionSummary().errorCodes.none { it == "PIKE" })
     }
+
+    @Test
+    fun heldKneesInWithIncreasingRepsStaysOneInterventionAndOneTts() = runBlocking {
+        val capture = RecordingEvidenceCapture()
+        val delivery = RecordingCoachingDelivery()
+        val engine =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                delivery,
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                capture
+            )
+        engine.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+
+        var now = 1_000L
+        var reps = 0
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your knees aligned with your toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, engine.sessionSummary().interventionCount)
+        assertEquals(1, delivery.spokeCount)
+
+        while (reps <= 12) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your knees aligned with your toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = reps,
+                now = now
+            )
+            now += 1_000L
+            reps += 3
+        }
+        assertEquals(1, engine.sessionSummary().interventionCount)
+        assertEquals(1, capture.events.size)
+        assertEquals(1, delivery.spokeCount)
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, engine.lifecyclePhase())
+    }
+
+    @Test
+    fun heldSagWithIncreasingRepsStaysOneInterventionAndOneTts() = runBlocking {
+        val capture = RecordingEvidenceCapture()
+        val delivery = RecordingCoachingDelivery()
+        val engine =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                delivery,
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                capture
+            )
+        engine.startSession("PUSH_UP", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+
+        var now = 1_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your hips level with your shoulders."),
+                flags = listOf("SAG"),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, delivery.spokeCount)
+
+        var reps = 3
+        while (reps <= 15) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your hips level with your shoulders."),
+                flags = listOf("SAG"),
+                severity = 0.8,
+                currentReps = reps,
+                now = now
+            )
+            now += 1_000L
+            reps += 3
+        }
+        assertEquals(1, engine.sessionSummary().interventionCount)
+        assertEquals(1, capture.events.size)
+        assertEquals(1, delivery.spokeCount)
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, engine.lifecyclePhase())
+    }
+
+    @Test
+    fun startSessionRetryResetsLifecycleWithoutNeedingAClear() = runBlocking {
+        val capture = RecordingEvidenceCapture()
+        val delivery = RecordingCoachingDelivery()
+        val engine =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                delivery,
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                capture
+            )
+        engine.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        var now = 1_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your knees aligned with your toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = 4,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, delivery.spokeCount)
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, engine.lifecyclePhase())
+
+        engine.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 2)
+        assertEquals(InterventionPhase.OBSERVING, engine.lifecyclePhase())
+        assertEquals(0, engine.sessionSummary().interventionCount)
+
+        now = 20_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your knees aligned with your toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, engine.sessionSummary().interventionCount)
+        assertEquals(2, delivery.spokeCount)
+        assertTrue(engine.activeFeedback()?.speak == true)
+        assertTrue(engine.activeFeedback()?.highlightJoints == true)
+    }
 }
 
-private class RecordingEvidenceCapture : FormEvidenceCapture {
+internal class RecordingEvidenceCapture : FormEvidenceCapture {
     val events = mutableListOf<FormEvidenceEvent>()
 
     override fun onConfirmedCoaching(event: FormEvidenceEvent) {
@@ -300,8 +439,9 @@ private class RecordingEvidenceCapture : FormEvidenceCapture {
     }
 }
 
-private class RecordingCoachingDelivery : CoachingDelivery {
+internal class RecordingCoachingDelivery : CoachingDelivery {
     var spokeCount = 0
+    var stopCount = 0
 
     override fun ensureInitialized() = Unit
 
@@ -318,10 +458,12 @@ private class RecordingCoachingDelivery : CoachingDelivery {
         return planned
     }
 
-    override fun stopSpeaking() = Unit
+    override fun stopSpeaking() {
+        stopCount++
+    }
 }
 
-private class FakeAdaptiveApi : AdaptiveApi {
+internal class FakeAdaptiveApi : AdaptiveApi {
     override suspend fun ingestBatch(body: AdaptiveBatchIngestDto) = AdaptiveBatchResultDto()
 
     override suspend fun uploadEvidence(
@@ -343,4 +485,6 @@ private class FakeAdaptiveApi : AdaptiveApi {
     override suspend fun getOwnProfile() = StudentLearningProfileDto()
 
     override suspend fun getOwnMastery() = emptyList<ExerciseMasteryDto>()
+
+    override suspend fun getOwnFormMastery() = emptyList<FormMasteryDto>()
 }

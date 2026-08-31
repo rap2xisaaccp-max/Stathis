@@ -26,6 +26,7 @@ public class AdaptiveFeedbackService {
   @Autowired private FeedbackResponseRepository responseRepository;
   @Autowired private StudentLearningProfileService profileService;
   @Autowired private ExerciseMasteryService masteryService;
+  @Autowired private FormMasteryService formMasteryService;
   @Autowired private ClassroomRepository classroomRepository;
 
   @Transactional
@@ -202,8 +203,18 @@ public class AdaptiveFeedbackService {
     return profileService.toDto(profileService.getOrCreate(studentId));
   }
 
+  /** Coaching-frequency rows from exercise_mastery. Not Form Mastery. */
   public List<ExerciseMasteryDTO> getMastery(String studentId) {
     return masteryService.listForStudent(studentId);
+  }
+
+  public List<FormMasteryDTO> getFormMastery(String studentId) {
+    return formMasteryService.listForStudent(studentId);
+  }
+
+  public List<FormMasteryDTO> getFormMasteryForTeacher(String teacherId, String studentId) {
+    assertTeacherCanViewStudent(teacherId, studentId);
+    return formMasteryService.listForStudent(studentId);
   }
 
   public List<DifficultyRecommendationDTO> getDifficultyRecommendations(
@@ -238,11 +249,13 @@ public class AdaptiveFeedbackService {
 
     StudentLearningProfileDTO profile = getProfile(studentId);
     List<ExerciseMasteryDTO> mastery = getMastery(studentId);
+    List<FormMasteryDTO> formMastery = formMasteryService.listForStudent(studentId);
 
     return AdaptiveInsightsDTO.builder()
         .studentId(studentId)
         .profile(profile)
         .mastery(mastery)
+        .formMastery(formMastery)
         .preferredModalityByExercise(Map.of())
         .modalityMeanDelta(Map.of())
         .topRecurringErrors(topErrors)

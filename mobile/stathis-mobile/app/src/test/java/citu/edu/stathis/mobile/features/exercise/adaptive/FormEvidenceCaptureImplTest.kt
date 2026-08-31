@@ -142,6 +142,16 @@ class FormEvidenceCaptureImplTest {
     }
 
     @Test
+    fun snapshotEnqueuesWithoutConsumingRecordedInterventionId() {
+        capture.onConfirmedCoaching(coachableEvent("FI-NO-UI", sessionId = "SES-NO-UI"))
+        // UI no longer calls consumeRecordedInterventionId(); enqueue must not depend on it.
+        assertEquals(1, queue.pendingCount)
+        assertEquals("FI-NO-UI", queue.pending().single().event.interventionId)
+        assertTrue(isJpeg(queue.pending().single().jpeg))
+        assertEquals("FI-NO-UI", capture.consumeRecordedInterventionId())
+    }
+
+    @Test
     fun compositedSnapshotIsAValidJpegNotAUiScreenshotSize() {
         capture.onConfirmedCoaching(coachableEvent("FI-JPEG", sessionId = "SES-JPEG"))
         val jpeg = queue.pending().single().jpeg

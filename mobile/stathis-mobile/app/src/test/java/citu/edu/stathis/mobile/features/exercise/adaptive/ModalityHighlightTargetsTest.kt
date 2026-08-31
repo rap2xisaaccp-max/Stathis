@@ -20,6 +20,7 @@ class ModalityHighlightTargetsTest {
         val target = ModalityHighlightTargets.forError(FormErrorCode.CHEST_UP)
         assertTrue(target.joints.contains(ModalityHighlightTargets.LEFT_SHOULDER))
         assertTrue(target.joints.contains(ModalityHighlightTargets.LEFT_HIP))
+        assertFalse(target.joints.contains(ModalityHighlightTargets.NOSE))
         assertEquals(4, target.bones.size)
     }
 

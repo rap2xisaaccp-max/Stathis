@@ -72,9 +72,11 @@ class DashboardViewModel @Inject constructor(
     /**
      * Loads the student's overall progress
      */
-    private fun loadStudentProgress() {
+    private fun loadStudentProgress(silent: Boolean = false) {
         viewModelScope.launch {
-            _progressState.value = ProgressState.Loading
+            if (!silent) {
+                _progressState.value = ProgressState.Loading
+            }
             
             try {
                 progressRepository.getStudentProgress()
@@ -135,10 +137,12 @@ class DashboardViewModel @Inject constructor(
     /**
      * Loads upcoming tasks from all classrooms
      */
-    private fun loadUpcomingTasks() {
+    fun loadUpcomingTasks(silent: Boolean = false) {
         viewModelScope.launch {
-            _tasksState.value = TasksState.Loading
-            
+            if (!silent) {
+                _tasksState.value = TasksState.Loading
+            }
+
             try {
                 // First get all classrooms
                 val classrooms = classroomRepository.getStudentClassrooms().first()
@@ -214,6 +218,15 @@ class DashboardViewModel @Inject constructor(
      */
     fun refreshDashboard() {
         initializeDashboard()
+    }
+
+    /** Silent resume/poll refresh for teacher-started upcoming tasks. */
+    fun refreshUpcomingTasksSilent() {
+        loadUpcomingTasks(silent = true)
+    }
+
+    fun refreshStudentProgressSilent() {
+        loadStudentProgress(silent = true)
     }
 
     /**

@@ -26,6 +26,7 @@ export interface ExerciseMasteryDTO {
   physicalId: string;
   studentId: string;
   exerciseType: string;
+  /** Coaching-frequency estimate. Not Form Mastery. */
   masteryLevel: number;
   commonErrorsJson?: Record<string, number> | null;
   sessionsCount?: number | null;
@@ -39,9 +40,21 @@ export interface ExerciseMasteryDTO {
   lastSessionAt?: string | null;
 }
 
+export interface FormMasteryDTO {
+  studentId: string;
+  exerciseType: string;
+  /** Mean classroom attempt accuracy / 100, in [0, 1]. */
+  formMasteryLevel: number;
+  /** Mean of recorded accuracy values, in [0, 100]. */
+  formMasteryPercent: number;
+  eligibleAttemptCount: number;
+  lastAttemptAt?: string | null;
+}
+
 export interface DifficultyRecommendationDTO {
   studentId: string;
   exerciseType: string;
+  /** Coaching-frequency mastery_level. Isolated from Form Mastery; pending recalibration. */
   masteryLevel: number;
   sessionsCount?: number | null;
   /** BEGINNER | INTERMEDIATE | ADVANCED (never EXPERT) */
@@ -67,7 +80,10 @@ export interface ProfileHistoryPointDTO {
 export interface AdaptiveInsightsDTO {
   studentId: string;
   profile?: StudentLearningProfileDTO | null;
+  /** Coaching-frequency rows. Not Form Mastery. */
   mastery?: ExerciseMasteryDTO[];
+  /** Attempt-level form quality from completed classroom score_attempt accuracy. */
+  formMastery?: FormMasteryDTO[];
   preferredModalityByExercise?: Record<string, PreferredModalityByExerciseEntry> | null;
   modalityMeanDelta?: Record<string, number>;
   topRecurringErrors?: Record<string, number>;

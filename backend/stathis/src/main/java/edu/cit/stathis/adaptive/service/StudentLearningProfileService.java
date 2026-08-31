@@ -104,6 +104,7 @@ public class StudentLearningProfileService {
       snapshot.put("consistencyScore", profile.getConsistencyScore());
       snapshot.put("totalInterventions", profile.getTotalInterventions());
       snapshot.put("totalSuccessfulInterventions", profile.getTotalSuccessfulInterventions());
+      // Coaching-frequency mean of exercise_mastery.mastery_level — not Form Mastery.
       snapshot.put("meanMasteryLevel", meanMastery);
       snapshot.put("masteryByExercise", masteryByExercise);
       historyRepository.save(

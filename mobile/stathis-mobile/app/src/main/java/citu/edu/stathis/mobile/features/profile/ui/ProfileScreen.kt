@@ -169,7 +169,7 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
     val adaptiveSessionViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel =
         hiltViewModel()
     val learningProfile by adaptiveSessionViewModel.learningProfile.collectAsState()
-    val mastery by adaptiveSessionViewModel.mastery.collectAsState()
+    val formMastery by adaptiveSessionViewModel.formMastery.collectAsState()
     val profileLoading by adaptiveSessionViewModel.profileLoading.collectAsState()
     val profileError by adaptiveSessionViewModel.profileError.collectAsState()
     LaunchedEffect(uiState.value.profile?.physicalId) {
@@ -183,6 +183,9 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refresh()
+                if (uiState.value.profile != null) {
+                    adaptiveSessionViewModel.loadLearningProfileAndMastery()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -444,7 +447,7 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
             if (uiState.value.profile != null) {
                 citu.edu.stathis.mobile.features.exercise.ui.components.StudentMasterySection(
                     profile = learningProfile,
-                    mastery = mastery,
+                    formMastery = formMastery,
                     loading = profileLoading,
                     error = profileError
                 )

@@ -10,8 +10,8 @@ package citu.edu.stathis.mobile.features.exercise.adaptive
 object FormErrorMapper {
 
     /**
-     * Prefer backend rule flags, then on-device detector messages.
-     * Returns null when there is no error signal at all.
+     * Technical camera/framing issues win over backend rule flags, then physical flags,
+     * then on-device detector messages. Returns null when there is no error signal at all.
      */
     fun resolve(
         flags: List<String>,
@@ -19,14 +19,31 @@ object FormErrorMapper {
         exerciseType: String? = null
     ): FormErrorCode? {
         val exercise = CoachingInstructionCatalog.normalizeExercise(exerciseType)
+        // Camera/framing issues win over stale physical classify flags so cropped poses
+        // cannot create a physical coaching claim.
+        for (issue in formIssues) {
+            val code = mapIssue(issue, exercise)
+            if (FormErrorClassifier.isTechnical(code)) return code
+        }
         for (flag in flags) {
-            val code = parseExactFlag(flag)
-            accept(code, exercise)?.let { return it }
+            val accepted = accept(parseExactFlag(flag), exercise)
+            if (accepted != null && FormErrorClassifier.isTechnical(accepted)) return accepted
+        }
+        val physical = linkedSetOf<FormErrorCode>()
+        for (flag in flags) {
+            val accepted = accept(parseExactFlag(flag), exercise)
+            if (accepted != null && !FormErrorClassifier.isTechnical(accepted)) {
+                physical.add(accepted)
+            }
         }
         for (issue in formIssues) {
             val code = mapIssue(issue, exercise)
-            accept(code, exercise)?.let { return it }
+            val accepted = accept(code, exercise)
+            if (accepted != null && !FormErrorClassifier.isTechnical(accepted)) {
+                physical.add(accepted)
+            }
         }
+        CoachableErrorPriority.select(exercise, physical)?.let { return it }
         if (flags.isNotEmpty() || formIssues.isNotEmpty()) {
             return FormErrorCode.UNKNOWN
         }
@@ -66,6 +83,7 @@ object FormErrorMapper {
                     "sag" -> 0.7
                     "pike" -> 0.6
                     "low_rom" -> 0.55
+                    "legs_bent" -> 0.6
                     else -> 0.4
                 }
             }
@@ -89,8 +107,24 @@ object FormErrorMapper {
     private fun mapIssue(raw: String, exercise: String): FormErrorCode {
         val n = raw.trim().lowercase()
         if (n.isEmpty()) return FormErrorCode.UNKNOWN
-        if (n.contains("confidence")) return FormErrorCode.LOW_CONFIDENCE
-        if (n.contains("visible") || n.contains("visibility")) return FormErrorCode.BODY_NOT_VISIBLE
+        if (n.contains("hold still") ||
+            n.contains("detection confidence") ||
+            (n.contains("confidence") &&
+                !n.contains("visible") &&
+                !n.contains("step back") &&
+                !n.contains("center of"))
+        ) {
+            return FormErrorCode.LOW_CONFIDENCE
+        }
+        if (n.contains("visible") ||
+            n.contains("visibility") ||
+            n.contains("step back") ||
+            n.contains("center of the camera") ||
+            n.contains("camera frame") ||
+            n.contains("room to raise")
+        ) {
+            return FormErrorCode.BODY_NOT_VISIBLE
+        }
         return when (exercise) {
             "SQUATS" -> mapSquat(n)
             "PUSH_UP" -> mapPushUp(n)
@@ -129,11 +163,12 @@ object FormErrorMapper {
 
     private fun mapLunge(n: String): FormErrorCode =
         when {
+            n.contains("back knee") ||
+                n.contains("back leg") ||
+                n.contains("between lunges") -> FormErrorCode.UNKNOWN
             n.contains("depth") ||
                 n.contains("deeper") ||
-                n.contains("lower until") ||
-                n.contains("drop your back knee") -> FormErrorCode.DEPTH_LOW
-            n.contains("back leg") || n.contains("between lunges") -> FormErrorCode.UNKNOWN
+                n.contains("lower until") -> FormErrorCode.DEPTH_LOW
             n.contains("knee") || n.contains("toes") || n.contains("tracking") -> FormErrorCode.KNEES_IN
             n.contains("torso") ||
                 n.contains("chest") ||

@@ -217,12 +217,12 @@ public class PostureRulesService {
     float sag = hip[1] - shoulder[1];
     if (sag > 0.12f) {
       flags.add("sag");
-      messages.add("Keep your hips lifted evenly.");
+      messages.add("Keep your hips lifted; do not let them drop.");
       severities.put("sag", clamp01(0.5 + (sag - 0.12) * 3.0));
     }
   }
 
-  /** Lunge: front-knee tracking and depth via knee angles. */
+  /** Lunge: depth via the more-bent (front) knee; inward tracking if either knee collapses. */
   private void applyStaticLungeRules(
       float[][] lm, Set<String> flags, List<String> messages, Map<String, Double> severities) {
     float[] lHip = lm[23];
@@ -237,7 +237,7 @@ public class PostureRulesService {
     float frontKneeAngle = Math.min(angle(lHip, lKnee, lAnkle), angle(rHip, rKnee, rAnkle));
     if (frontKneeAngle > 155f) {
       flags.add("depth_low");
-      messages.add("Lower until both knees bend smoothly.");
+      messages.add("Bend the front knee deeper into the lunge.");
       severities.put("depth_low", clamp01(0.4 + (frontKneeAngle - 155.0) / 25.0));
     }
 
@@ -245,7 +245,7 @@ public class PostureRulesService {
     boolean kneesInRight = Math.abs(rKnee[0] - hipCenter[0]) < Math.abs(rAnkle[0] - hipCenter[0]) * 0.85f;
     if (kneesInLeft || kneesInRight) {
       flags.add("knees_in");
-      messages.add("Keep your front knee tracking over your toes.");
+      messages.add("Keep your knees tracking over your toes.");
       severities.put("knees_in", 0.6);
     }
 

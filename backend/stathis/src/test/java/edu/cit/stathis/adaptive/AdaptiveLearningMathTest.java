@@ -30,7 +30,7 @@ class AdaptiveLearningMathTest {
     assertTrue(
         CoachingInstructionCatalog.messageText("SQUATS", FormErrorCode.CHEST_UP, InstructionIntensity.REMINDER)
             .toLowerCase()
-            .contains("chest"));
+            .contains("torso"));
     assertTrue(
         CoachingInstructionCatalog.messageText("PUSH_UP", FormErrorCode.SAG, InstructionIntensity.REMINDER)
             .toLowerCase()

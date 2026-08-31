@@ -30,6 +30,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import citu.edu.stathis.mobile.features.tasks.navigation.navigateToTaskList
 import androidx.navigation.NavController
 import citu.edu.stathis.mobile.features.classroom.presentation.viewmodel.ClassroomViewModel
+import citu.edu.stathis.mobile.features.common.refresh.StudentDataFreshness
+import citu.edu.stathis.mobile.features.common.refresh.VisibleScreenRefresh
+import citu.edu.stathis.mobile.features.tasks.presentation.TaskCompletionCache
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,7 +67,12 @@ fun ClassroomDetailScreen(
 
     // Shared progress map for tasks in this classroom (taskId -> TaskProgressResponse?)
     var progressMap by remember { mutableStateOf<Map<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>>(emptyMap()) }
-    LaunchedEffect(classroomTasks) {
+    val taskIdsKey = remember(classroomTasks) {
+        StudentDataFreshness.taskIdsKey(classroomTasks.map { it.physicalId })
+    }
+    val completionUpdates by TaskCompletionCache.completionUpdates.collectAsState()
+    var resumeTick by remember { mutableStateOf(0) }
+    LaunchedEffect(taskIdsKey, completionUpdates, resumeTick) {
         if (classroomTasks.isNotEmpty()) {
             val map = mutableMapOf<String, citu.edu.stathis.mobile.features.tasks.data.model.TaskProgressResponse?>()
             classroomTasks.forEach { task ->
@@ -78,6 +86,18 @@ fun ClassroomDetailScreen(
             progressMap = emptyMap()
         }
     }
+
+    VisibleScreenRefresh(
+        refreshKey = classroomId,
+        pollIntervalMs = StudentDataFreshness.pollIntervalMsForTeacherStart(),
+        onResume = {
+            resumeTick += 1
+            viewModel.loadClassroomTasks(classroomId, silent = true)
+            viewModel.loadClassroomDetails(classroomId)
+            viewModel.loadStudentClassrooms(silent = true)
+        },
+        onPoll = { viewModel.loadClassroomTasks(classroomId, silent = true) }
+    )
     
     if (verificationStatus == null) {
         Scaffold(

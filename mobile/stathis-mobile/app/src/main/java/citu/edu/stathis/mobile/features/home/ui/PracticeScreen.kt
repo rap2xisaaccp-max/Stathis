@@ -37,6 +37,7 @@ import citu.edu.stathis.mobile.features.tasks.data.model.Task
 import citu.edu.stathis.mobile.features.classroom.data.model.Classroom
 import citu.edu.stathis.mobile.features.profile.ui.ProfileViewModel
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
+import citu.edu.stathis.mobile.features.common.refresh.VisibleScreenRefresh
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import android.net.Uri
@@ -63,6 +64,12 @@ fun PracticeScreen(
     LaunchedEffect(Unit) {
         viewModel.initializeDashboard()
     }
+
+    VisibleScreenRefresh(
+        refreshKey = "practice",
+        pollIntervalMs = null,
+        onResume = { viewModel.refreshStudentProgressSilent() }
+    )
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,

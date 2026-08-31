@@ -58,9 +58,11 @@ class ClassroomViewModel @Inject constructor(
     /**
      * Loads all classrooms for the current student
      */
-    fun loadStudentClassrooms() {
+    fun loadStudentClassrooms(silent: Boolean = false) {
         viewModelScope.launch {
-            _classroomsState.value = ClassroomsState.Loading
+            if (!silent) {
+                _classroomsState.value = ClassroomsState.Loading
+            }
             
             // First ensure we have the user's physicalId by loading profile if needed
             val currentPhysicalId = authTokenManager.physicalIdFlow.firstOrNull()
@@ -252,9 +254,11 @@ class ClassroomViewModel @Inject constructor(
     /**
      * Loads all tasks for a specific classroom
      */
-    fun loadClassroomTasks(classroomId: String) {
+    fun loadClassroomTasks(classroomId: String, silent: Boolean = false) {
         viewModelScope.launch {
-            _tasksState.value = TasksState.Loading
+            if (!silent) {
+                _tasksState.value = TasksState.Loading
+            }
             
             try {
                 getClassroomTasksUseCase(classroomId)

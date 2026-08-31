@@ -30,6 +30,7 @@ import ThemeSwitcher from '@/components/theme-switcher';
 import { signOut } from '@/services/api-auth-client';
 import { getCurrentUserEmail } from '@/lib/utils/jwt';
 import { useQuery } from '@tanstack/react-query';
+import { teacherOverviewQueryOptions } from '@/lib/query/teacher-student-freshness';
 import { getTeacherClassrooms, ClassroomResponseDTO } from '@/services/api-classroom-client';
 import { Task, getTasksByClassroom } from '@/services/api-task-client';
 import { 
@@ -127,7 +128,7 @@ export default function DashboardPage() {
       return getClassroomStudents(selectedClassroomId);
     },
     enabled: !!selectedClassroomId,
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    ...teacherOverviewQueryOptions,
   });
   
   useEffect(() => {
@@ -143,7 +144,7 @@ export default function DashboardPage() {
       return await getTasksByClassroom(selectedClassroomId);
     },
     enabled: !!userEmail && !!selectedClassroomId,
-    staleTime: 1000 * 60 * 5,
+    ...teacherOverviewQueryOptions,
   });
 
   React.useEffect(() => {
@@ -178,7 +179,7 @@ export default function DashboardPage() {
       return scoresMap;
     },
     enabled: !!selectedClassroomId && !!tasksData && tasksData.length > 0,
-    staleTime: 1000 * 60 * 2 // 2 minutes
+    ...teacherOverviewQueryOptions,
   });
 
   // Removed per request: detailed task scores and leaderboard data fetching

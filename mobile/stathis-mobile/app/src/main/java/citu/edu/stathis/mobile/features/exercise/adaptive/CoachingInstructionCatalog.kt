@@ -44,12 +44,22 @@ object CoachingInstructionCatalog {
         val exercise = normalizeExercise(exerciseType)
         return catalog["$exercise|${code.name}"]
             ?: catalog["*|${code.name}"]
-            ?: CoachingInstruction(
-                messageCode = "$exercise.${code.name}",
-                reminder = "Adjust your form and try the next repetition.",
-                escalation = "Slow down and check your alignment before continuing.",
-                reinforcement = "Good adjustment. Keep that form."
-            )
+            ?: if (FormErrorClassifier.isTechnical(code)) {
+                CoachingInstruction(
+                    messageCode = "$exercise.${code.name}",
+                    reminder = "Make sure the camera can see your body clearly.",
+                    escalation = "Adjust your distance and lighting so joints stay in view.",
+                    reinforcement = "Framing looks better. Stay in that position."
+                )
+            } else {
+                // Never used for live physical delivery (engine requires hasReviewedInstruction).
+                CoachingInstruction(
+                    messageCode = "$exercise.${code.name}",
+                    reminder = "",
+                    escalation = "",
+                    reinforcement = ""
+                )
+            }
     }
 
     fun messageText(
@@ -67,8 +77,22 @@ object CoachingInstructionCatalog {
     fun hasReviewedInstruction(exerciseType: String?, errorCode: FormErrorCode?): Boolean {
         if (errorCode == null) return false
         val exercise = normalizeExercise(exerciseType)
-        return catalog.containsKey("$exercise|${errorCode.name}")
+        if (FormErrorClassifier.isTechnical(errorCode)) {
+            if (errorCode == FormErrorCode.LOW_VISIBILITY) return false
+            return catalog.containsKey("*|${errorCode.name}")
+        }
+        return FormErrorClassifier.isAllowedPhysical(exercise, errorCode) &&
+            catalog.containsKey("$exercise|${errorCode.name}")
     }
+
+    /** Exercise-scoped physical catalog keys that are allowed and reviewed. */
+    fun reviewedPhysicalKeys(): Set<String> =
+        catalog.keys.filter { key ->
+            val parts = key.split('|')
+            if (parts.size != 2 || parts[0] == "*") return@filter false
+            val code = runCatching { FormErrorCode.valueOf(parts[1]) }.getOrNull() ?: return@filter false
+            FormErrorClassifier.isAllowedPhysical(parts[0], code)
+        }.toSet()
 
     private fun entry(
         exercise: String,
@@ -86,8 +110,8 @@ object CoachingInstructionCatalog {
             entry(
                 "SQUATS",
                 FormErrorCode.DEPTH_LOW,
-                "Lower until your thighs are near parallel with the floor.",
-                "Sit your hips back and down more before standing up.",
+                "Squat deeper by bending your knees more.",
+                "Lower your hips farther down before standing up.",
                 "Good depth. Keep reaching that same low position."
             ),
             entry(
@@ -100,9 +124,9 @@ object CoachingInstructionCatalog {
             entry(
                 "SQUATS",
                 FormErrorCode.CHEST_UP,
-                "Keep your chest lifted as you squat.",
-                "Brace your torso and look forward while you lower.",
-                "Nice chest position. Stay tall through the rep."
+                "Keep your torso upright as you squat.",
+                "Do not lean forward as you lower; stay more upright.",
+                "Upright torso looks good. Stay tall through the rep."
             ),
             entry(
                 "PUSH_UP",
@@ -114,78 +138,71 @@ object CoachingInstructionCatalog {
             entry(
                 "PUSH_UP",
                 FormErrorCode.PIKE,
-                "Keep a straight line from head to heels.",
-                "Lower your hips slightly so your body stays in one line.",
-                "Good line. Stay long from shoulders to heels."
+                "Keep your hips in line with your shoulders and ankles.",
+                "Lower your hips slightly so they stay in one line with your shoulders.",
+                "Good line. Stay long from shoulders to ankles."
             ),
             entry(
                 "PUSH_UP",
                 FormErrorCode.LOW_ROM,
                 "Lower your chest closer to the floor.",
-                "Bend your elbows more on the way down before pressing up.",
+                "Lower your chest farther toward the floor before pressing up.",
                 "Better range. Keep using that fuller path."
             ),
             entry(
                 "GLUTE_BRIDGE",
                 FormErrorCode.LOW_ROM,
                 "Lift your hips higher toward the ceiling.",
-                "Drive through your heels and squeeze your glutes at the top.",
+                "Raise your hips higher at the top of the bridge.",
                 "Strong lift. Hold that top position briefly."
             ),
             entry(
                 "GLUTE_BRIDGE",
                 FormErrorCode.SAG,
-                "Keep your hips lifted evenly.",
-                "Do not let your hips drop; press them up and hold.",
-                "Good hip height. Keep both sides level."
-            ),
-            entry(
-                "GLUTE_BRIDGE",
-                FormErrorCode.CHEST_UP,
-                "Keep your shoulders grounded and stable.",
-                "Press your upper back into the floor while lifting your hips.",
-                "Stable base. Nice control through the bridge."
+                "Keep your hips lifted; do not let them drop.",
+                "Press your hips up and hold so they do not sag.",
+                "Good hip height. Keep them lifted."
             ),
             entry(
                 "STATIC_LUNGES",
                 FormErrorCode.KNEES_IN,
-                "Keep your front knee tracking over your toes.",
-                "Guide your front knee outward slightly as you bend.",
-                "Good knee path. Stay stacked over the front foot."
+                "Keep your knees tracking over your toes.",
+                "Do not let either knee collapse inward as you lunge.",
+                "Good knee path. Keep tracking over your toes."
             ),
             entry(
                 "STATIC_LUNGES",
                 FormErrorCode.DEPTH_LOW,
-                "Lower until both knees bend smoothly.",
-                "Drop your back knee a little closer to the floor with control.",
+                "Bend the front knee deeper into the lunge.",
+                "Lower until the front knee bends more before you stand up.",
                 "Better depth. Keep that controlled drop."
             ),
             entry(
                 "STATIC_LUNGES",
                 FormErrorCode.CHEST_UP,
                 "Keep your torso upright during the lunge.",
-                "Stand tall and avoid leaning forward as you bend.",
+                "Do not lean forward as you bend; stay tall through your torso.",
                 "Upright posture looks good. Hold that tall stance."
             ),
             entry(
                 "LYING_LEG_RAISES",
                 FormErrorCode.LEGS_BENT,
                 "Keep your legs straighter as you raise them.",
-                "Straighten your knees a bit more before lifting.",
+                "Straighten your knees a bit more as you raise.",
                 "Straighter legs. Maintain that length."
             ),
             entry(
                 "LYING_LEG_RAISES",
                 FormErrorCode.LOW_ROM,
                 "Raise your legs higher with control.",
-                "Lift until your hips stay grounded and legs reach a higher angle.",
+                "Lift your legs farther up before lowering them.",
                 "Good range. Control the return as well."
             ),
             entry(
                 "LYING_LEG_RAISES",
                 FormErrorCode.SAG,
-                "Keep your lower back steady on the floor.",
-                "Press your low back down gently while you raise your legs.",
+                "Keep your hips and torso on the floor.",
+                "Do not let your hips lift off the floor as you raise your legs.",
                 "Stable back. Keep that contact as you move."
             ),
             entry(
@@ -195,6 +212,9 @@ object CoachingInstructionCatalog {
                 "Step back so shoulders, hips, and feet stay in view.",
                 "Framing looks better. Stay in that position."
             ),
+            // LOW_VISIBILITY: no live detector/framing/rules emitter. Kept only so an
+            // explicit LOW_VISIBILITY flag stays on the technical path and never falls
+            // through to physical "Adjust your form…" copy. Not a reviewed physical cue.
             entry(
                 "*",
                 FormErrorCode.LOW_VISIBILITY,

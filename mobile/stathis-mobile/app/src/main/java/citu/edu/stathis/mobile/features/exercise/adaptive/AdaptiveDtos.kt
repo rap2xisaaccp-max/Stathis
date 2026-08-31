@@ -130,6 +130,17 @@ data class ExerciseMasteryDto(
     val lastSessionAt: String? = null
 )
 
+data class FormMasteryDto(
+    val studentId: String? = null,
+    val exerciseType: String = "UNKNOWN",
+    /** Mean classroom attempt accuracy / 100, in [0, 1]. Not coaching-frequency masteryLevel. */
+    val formMasteryLevel: Double = 0.0,
+    /** Mean of recorded accuracy values, in [0, 100]. */
+    val formMasteryPercent: Double = 0.0,
+    val eligibleAttemptCount: Int = 0,
+    val lastAttemptAt: String? = null
+)
+
 data class AdaptiveSessionSummary(
     val interventionCount: Int = 0,
     val modalitiesUsed: List<String> = emptyList(),

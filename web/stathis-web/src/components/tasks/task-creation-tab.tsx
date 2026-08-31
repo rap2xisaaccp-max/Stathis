@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { DeleteTaskModal } from '@/components/ui/delete-task-modal';
+import { invalidateAfterTeacherTaskStart } from '@/lib/query/teacher-student-freshness';
 import { EditTaskModal } from '@/components/ui/edit-task-modal';
 import { CreateTaskModal } from '@/components/ui/create-task-modal';
 import {
@@ -282,7 +283,7 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
   const startTaskMutation = useMutation({
     mutationFn: (physicalId: string) => startTask(physicalId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['classroom-tasks', classroomId] });
+      invalidateAfterTeacherTaskStart(queryClient, classroomId);
       toast.success('Task started successfully');
     },
     onError: (error) => {

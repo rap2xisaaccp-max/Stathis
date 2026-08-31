@@ -23,7 +23,7 @@ public final class FormErrorCopy {
           new Copy(
               "Knees moving inward", "Knees collapsing inward instead of tracking over the toes."),
           FormErrorCode.CHEST_UP,
-          new Copy("Chest / torso dropping", "Torso collapsing or not staying upright."),
+          new Copy("Torso leaning", "Torso not staying upright."),
           FormErrorCode.PIKE,
           new Copy("Hips too high", "Hips rising above a straight push-up line."),
           FormErrorCode.LEGS_BENT,
@@ -40,17 +40,21 @@ public final class FormErrorCopy {
           entry(
               "SQUATS",
               FormErrorCode.CHEST_UP,
-              "Chest dropping",
-              "Torso collapsing or not staying upright during the squat."),
+              "Torso leaning",
+              "Torso leaned forward instead of staying more upright during the squat."),
           entry("PUSH_UP", FormErrorCode.PIKE, "Hips too high", "Hips rising above a straight push-up line."),
           entry("PUSH_UP", FormErrorCode.SAG, "Hips sagging", "Hips dropping below a straight push-up line."),
           entry("PUSH_UP", FormErrorCode.LOW_ROM, "Shallow push-up", "Chest did not lower through a useful range."),
-          entry("STATIC_LUNGES", FormErrorCode.DEPTH_LOW, "Not deep enough", "Lunge did not reach enough depth."),
+          entry(
+              "STATIC_LUNGES",
+              FormErrorCode.DEPTH_LOW,
+              "Not deep enough",
+              "The front knee did not bend enough to reach useful lunge depth."),
           entry(
               "STATIC_LUNGES",
               FormErrorCode.KNEES_IN,
-              "Front knee drifting",
-              "Front knee collapsing inward instead of tracking over the toes."),
+              "Knee drifting inward",
+              "A knee collapsed inward instead of tracking over the toes."),
           entry(
               "STATIC_LUNGES",
               FormErrorCode.CHEST_UP,

@@ -25,6 +25,7 @@ enum class InterventionPhase {
 
 class InterventionLifecycle(
     private val confirmTicks: Int = 3,
+    @Suppress("unused")
     private val responseValidReps: Int = 3,
     private val maxPerMinute: Int = 4,
     private val minSeverity: Double = 0.25,
@@ -40,6 +41,7 @@ class InterventionLifecycle(
     private var clearTicks: Int = 0
     private var openError: FormErrorCode? = null
     private var deliveredAt: Long = -1L
+    @Suppress("unused")
     private var responseStartReps: Int = 0
     private var lastInterventionAt: Long = -1L
     private var cycleSeq: Int = 0
@@ -142,7 +144,6 @@ class InterventionLifecycle(
         lastInterventionAt = now
         recentInterventionAt.addLast(now)
         phase = InterventionPhase.INTERVENTION_PENDING
-        escalationCounts[errorCode] = (escalationCounts[errorCode] ?: 0) + 1
         clearPending()
         prune(now)
         return cycleSeq
@@ -165,6 +166,9 @@ class InterventionLifecycle(
             lastInterventionAt = now
             recentInterventionAt.addLast(now)
         }
+        // Advance intensity only after this cycle's sentence was chosen (engine calls
+        // intensityFor before markDelivered). First claim sees 0 → REMINDER.
+        escalationCounts[errorCode] = (escalationCounts[errorCode] ?: 0) + 1
         phase = InterventionPhase.FEEDBACK_DELIVERED
         phase = InterventionPhase.RESPONSE_OBSERVATION
         clearTicks = 0
@@ -184,14 +188,11 @@ class InterventionLifecycle(
         recentInterventionAt.addLast(now)
     }
 
-    fun markResponseClosed(successful: Boolean) {
-        val err = openError
+    fun markResponseClosed(@Suppress("UNUSED_PARAMETER") successful: Boolean) {
         openError = null
         clearTicks = 0
         phase = InterventionPhase.RESPONSE_CLOSED
-        if (successful && err != null) {
-            escalationCounts[err] = 0
-        }
+        // Keep the post-claim count so a later genuine-clear recurrence can escalate.
         phase = InterventionPhase.COOLDOWN
     }
 
@@ -215,25 +216,23 @@ class InterventionLifecycle(
     private fun advanceResponseObservation(
         errorCode: FormErrorCode?,
         severity: Double,
-        currentReps: Int,
+        @Suppress("UNUSED_PARAMETER") currentReps: Int,
         now: Long,
         cooldownMs: Long
     ) {
         if (phase != InterventionPhase.RESPONSE_OBSERVATION || openError == null) return
-        val repsProgressed = currentReps - responseStartReps
         // A different coachable error is still incorrect form — not a successful clear.
         // Technical/camera signals must not increment (false clear) or reset genuine clear ticks.
+        // Extra reps while form is still wrong must not close the cycle (real-clear-only re-arm).
         when {
             FormErrorClassifier.isTechnical(errorCode) -> Unit
             !FormErrorClassifier.isCoachable(errorCode) || severity < minSeverity ->
                 clearTicks += 1
             else -> clearTicks = 0
         }
-        val errorCleared = clearTicks >= clearConfirmTicks
-        val repsDone = repsProgressed >= responseValidReps
-        if (!repsDone && !errorCleared) return
+        if (clearTicks < clearConfirmTicks) return
 
-        markResponseClosed(successful = errorCleared)
+        markResponseClosed(successful = true)
         val effectiveCooldown = effectiveCooldownMs(severity, cooldownMs)
         if (now - lastInterventionAt >= effectiveCooldown) {
             phase = InterventionPhase.OBSERVING

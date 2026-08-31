@@ -12,6 +12,10 @@ public class ExerciseMasteryDTO {
   private String physicalId;
   private String studentId;
   private String exerciseType;
+  /**
+   * Coaching-frequency estimate from sessions and claimed form-correction events.
+   * Not Form Mastery and not percent of correct reps. See {@link FormMasteryDTO}.
+   */
   private double masteryLevel;
   private Map<String, Object> commonErrorsJson;
   private Integer sessionsCount;

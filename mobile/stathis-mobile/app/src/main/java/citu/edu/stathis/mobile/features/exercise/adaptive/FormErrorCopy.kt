@@ -18,7 +18,7 @@ object FormErrorCopy {
             FormErrorCode.KNEES_IN to
                 Copy("Knees moving inward", "Knees collapsing inward instead of tracking over the toes."),
             FormErrorCode.CHEST_UP to
-                Copy("Chest / torso dropping", "Torso collapsing or not staying upright."),
+                Copy("Torso leaning", "Torso not staying upright."),
             FormErrorCode.PIKE to
                 Copy("Hips too high", "Hips rising above a straight push-up line."),
             FormErrorCode.LEGS_BENT to
@@ -32,7 +32,7 @@ object FormErrorCopy {
             "SQUATS|KNEES_IN" to
                 Copy("Knees moving inward", "Knees collapsing inward instead of tracking over the toes."),
             "SQUATS|CHEST_UP" to
-                Copy("Chest dropping", "Torso collapsing or not staying upright during the squat."),
+                Copy("Torso leaning", "Torso leaned forward instead of staying more upright during the squat."),
             "PUSH_UP|PIKE" to
                 Copy("Hips too high", "Hips rising above a straight push-up line."),
             "PUSH_UP|SAG" to
@@ -40,9 +40,9 @@ object FormErrorCopy {
             "PUSH_UP|LOW_ROM" to
                 Copy("Shallow push-up", "Chest did not lower through a useful range."),
             "STATIC_LUNGES|DEPTH_LOW" to
-                Copy("Not deep enough", "Lunge did not reach enough depth."),
+                Copy("Not deep enough", "The front knee did not bend enough to reach useful lunge depth."),
             "STATIC_LUNGES|KNEES_IN" to
-                Copy("Front knee drifting", "Front knee collapsing inward instead of tracking over the toes."),
+                Copy("Knee drifting inward", "A knee collapsed inward instead of tracking over the toes."),
             "STATIC_LUNGES|CHEST_UP" to
                 Copy("Torso leaning", "Torso collapsing or leaning instead of staying upright in the lunge."),
             "GLUTE_BRIDGE|LOW_ROM" to

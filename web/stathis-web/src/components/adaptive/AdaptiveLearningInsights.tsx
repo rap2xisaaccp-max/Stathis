@@ -18,15 +18,18 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart } from '@/components/dashboard/bar-chart';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import {
-  buildMasteryByExerciseChartData,
-  buildRecurringErrorsChartData,
-} from '@/components/adaptive/adaptive-insights-charts';
+import { buildFormMasteryByExerciseChartData } from '@/components/adaptive/form-mastery-chart';
+import { buildRecurringErrorsChartData } from '@/components/adaptive/adaptive-insights-charts';
 import {
   StudentTaskStatsModal,
   ProgressSnapshotItem,
 } from '@/components/adaptive/StudentTaskStatsModal';
 import { FormCorrectionEvidenceLog } from '@/components/adaptive/FormCorrectionEvidenceLog';
+import {
+  ADAPTIVE_DIFFICULTY_KEY,
+  adaptiveInsightsQueryKey,
+  teacherStudentViewQueryOptions,
+} from '@/lib/query/teacher-student-freshness';
 
 export function AdaptiveLearningInsights({
   studentId,
@@ -38,25 +41,23 @@ export function AdaptiveLearningInsights({
   progressItems?: ProgressSnapshotItem[];
 }) {
   const insightsQuery = useQuery({
-    queryKey: ['adaptive-insights', studentId],
+    queryKey: adaptiveInsightsQueryKey(studentId),
     queryFn: () => fetchAdaptiveInsights(studentId),
     enabled: !!studentId,
-    staleTime: 1000 * 30,
-    refetchOnWindowFocus: true,
     retry: 1,
+    ...teacherStudentViewQueryOptions,
   });
   const difficultyQuery = useQuery({
-    queryKey: ['adaptive-difficulty-recommendations', studentId],
+    queryKey: [ADAPTIVE_DIFFICULTY_KEY, studentId],
     queryFn: () => fetchDifficultyRecommendations(studentId),
     enabled: !!studentId,
-    staleTime: 1000 * 30,
-    refetchOnWindowFocus: true,
     retry: 1,
+    ...teacherStudentViewQueryOptions,
   });
 
   const insights = insightsQuery.data;
   const recurring = buildRecurringErrorsChartData(insights?.topRecurringErrors);
-  const masteryChart = buildMasteryByExerciseChartData(insights?.mastery);
+  const masteryChart = buildFormMasteryByExerciseChartData(insights?.formMastery);
 
   return (
     <div className="space-y-6">
@@ -110,7 +111,7 @@ export function AdaptiveLearningInsights({
               <CardContent className="pt-6">
                 <BarChart
                   title="Form mastery by exercise"
-                  description="Based on sessions and how often form corrections were needed."
+                  description="Average form quality across completed classroom attempts. Not percent of correct reps, and not how often coaching cues fired."
                   data={masteryChart.map((row) => ({
                     exercise: row.exercise,
                     masteryPct: row.masteryPct,
@@ -120,16 +121,33 @@ export function AdaptiveLearningInsights({
                   yDomain={[0, 100]}
                   valueSuffix="%"
                 />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {(difficultyQuery.data || []).map((item) => (
-                    <Badge key={item.exerciseType} variant="outline">
-                      {item.exerciseType.replaceAll('_', ' ')}
-                      {item.recommendedDifficulty ? ` · ${item.recommendedDifficulty}` : ''}
-                    </Badge>
-                  ))}
-                </div>
               </CardContent>
             </Card>
+          ) : (
+            <Card className="rounded-2xl border-border/50">
+              <CardHeader>
+                <CardTitle className="text-base">Form mastery by exercise</CardTitle>
+                <CardDescription>
+                  Not enough data. Form Mastery is measured from completed classroom exercise
+                  attempts. Practice sessions, cancelled attempts, and attempts with no completed
+                  reps are excluded.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+          {(difficultyQuery.data || []).length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {(difficultyQuery.data || []).map((item) => (
+                <Badge key={item.exerciseType} variant="outline">
+                  {item.exerciseType.replaceAll('_', ' ')}
+                  {item.recommendedDifficulty ? ` · ${item.recommendedDifficulty}` : ''}
+                </Badge>
+              ))}
+              <p className="w-full text-xs text-muted-foreground">
+                Soft difficulty suggestions use coaching-frequency diagnostics and are pending
+                recalibration. They are not Form Mastery.
+              </p>
+            </div>
           ) : null}
         </>
       )}

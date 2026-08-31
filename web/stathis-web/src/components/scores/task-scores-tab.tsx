@@ -51,6 +51,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import {
+  invalidateAfterStudentScoreMutation,
+  teacherStudentViewQueryOptions,
+} from '@/lib/query/teacher-student-freshness';
 
 interface TaskScoresTabProps {
   taskId: string;
@@ -99,7 +103,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
     });
 
     if (liveEntries.some((p) => p.completed)) {
-      queryClient.invalidateQueries({ queryKey: ['task-scores', taskId] });
+      invalidateAfterStudentScoreMutation(queryClient, taskId);
     }
   }, [progressByStudent, lastUpdated, queryClient, taskId]);
 
@@ -111,7 +115,8 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
     error: scoresError
   } = useQuery({
     queryKey: ['task-scores', taskId],
-    queryFn: () => getTaskScores(taskId)
+    queryFn: () => getTaskScores(taskId),
+    ...teacherStudentViewQueryOptions,
   });
 
   // Fetch average score if template ID is provided
@@ -140,7 +145,12 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
     onSuccess: () => {
       toast.success('Score updated successfully');
       setGradeDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['task-scores', taskId] });
+      invalidateAfterStudentScoreMutation(
+        queryClient,
+        taskId,
+        selectedScore?.studentId,
+        classroomId
+      );
       queryClient.invalidateQueries({ queryKey: ['average-score', taskId, templateId, taskType] });
     },
     onError: (error: any) => {

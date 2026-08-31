@@ -24,6 +24,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, Crosshair, Repeat2, Trophy } from 'lucide-react';
+import { teacherStudentViewQueryOptions } from '@/lib/query/teacher-student-freshness';
 
 export type ProgressSnapshotItem = {
   taskId: string;
@@ -165,14 +166,14 @@ export function StudentTaskStatsModal({
     queryKey: ['student-task-scores', studentId, taskId],
     queryFn: () => getStudentTaskScores(studentId, taskId),
     enabled: open && !!studentId && !!taskId,
-    staleTime: 1000 * 20,
+    ...teacherStudentViewQueryOptions,
   });
 
   const attemptsQuery = useQuery({
     queryKey: ['student-task-attempts', studentId, taskId],
     queryFn: () => getStudentTaskAttempts(studentId, taskId),
     enabled: open && !!studentId && !!taskId,
-    staleTime: 1000 * 20,
+    ...teacherStudentViewQueryOptions,
   });
 
   const primary = pickPrimaryScore(scoresQuery.data || []);
