@@ -58,6 +58,7 @@ import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
+import citu.edu.stathis.mobile.features.exercise.adaptive.LiveCoachingUiPolicy
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
@@ -870,6 +871,54 @@ private fun MinimalProgressIndicator(
 }
 
 @Composable
+private fun LiveAccuracyBadge(
+    accuracy: Int,
+    goalAccuracy: Int,
+    hasSamples: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val meetingGoal = hasSamples && accuracy >= goalAccuracy
+    val accent = when {
+        !hasSamples -> MaterialTheme.colorScheme.onSurfaceVariant
+        meetingGoal -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
+    }
+    val percentText = LiveCoachingUiPolicy.formatLiveAccuracyPercent(hasSamples, accuracy)
+    val statusLabel =
+        if (!hasSamples) {
+            "Goal $goalAccuracy%"
+        } else if (meetingGoal) {
+            "Goal $goalAccuracy% · On target"
+        } else {
+            "Goal $goalAccuracy% · Below goal"
+        }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Accuracy",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = percentText,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = accent
+        )
+        Text(
+            text = statusLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = accent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 private fun ExerciseControlsOverlay(
     template: ExerciseTemplate,
     classroomId: String?,
@@ -900,6 +949,7 @@ private fun ExerciseControlsOverlay(
     var currentTime by remember { mutableIntStateOf(0) }
     /** Form accuracy % — defaults to 0 until assessable form samples exist. */
     var currentAccuracy by remember { mutableFloatStateOf(0f) }
+    var accuracySampleCount by remember { mutableIntStateOf(0) }
     /** Idempotent completion for auto-goal, Finish, and Complete-during-reverify. */
     var hasEmittedCompletion by remember { mutableStateOf(false) }
     val overlayCompletionGuard = remember { ExerciseSubmissionGuard() }
@@ -946,6 +996,7 @@ private fun ExerciseControlsOverlay(
                 if (feedback.framingInvalid) null else feedback.formScore
             )
             currentAccuracy = formAccuracyTracker.currentAccuracyPercent()
+            accuracySampleCount = formAccuracyTracker.sampleCount()
         }
     }
 
@@ -1008,6 +1059,7 @@ private fun ExerciseControlsOverlay(
         exerciseFeedback = result.feedback
         formAccuracyTracker.record(result.formScore)
         currentAccuracy = formAccuracyTracker.currentAccuracyPercent()
+        accuracySampleCount = formAccuracyTracker.sampleCount()
     } }
 
     val healthConnectViewModel: HealthConnectViewModel = hiltViewModel()
@@ -1123,6 +1175,7 @@ private fun ExerciseControlsOverlay(
                 onSessionRepsChange(0)
                 currentTime = 0
                 currentAccuracy = 0f
+                accuracySampleCount = 0
             } else {
                 currentReps = sessionReps
             }
@@ -1233,8 +1286,8 @@ private fun ExerciseControlsOverlay(
         modifier = modifier.fillMaxSize()
     ) {
         if (identityPhase == IdentityPhase.VERIFIED) {
-        // Progress overlay: reps and time only. Live accuracy / pose-state / form % stay
-        // internal for scoring and are shown on the results screen after the attempt.
+        // Progress overlay: reps, time, and one live Accuracy badge. Pose-state / form-cue
+        // / duplicate form-% bars stay hidden on the student path.
         Card(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -1263,21 +1316,33 @@ private fun ExerciseControlsOverlay(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MinimalProgressIndicator(
-                        label = "R",
-                        current = currentReps,
-                        goal = template.goalReps,
-                        icon = Icons.Default.Repeat
-                    )
-                    MinimalProgressIndicator(
-                        label = "T",
-                        current = currentTime,
-                        goal = template.goalTime,
-                        icon = Icons.Default.Timer
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MinimalProgressIndicator(
+                            label = "R",
+                            current = currentReps,
+                            goal = template.goalReps,
+                            icon = Icons.Default.Repeat
+                        )
+                        MinimalProgressIndicator(
+                            label = "T",
+                            current = currentTime,
+                            goal = template.goalTime,
+                            icon = Icons.Default.Timer
+                        )
+                    }
+                    if (LiveCoachingUiPolicy.showLiveAccuracyIndicator(classroomOrPracticeLiveScreen = true)) {
+                        LiveAccuracyBadge(
+                            accuracy = currentAccuracy.toInt(),
+                            goalAccuracy = template.goalAccuracy,
+                            hasSamples = accuracySampleCount > 0
+                        )
+                    }
                 }
             }
         }

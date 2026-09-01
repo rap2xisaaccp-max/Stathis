@@ -75,17 +75,41 @@ class LiveCoachingUiPolicyTest {
     }
 
     @Test
-    fun classroomPracticeHidesClassifierDebugFormCuesAndLiveAccuracy() {
+    fun classroomShowsOneLiveAccuracyWithoutFormCuesOrDebug() {
+        assertTrue(LiveCoachingUiPolicy.showLiveAccuracyIndicator(classroomOrPracticeLiveScreen = true))
+        assertEquals(
+            1,
+            LiveCoachingUiPolicy.liveAccuracyIndicatorCount(classroomOrPracticeLiveScreen = true)
+        )
+        assertFalse(LiveCoachingUiPolicy.showDuplicateLiveFormQualityUi(explicitDebugOverlayEnabled = false))
         assertFalse(LiveCoachingUiPolicy.showClassifierDebug(explicitDebugOverlayEnabled = false))
-        assertTrue(LiveCoachingUiPolicy.showClassifierDebug(explicitDebugOverlayEnabled = true))
-        assertFalse(LiveCoachingUiPolicy.showLiveFormQualityOverlay(explicitDebugOverlayEnabled = false))
-        assertTrue(LiveCoachingUiPolicy.showLiveFormQualityOverlay(explicitDebugOverlayEnabled = true))
-        assertTrue(LiveCoachingUiPolicy.showPostAttemptAccuracy())
         assertTrue(
             LiveCoachingUiPolicy.studentLiveFormCueIssues(
                 listOf("Squat deeper — bend your knees more.", "Keep your knees aligned with your toes.")
             ).isEmpty()
         )
+        assertEquals("—", LiveCoachingUiPolicy.formatLiveAccuracyPercent(hasSamples = false, accuracyPercent = 0))
+        assertEquals("85%", LiveCoachingUiPolicy.formatLiveAccuracyPercent(hasSamples = true, accuracyPercent = 85))
+        assertTrue(LiveCoachingUiPolicy.showPostAttemptAccuracy())
+    }
+
+    @Test
+    fun practiceShowsOneLiveAccuracyWithoutFormCuesOrDebug() {
+        assertTrue(LiveCoachingUiPolicy.showLiveAccuracyIndicator(classroomOrPracticeLiveScreen = true))
+        assertEquals(
+            1,
+            LiveCoachingUiPolicy.liveAccuracyIndicatorCount(classroomOrPracticeLiveScreen = true)
+        )
+        assertTrue(LiveCoachingUiPolicy.studentLiveFormCueIssues(listOf("Keep your knees aligned with your toes.")).isEmpty())
+        assertFalse(LiveCoachingUiPolicy.showClassifierDebug(explicitDebugOverlayEnabled = false))
+        assertFalse(LiveCoachingUiPolicy.showDuplicateLiveFormQualityUi(explicitDebugOverlayEnabled = false))
+    }
+
+    @Test
+    fun exerciseTestMayKeepClassifierDebugSeparately() {
+        assertTrue(LiveCoachingUiPolicy.showClassifierDebug(explicitDebugOverlayEnabled = true))
+        assertTrue(LiveCoachingUiPolicy.showDuplicateLiveFormQualityUi(explicitDebugOverlayEnabled = true))
+        assertTrue(LiveCoachingUiPolicy.showLiveAccuracyIndicator(classroomOrPracticeLiveScreen = true))
     }
 
     @Test

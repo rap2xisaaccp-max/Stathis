@@ -29,18 +29,39 @@ object LiveCoachingUiPolicy {
         explicitDebugOverlayEnabled
 
     /**
-     * Live accuracy %, pose-state labels, and form-cue cards are not student progress UI
-     * on classroom/practice. They remain available on explicit debug overlays such as
-     * exercise_test.
+     * One live Accuracy % indicator on classroom/practice. This is student progress,
+     * not a coaching channel.
      */
-    fun showLiveFormQualityOverlay(explicitDebugOverlayEnabled: Boolean): Boolean =
+    fun showLiveAccuracyIndicator(classroomOrPracticeLiveScreen: Boolean): Boolean =
+        classroomOrPracticeLiveScreen
+
+    /**
+     * Duplicate form-quality UI (pose-state labels, extra "A" percentage bar, form-cue
+     * cards) stays off the student live path. exercise_test may still use [showClassifierDebug].
+     */
+    fun showDuplicateLiveFormQualityUi(explicitDebugOverlayEnabled: Boolean): Boolean =
         explicitDebugOverlayEnabled
 
     /**
-     * Results / post-attempt accuracy belongs after the exercise, not on the live overlay.
-     * Classroom/practice hide live form-quality metrics; the results card still shows Accuracy.
+     * Results / post-attempt accuracy belongs after the exercise and uses the submitted value.
      */
     fun showPostAttemptAccuracy(): Boolean = true
+
+    /**
+     * Do not paint a fabricated 0% before [SessionAccuracyTracker] has an assessable sample.
+     */
+    fun formatLiveAccuracyPercent(hasSamples: Boolean, accuracyPercent: Int): String =
+        if (hasSamples) "$accuracyPercent%" else "—"
+
+    /** Classroom and practice share one live Accuracy surface. */
+    fun liveAccuracyIndicatorCount(
+        classroomOrPracticeLiveScreen: Boolean,
+        showDuplicateFormPercent: Boolean = false
+    ): Int =
+        listOf(
+            showLiveAccuracyIndicator(classroomOrPracticeLiveScreen),
+            showDuplicateFormPercent
+        ).count { it }
 
     /**
      * Physical detector correction bullets are never rendered on the student live path.

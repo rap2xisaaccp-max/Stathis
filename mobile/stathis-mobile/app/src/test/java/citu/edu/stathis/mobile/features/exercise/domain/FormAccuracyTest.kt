@@ -58,6 +58,19 @@ class SessionAccuracyTrackerTest {
     }
 
     @Test
+    fun framingInvalidNullDoesNotChangeExistingAccuracy() {
+        val tracker = SessionAccuracyTracker()
+        tracker.record(0.85f)
+        assertEquals(85f, tracker.currentAccuracyPercent(), 0.01f)
+        assertEquals(1, tracker.sampleCount())
+        tracker.record(null)
+        tracker.record(null)
+        assertEquals(85f, tracker.currentAccuracyPercent(), 0.01f)
+        assertEquals(85f, tracker.accuracyForSubmit(), 0.01f)
+        assertEquals(1, tracker.sampleCount())
+    }
+
+    @Test
     fun averagesFormScoresAsPercent() {
         val tracker = SessionAccuracyTracker()
         tracker.record(1.0f)
