@@ -4,7 +4,7 @@ import {
   formErrorLabel,
   formatLearningProgressLabel,
   isInsufficientFormCorrectionData,
-} from '../src/components/adaptive/form-error-labels.ts';
+} from '../src/components/adaptive/form-error-labels';
 
 assert.equal(formErrorLabel('SAG'), 'Hips sagging');
 assert.equal(formErrorLabel('KNEES_IN'), 'Knees moving inward');

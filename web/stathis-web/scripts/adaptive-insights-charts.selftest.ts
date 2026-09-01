@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
   buildFormMasteryByExerciseChartData,
   formMasteryDisplayPercent,
-} from '../src/components/adaptive/form-mastery-chart.ts';
+} from '../src/components/adaptive/form-mastery-chart';
 
 assert.equal(formMasteryDisplayPercent(0), 0);
 assert.equal(formMasteryDisplayPercent(0.5), 50);
