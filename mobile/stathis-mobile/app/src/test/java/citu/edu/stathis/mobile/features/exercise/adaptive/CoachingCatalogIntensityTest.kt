@@ -254,10 +254,11 @@ class CoachingCatalogIntensityTest {
                 now = 1_000L
             )
         assertEquals(0, delivery.spokeCount)
+        assertEquals(1, delivery.technicalSpokeCount)
         assertTrue(capture.events.isEmpty())
         assertEquals(FormErrorCode.LOW_VISIBILITY, last!!.errorCode)
         assertEquals(LiveCoachingUiPolicy.TECHNICAL_CHANNEL, last.deliveryChannel)
-        assertFalse(last.speak)
+        assertTrue(last.speak)
         assertFalse(last.highlightJoints)
         assertFalse(
             last.message.contains("Adjust your form", ignoreCase = true)

@@ -32,10 +32,11 @@ class ExerciseFramingCoachingTest {
                 now = 1_000L
             )
         assertEquals(0, delivery.spokeCount)
+        assertEquals(1, delivery.technicalSpokeCount)
         assertTrue(capture.events.isEmpty())
         assertEquals(0, engine.sessionSummary().interventionCount)
         assertFalse(last!!.highlightJoints)
-        assertFalse(last.speak)
+        assertTrue(last.speak)
         assertEquals("", last.interventionId)
         assertEquals(LiveCoachingUiPolicy.TECHNICAL_CHANNEL, last.deliveryChannel)
         assertEquals(FormErrorCode.BODY_NOT_VISIBLE, last.errorCode)

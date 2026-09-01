@@ -67,6 +67,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
         sessionErrorCodes.clear()
         interventionLifecycle.reset()
         pendingResponses.clear()
+        delivery.resetSessionSpeech()
         delivery.ensureInitialized()
         Timber.d("Coaching session started exercise=%s attempt=%s", exerciseType, attemptNumber)
     }
@@ -139,6 +140,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
             if (FormErrorClassifier.isTechnical(errorCode)) {
                 val guidance =
                     technicalGuidanceMessage(effectiveIssues, errorCode!!, exerciseType)
+                delivery.speakTechnical(guidance, now)
                 val techUi =
                     DeliveredFeedback(
                         interventionId = "",
@@ -146,13 +148,18 @@ class AdaptiveFeedbackEngine @Inject constructor(
                         errorCode = errorCode,
                         message = guidance,
                         highlightJoints = false,
-                        speak = false,
+                        speak = true,
                         showTextBanner = true,
-                        deliveryChannel = "technical",
+                        deliveryChannel = LiveCoachingUiPolicy.TECHNICAL_CHANNEL,
                         exerciseType = exerciseType
                     )
                 activeDelivery = techUi
                 return@withLock techUi
+            }
+
+            delivery.onTechnicalConditionCleared()
+            if (activeDelivery?.deliveryChannel == LiveCoachingUiPolicy.TECHNICAL_CHANNEL) {
+                activeDelivery = null
             }
 
             if (errorCode == FormErrorCode.UNKNOWN) {
@@ -387,6 +394,10 @@ class AdaptiveFeedbackEngine @Inject constructor(
         signalMutex.withLock {
             delivery.stopSpeaking()
             val active = activeDelivery ?: return@withLock
+            if (active.deliveryChannel == LiveCoachingUiPolicy.TECHNICAL_CHANNEL) {
+                activeDelivery = active.copy(speak = false)
+                return@withLock
+            }
             if (active.interventionId.isBlank() && !active.highlightJoints && !active.speak) {
                 return@withLock
             }

@@ -441,9 +441,24 @@ internal class RecordingEvidenceCapture : FormEvidenceCapture {
 
 internal class RecordingCoachingDelivery : CoachingDelivery {
     var spokeCount = 0
+    var technicalSpokeCount = 0
     var stopCount = 0
+    var lastTechnicalMessage: String? = null
+    val technicalMessages = mutableListOf<String>()
+    private val speechGate = CoachingTtsSpeechGate()
 
-    override fun ensureInitialized() = Unit
+    init {
+        speechGate.markReady(0L)
+    }
+
+    override fun ensureInitialized() {
+        speechGate.markReady(0L)
+    }
+
+    override fun resetSessionSpeech() {
+        speechGate.resetAll()
+        speechGate.markReady(0L)
+    }
 
     override fun deliver(feedback: DeliveredFeedback, now: Long): DeliveredFeedback {
         val planned =
@@ -454,12 +469,35 @@ internal class RecordingCoachingDelivery : CoachingDelivery {
                 message = feedback.message,
                 exerciseType = feedback.exerciseType
             )
-        if (planned.speak) spokeCount++
+        if (planned.speak) {
+            val decision = speechGate.requestPhysical(planned.message, now)
+            if (decision.action == CoachingTtsAction.SPEAK_NOW) {
+                spokeCount++
+                speechGate.markSpoken(CoachingTtsLane.PHYSICAL, now, planned.message)
+            }
+        }
         return planned
+    }
+
+    override fun speakTechnical(message: String, now: Long) {
+        val decision = speechGate.requestTechnical(message, now)
+        if (decision.action == CoachingTtsAction.SPEAK_NOW) {
+            technicalSpokeCount++
+            lastTechnicalMessage = decision.message
+            technicalMessages += decision.message
+            speechGate.markSpoken(CoachingTtsLane.TECHNICAL, now, decision.message)
+        }
+    }
+
+    override fun onTechnicalConditionCleared() {
+        speechGate.clearTechnical()
     }
 
     override fun stopSpeaking() {
         stopCount++
+        speechGate.cancelPending()
+        speechGate.resetAll()
+        speechGate.markReady(0L)
     }
 }
 

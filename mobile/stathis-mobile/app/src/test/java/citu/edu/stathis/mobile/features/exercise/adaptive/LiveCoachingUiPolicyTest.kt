@@ -33,7 +33,7 @@ class LiveCoachingUiPolicyTest {
     }
 
     @Test
-    fun technicalGuidanceIsTextOnlyBannerWithoutHighlightOrSpeech() {
+    fun technicalGuidanceShowsBannerWithoutHighlightOrPhysicalClaim() {
         val technical =
             DeliveredFeedback(
                 interventionId = "",
@@ -41,7 +41,7 @@ class LiveCoachingUiPolicyTest {
                 errorCode = FormErrorCode.BODY_NOT_VISIBLE,
                 message = "Keep your full body visible in the camera frame.",
                 highlightJoints = false,
-                speak = false,
+                speak = true,
                 showTextBanner = true,
                 deliveryChannel = LiveCoachingUiPolicy.TECHNICAL_CHANNEL,
                 exerciseType = "SQUATS"
@@ -49,7 +49,7 @@ class LiveCoachingUiPolicyTest {
         val banner = LiveCoachingUiPolicy.studentTextBanner(technical)
         assertNotNull(banner)
         assertEquals(technical.message, banner!!.message)
-        assertFalse(banner.speak)
+        assertTrue(banner.speak)
         assertFalse(banner.highlightJoints)
         assertEquals("", banner.interventionId)
         assertTrue(
@@ -75,9 +75,12 @@ class LiveCoachingUiPolicyTest {
     }
 
     @Test
-    fun classroomPracticeHidesClassifierDebugAndFormCueBullets() {
+    fun classroomPracticeHidesClassifierDebugFormCuesAndLiveAccuracy() {
         assertFalse(LiveCoachingUiPolicy.showClassifierDebug(explicitDebugOverlayEnabled = false))
         assertTrue(LiveCoachingUiPolicy.showClassifierDebug(explicitDebugOverlayEnabled = true))
+        assertFalse(LiveCoachingUiPolicy.showLiveFormQualityOverlay(explicitDebugOverlayEnabled = false))
+        assertTrue(LiveCoachingUiPolicy.showLiveFormQualityOverlay(explicitDebugOverlayEnabled = true))
+        assertTrue(LiveCoachingUiPolicy.showPostAttemptAccuracy())
         assertTrue(
             LiveCoachingUiPolicy.studentLiveFormCueIssues(
                 listOf("Squat deeper — bend your knees more.", "Keep your knees aligned with your toes.")
@@ -145,11 +148,12 @@ class LiveCoachingUiPolicyTest {
                 now = 1_000L
             )
         assertEquals(0, delivery.spokeCount)
+        assertEquals(1, delivery.technicalSpokeCount)
         assertTrue(capture.events.isEmpty())
         assertEquals(0, engine.sessionSummary().interventionCount)
         val banner = LiveCoachingUiPolicy.studentTextBanner(last)
         assertNotNull(banner)
-        assertFalse(banner!!.speak)
+        assertTrue(banner!!.speak)
         assertFalse(banner.highlightJoints)
         assertEquals(LiveCoachingUiPolicy.TECHNICAL_CHANNEL, banner.deliveryChannel)
         assertTrue(
