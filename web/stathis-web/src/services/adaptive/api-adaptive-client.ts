@@ -43,12 +43,14 @@ export interface ExerciseMasteryDTO {
 export interface FormMasteryDTO {
   studentId: string;
   exerciseType: string;
-  /** Mean classroom attempt accuracy / 100, in [0, 1]. */
+  /** Persistent recency-weighted Form Mastery in [0, 1]. Not coaching frequency. */
   formMasteryLevel: number;
-  /** Mean of recorded accuracy values, in [0, 100]. */
+  /** formMasteryLevel as a percent in [0, 100]. */
   formMasteryPercent: number;
   eligibleAttemptCount: number;
   lastAttemptAt?: string | null;
+  /** LEARNING, IMPROVING, or MASTERED. */
+  state?: string | null;
 }
 
 export interface DifficultyRecommendationDTO {

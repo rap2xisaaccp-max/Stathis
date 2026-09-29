@@ -9,13 +9,15 @@ package citu.edu.stathis.mobile.features.exercise.adaptive
  */
 internal enum class CoachingTtsLane {
     PHYSICAL,
-    TECHNICAL
+    TECHNICAL,
+    ENCOURAGEMENT
 }
 
 internal enum class CoachingTtsAction {
     SKIP_BLANK,
     DEBOUNCE_PHYSICAL,
     SKIP_SAME_TECHNICAL,
+    SKIP_BLOCKED,
     QUEUE_PENDING,
     SPEAK_NOW
 }
@@ -43,6 +45,10 @@ internal class CoachingTtsSpeechGate(
         private set
     var pendingTechnical: String? = null
         private set
+    var pendingEncouragement: String? = null
+        private set
+    var lastEncouragementSpokenAt: Long = 0L
+        private set
 
     fun markReady(now: Long = 0L): CoachingTtsDecision? {
         ready = true
@@ -63,10 +69,52 @@ internal class CoachingTtsSpeechGate(
         if (isPhysicalProtected(now)) {
             return CoachingTtsDecision(CoachingTtsAction.DEBOUNCE_PHYSICAL, CoachingTtsLane.PHYSICAL, message)
         }
-        // A claimed physical cue is about to speak — drop leftover camera prompts so they
-        // cannot QUEUE_FLUSH the physical utterance.
+        // A claimed physical cue is about to speak — drop leftover lower-priority prompts
+        // so they cannot QUEUE_FLUSH the physical utterance.
         pendingTechnical = null
+        pendingEncouragement = null
         return CoachingTtsDecision(CoachingTtsAction.SPEAK_NOW, CoachingTtsLane.PHYSICAL, message)
+    }
+
+    /**
+     * Rejected-rep line. Same priority as a form correction, and it may replace a correction
+     * that was just spoken so the student hears one combined sentence.
+     */
+    fun requestPhysicalImmediate(message: String, now: Long): CoachingTtsDecision {
+        if (message.isBlank()) return CoachingTtsDecision(CoachingTtsAction.SKIP_BLANK)
+        pendingTechnical = null
+        pendingEncouragement = null
+        if (!ready) {
+            pendingPhysical = message
+            return CoachingTtsDecision(CoachingTtsAction.QUEUE_PENDING, CoachingTtsLane.PHYSICAL, message)
+        }
+        pendingPhysical = null
+        return CoachingTtsDecision(CoachingTtsAction.SPEAK_NOW, CoachingTtsLane.PHYSICAL, message)
+    }
+
+    fun requestEncouragement(message: String, now: Long): CoachingTtsDecision {
+        if (message.isBlank()) return CoachingTtsDecision(CoachingTtsAction.SKIP_BLANK)
+        if (!ready) {
+            pendingEncouragement = message
+            return CoachingTtsDecision(
+                CoachingTtsAction.QUEUE_PENDING,
+                CoachingTtsLane.ENCOURAGEMENT,
+                message
+            )
+        }
+        if (isPhysicalProtected(now) ||
+            pendingPhysical != null ||
+            pendingTechnical != null ||
+            isTechnicalRecent(now)
+        ) {
+            return CoachingTtsDecision(
+                CoachingTtsAction.SKIP_BLOCKED,
+                CoachingTtsLane.ENCOURAGEMENT,
+                message
+            )
+        }
+        pendingEncouragement = null
+        return CoachingTtsDecision(CoachingTtsAction.SPEAK_NOW, CoachingTtsLane.ENCOURAGEMENT, message)
     }
 
     fun requestTechnical(message: String, now: Long): CoachingTtsDecision {
@@ -80,8 +128,10 @@ internal class CoachingTtsSpeechGate(
         }
         if (!ready || isPhysicalProtected(now) || pendingPhysical != null) {
             pendingTechnical = message
+            pendingEncouragement = null
             return CoachingTtsDecision(CoachingTtsAction.QUEUE_PENDING, CoachingTtsLane.TECHNICAL, message)
         }
+        pendingEncouragement = null
         return CoachingTtsDecision(CoachingTtsAction.SPEAK_NOW, CoachingTtsLane.TECHNICAL, message)
     }
 
@@ -109,6 +159,18 @@ internal class CoachingTtsSpeechGate(
                 else -> null
             }
         }
+        pendingEncouragement?.let { msg ->
+            pendingEncouragement = null
+            val decision = requestEncouragement(msg, now)
+            return when (decision.action) {
+                CoachingTtsAction.SPEAK_NOW -> decision
+                CoachingTtsAction.QUEUE_PENDING -> {
+                    pendingEncouragement = msg
+                    null
+                }
+                else -> null
+            }
+        }
         return null
     }
 
@@ -119,6 +181,7 @@ internal class CoachingTtsSpeechGate(
                 lastTechnicalSpokenAt = now
                 lastTechnicalMessage = message
             }
+            CoachingTtsLane.ENCOURAGEMENT -> lastEncouragementSpokenAt = now
         }
     }
 
@@ -131,6 +194,7 @@ internal class CoachingTtsSpeechGate(
     fun cancelPending() {
         pendingPhysical = null
         pendingTechnical = null
+        pendingEncouragement = null
     }
 
     fun resetAll() {
@@ -141,6 +205,9 @@ internal class CoachingTtsSpeechGate(
 
     private fun isPhysicalProtected(now: Long): Boolean =
         lastPhysicalSpokenAt > 0L && now - lastPhysicalSpokenAt < physicalDebounceMs
+
+    private fun isTechnicalRecent(now: Long): Boolean =
+        lastTechnicalSpokenAt > 0L && now - lastTechnicalSpokenAt < physicalDebounceMs
 
     private fun isSameTechnicalInCooldown(message: String, now: Long): Boolean =
         lastTechnicalMessage == message &&

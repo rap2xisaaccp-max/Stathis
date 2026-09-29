@@ -53,8 +53,7 @@ public class FormMasteryService {
       }
     }
 
-    Map<String, List<Double>> accuraciesByExercise = new LinkedHashMap<>();
-    Map<String, OffsetDateTime> lastAttemptByExercise = new HashMap<>();
+    Map<String, List<TimedAttempt>> attemptsByExercise = new LinkedHashMap<>();
     for (ScoreAttempt attempt : attempts) {
       if (!FormMasteryMath.isEligibleClassroomExerciseAttempt(
           attempt.getExerciseTemplateId(),
@@ -72,31 +71,47 @@ public class FormMasteryService {
       if ("UNKNOWN".equals(exerciseType)) {
         continue;
       }
-      accuraciesByExercise
-          .computeIfAbsent(exerciseType, key -> new ArrayList<>())
-          .add(attempt.getAccuracy());
       OffsetDateTime at =
           attempt.getCompletedAt() != null ? attempt.getCompletedAt() : attempt.getCreatedAt();
-      if (at != null) {
-        lastAttemptByExercise.merge(exerciseType, at, FormMasteryService::laterTimestamp);
-      }
+      attemptsByExercise
+          .computeIfAbsent(exerciseType, key -> new ArrayList<>())
+          .add(
+              new TimedAttempt(
+                  at,
+                  new FormMasteryMath.AttemptInput(
+                      attempt.getAccuracy(),
+                      attempt.getReps() == null ? 0 : attempt.getReps(),
+                      attempt.getGoalReps(),
+                      attempt.getAttemptedReps())));
     }
 
     List<FormMasteryDTO> rows = new ArrayList<>();
-    for (Map.Entry<String, List<Double>> entry : accuraciesByExercise.entrySet()) {
-      Double level = FormMasteryMath.meanFormMasteryLevel(entry.getValue());
-      if (level == null) {
+    for (Map.Entry<String, List<TimedAttempt>> entry : attemptsByExercise.entrySet()) {
+      List<TimedAttempt> ordered = new ArrayList<>(entry.getValue());
+      ordered.sort(
+          Comparator.comparing(
+              TimedAttempt::at, Comparator.nullsLast(Comparator.naturalOrder())));
+      List<FormMasteryMath.AttemptInput> inputs = new ArrayList<>();
+      OffsetDateTime lastAt = null;
+      for (TimedAttempt timed : ordered) {
+        inputs.add(timed.input());
+        if (timed.at() != null) {
+          lastAt = timed.at();
+        }
+      }
+      FormMasteryMath.Evaluation evaluation = FormMasteryMath.evaluate(inputs);
+      if (evaluation == null) {
         continue;
       }
-      OffsetDateTime lastAt = lastAttemptByExercise.get(entry.getKey());
       rows.add(
           FormMasteryDTO.builder()
               .studentId(studentId)
               .exerciseType(entry.getKey())
-              .formMasteryLevel(level)
-              .formMasteryPercent(level * 100.0)
-              .eligibleAttemptCount(entry.getValue().size())
+              .formMasteryLevel(evaluation.level())
+              .formMasteryPercent(evaluation.level() * 100.0)
+              .eligibleAttemptCount(evaluation.qualifyingCount())
               .lastAttemptAt(lastAt != null ? lastAt.toString() : null)
+              .state(evaluation.state().name())
               .build());
     }
     rows.sort(
@@ -106,13 +121,5 @@ public class FormMasteryService {
     return rows;
   }
 
-  private static OffsetDateTime laterTimestamp(OffsetDateTime left, OffsetDateTime right) {
-    if (left == null) {
-      return right;
-    }
-    if (right == null) {
-      return left;
-    }
-    return right.isAfter(left) ? right : left;
-  }
+  private record TimedAttempt(OffsetDateTime at, FormMasteryMath.AttemptInput input) {}
 }

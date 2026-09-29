@@ -247,6 +247,7 @@ public class ScoreService {
                 .maxScore(attempt.getMaxScore())
                 .accuracy(attempt.getAccuracy())
                 .reps(attempt.getReps())
+                .attemptedReps(attempt.getAttemptedReps())
                 .goalReps(attempt.getGoalReps())
                 .caloriesBurned(attempt.getCaloriesBurned())
                 .timeTaken(attempt.getTimeTaken())

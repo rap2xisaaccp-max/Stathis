@@ -23,6 +23,20 @@ class ExerciseRepAccumulatorTest {
     }
 
     @Test
+    fun validAndAttemptedStaySeparateAcrossADetectorReset() {
+        val acc = ExerciseRepAccumulator()
+        val first = acc.applyCounts(2, 4)
+        assertEquals(2, first.valid)
+        assertEquals(4, first.attempted)
+        val dropped = acc.applyCounts(0, 0)
+        assertEquals(2, dropped.valid)
+        assertEquals(4, dropped.attempted)
+        val next = acc.applyCounts(1, 1)
+        assertEquals(3, next.valid)
+        assertEquals(5, next.attempted)
+    }
+
+    @Test
     fun resetClearsSession() {
         val acc = ExerciseRepAccumulator()
         acc.applyDetectorReps(5)

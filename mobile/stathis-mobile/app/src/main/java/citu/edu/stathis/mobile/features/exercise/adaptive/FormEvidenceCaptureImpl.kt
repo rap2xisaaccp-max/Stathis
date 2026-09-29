@@ -7,8 +7,9 @@ import javax.inject.Singleton
 import timber.log.Timber
 
 /**
- * Composites one camera-frame + highlight JPEG for the first confirmed coaching event
- * in an attempt. Attempt identity is [FormEvidenceEvent.sessionId].
+ * Composites one camera-frame + highlight JPEG per confirmed correction cycle.
+ * Cycle identity is [FormEvidenceEvent.interventionId]. The same id is not snapshotted
+ * again while that error is held. A later cycle (new id) in the same attempt may snapshot.
  *
  * Never runs from the camera frame loop. Never screenshots the Android UI.
  */
@@ -18,8 +19,8 @@ class FormEvidenceCaptureImpl @Inject constructor(
     private val evidenceQueue: EvidenceQueue
 ) : FormEvidenceCapture {
 
-    /** Sessions (attempts) that already claimed their single evidence snapshot. */
-    private val capturedSessionIds = ConcurrentHashMap.newKeySet<String>()
+    /** Correction cycles that already claimed their single evidence snapshot. */
+    private val capturedInterventionIds = ConcurrentHashMap.newKeySet<String>()
 
     /** Claimed events still waiting for a usable copied frame + pose. */
     private val awaitingFrame = ConcurrentHashMap<String, FormEvidenceEvent>()
@@ -37,15 +38,16 @@ class FormEvidenceCaptureImpl @Inject constructor(
             )
             return
         }
-        // One snapshot per attempt/retry (session), not per later correction in the same attempt.
-        if (!capturedSessionIds.add(event.sessionId)) {
+        // One snapshot per confirmed cycle. A repeated id (held error or upload retry) is ignored.
+        // A new intervention id is a later cycle and may snapshot during the same attempt.
+        if (!capturedInterventionIds.add(event.interventionId)) {
             return
         }
         if (!enqueueSnapshot(event)) {
-            awaitingFrame[event.sessionId] = event
+            awaitingFrame[event.interventionId] = event
             Timber.w(
-                "No camera frame+pose buffered for evidence session %s; retrying on the next preview",
-                event.sessionId
+                "No camera frame+pose buffered for evidence cycle %s; retrying on the next preview",
+                event.interventionId
             )
         }
     }

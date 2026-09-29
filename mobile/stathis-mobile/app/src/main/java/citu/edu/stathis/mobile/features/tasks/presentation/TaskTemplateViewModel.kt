@@ -232,7 +232,8 @@ class TaskTemplateViewModel @Inject constructor(
                     goalReps = performance.goalReps,
                     caloriesBurned = performance.caloriesBurned,
                     exerciseType = performance.exerciseType,
-                    classroomId = performance.classroomId
+                    classroomId = performance.classroomId,
+                    attemptedReps = performance.attemptedReps
                 )
 
                 val score = GradedSubmitScope.runUncancelled {

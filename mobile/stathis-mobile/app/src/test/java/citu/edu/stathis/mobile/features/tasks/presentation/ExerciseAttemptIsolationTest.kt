@@ -15,6 +15,12 @@ class ExerciseAttemptIsolationTest {
         acc.reset()
         assertEquals(0, acc.applyDetectorReps(0))
         assertEquals(3, acc.applyDetectorReps(3))
+        val fresh = ExerciseRepAccumulator()
+        fresh.applyCounts(4, 7)
+        fresh.reset()
+        val restarted = fresh.applyCounts(0, 0)
+        assertEquals(0, restarted.valid)
+        assertEquals(0, restarted.attempted)
     }
 
     @Test

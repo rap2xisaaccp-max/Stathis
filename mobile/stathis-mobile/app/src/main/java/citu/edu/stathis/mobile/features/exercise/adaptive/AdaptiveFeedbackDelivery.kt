@@ -18,6 +18,12 @@ interface CoachingDelivery {
     fun speakTechnical(message: String, now: Long = System.currentTimeMillis())
     fun onTechnicalConditionCleared()
     fun stopSpeaking()
+
+    /** Rejected-rep line. Does not create evidence. May replace a correction just spoken. */
+    fun speakRepNotCounted(message: String, now: Long = System.currentTimeMillis()): Boolean = false
+
+    /** Praise. Speaks only when the gate says the higher-priority lanes are idle. */
+    fun speakEncouragement(message: String, now: Long = System.currentTimeMillis()): Boolean = false
 }
 
 /**
@@ -97,6 +103,26 @@ class AdaptiveFeedbackDelivery @Inject constructor(
         if (decision.action == CoachingTtsAction.SPEAK_NOW) {
             submitSpeak(decision.message, now, CoachingTtsLane.TECHNICAL)
         }
+    }
+
+    override fun speakRepNotCounted(message: String, now: Long): Boolean {
+        ensureInitialized()
+        val decision = speechGate.requestPhysicalImmediate(message, now)
+        if (decision.action == CoachingTtsAction.SPEAK_NOW) {
+            submitSpeak(decision.message, now, CoachingTtsLane.PHYSICAL)
+            return true
+        }
+        return false
+    }
+
+    override fun speakEncouragement(message: String, now: Long): Boolean {
+        ensureInitialized()
+        val decision = speechGate.requestEncouragement(message, now)
+        if (decision.action == CoachingTtsAction.SPEAK_NOW) {
+            submitSpeak(decision.message, now, CoachingTtsLane.ENCOURAGEMENT)
+            return true
+        }
+        return false
     }
 
     override fun onTechnicalConditionCleared() {

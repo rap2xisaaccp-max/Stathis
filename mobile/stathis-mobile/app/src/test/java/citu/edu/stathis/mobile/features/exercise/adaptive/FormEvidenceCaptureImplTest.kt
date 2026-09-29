@@ -29,19 +29,23 @@ class FormEvidenceCaptureImplTest {
     }
 
     @Test
-    fun oneConfirmedAttemptEnqueuesAtMostOnceAcrossManyCorrections() {
+    fun heldErrorUsesOneSnapshotUntilANewCorrectionCycle() {
         val first = coachableEvent("FI-HOLD", sessionId = "SES-HOLD")
-        repeat(50) { index ->
-            capture.onConfirmedCoaching(
-                first.copy(
-                    interventionId = "FI-HOLD-$index",
-                    errorCode = if (index % 2 == 0) FormErrorCode.KNEES_IN else FormErrorCode.DEPTH_LOW
-                )
-            )
+        repeat(50) {
+            capture.onConfirmedCoaching(first.copy(errorCode = FormErrorCode.KNEES_IN))
         }
         assertEquals(1, queue.pendingCount)
-        assertEquals("FI-HOLD-0", queue.pending().single().event.interventionId)
-        assertTrue(isJpeg(queue.pending().single().jpeg))
+        assertEquals("FI-HOLD", queue.pending().single().event.interventionId)
+
+        capture.onConfirmedCoaching(
+            first.copy(interventionId = "FI-NEXT", errorCode = FormErrorCode.DEPTH_LOW)
+        )
+        assertEquals(2, queue.pendingCount)
+        assertEquals(
+            listOf("FI-HOLD", "FI-NEXT"),
+            queue.pending().map { it.event.interventionId }
+        )
+        assertTrue(isJpeg(queue.pending().first().jpeg))
     }
 
     @Test
@@ -51,9 +55,9 @@ class FormEvidenceCaptureImplTest {
         capture.onConfirmedCoaching(coachableEvent("FI-A2", sessionId = "SES-ATTEMPT-2", attemptNumber = 2))
         capture.onConfirmedCoaching(coachableEvent("FI-A3", sessionId = "SES-ATTEMPT-3", attemptNumber = 3))
 
-        assertEquals(3, queue.pendingCount)
+        assertEquals(4, queue.pendingCount)
         assertEquals(
-            listOf("FI-A1", "FI-A2", "FI-A3"),
+            listOf("FI-A1", "FI-A1b", "FI-A2", "FI-A3"),
             queue.pending().map { it.event.interventionId }
         )
     }
@@ -124,12 +128,12 @@ class FormEvidenceCaptureImplTest {
     }
 
     @Test
-    fun repeatedPreviewFramesDoNotDuplicateTheSameSessionJpeg() {
+    fun repeatedPreviewFramesDoNotDuplicateTheSameCycleJpeg() {
         capture.onConfirmedCoaching(coachableEvent("FI-ONCE", sessionId = "SES-ONCE"))
         repeat(15) {
             seedFrameAndPose()
             capture.onPreviewFrameAvailable()
-            capture.onConfirmedCoaching(coachableEvent("FI-ONCE-AGAIN", sessionId = "SES-ONCE"))
+            capture.onConfirmedCoaching(coachableEvent("FI-ONCE", sessionId = "SES-ONCE"))
         }
         assertEquals(1, queue.pendingCount)
     }

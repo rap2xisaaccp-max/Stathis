@@ -1,5 +1,7 @@
 package citu.edu.stathis.mobile.features.exercise.data
 
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorCode
+import citu.edu.stathis.mobile.features.exercise.adaptive.RepCycleVerdict
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 import citu.edu.stathis.mobile.features.tasks.presentation.DebugSessionLog
 import citu.edu.stathis.mobile.features.exercise.domain.FormAccuracy
@@ -17,10 +19,24 @@ class ExerciseDetector {
     // General detection config
     private val defaultConfidenceThreshold: Float = 0.5f
     private val requiredStableFrames: Int = 3
+    private var pendingFlags: List<String> = emptyList()
+
+    /** Latest posture flags for this frame. Replaced on every analysis call. */
+    fun setPendingFlags(flags: List<String>) {
+        pendingFlags = flags
+    }
+
+    private fun takePendingFlags(): List<String> {
+        val flags = pendingFlags
+        pendingFlags = emptyList()
+        return flags
+    }
 
     // --- Squat ---
     private var squatState: ExerciseState = ExerciseState.WAITING
     private var squatRepCount: Int = 0
+    private var squatAttemptedRepCount: Int = 0
+    private val squatVerdict = RepCycleVerdict("SQUATS")
     private var squatInDownPosition: Boolean = false
     private var squatStandingHipY: Float? = null
     private val squatHipKneeVerticalThresholdFactor = 0.1f
@@ -32,6 +48,8 @@ class ExerciseDetector {
     // --- Push-up ---
     private var pushupState: ExerciseState = ExerciseState.WAITING
     private var pushupRepCount: Int = 0
+    private var pushupAttemptedRepCount: Int = 0
+    private val pushupVerdict = RepCycleVerdict("PUSH_UP")
     private var pushupInDownPosition: Boolean = false
     private var pushupStableFrames: Int = 0
     private var pushupLastRepTimeMs: Long = 0L
@@ -40,6 +58,8 @@ class ExerciseDetector {
     // --- Glute bridge ---
     private var gluteBridgeState: ExerciseState = ExerciseState.WAITING
     private var gluteBridgeRepCount: Int = 0
+    private var gluteBridgeAttemptedRepCount: Int = 0
+    private val gluteBridgeVerdict = RepCycleVerdict("GLUTE_BRIDGE")
     private var gluteBridgeInRaisedPosition: Boolean = false
     private var gluteBridgeStableFrames: Int = 0
     private var gluteBridgeLastRepTimeMs: Long = 0L
@@ -48,11 +68,15 @@ class ExerciseDetector {
     // --- Static lunge ---
     private var staticLungeState: ExerciseState = ExerciseState.WAITING
     private var staticLungeRepCount: Int = 0
+    private var staticLungeAttemptedRepCount: Int = 0
+    private val staticLungeVerdict = RepCycleVerdict("STATIC_LUNGES")
     private var staticLungeInDownPosition: Boolean = false
 
     // --- Lying leg raise ---
     private var lyingLegRaiseState: ExerciseState = ExerciseState.WAITING
     private var lyingLegRaiseRepCount: Int = 0
+    private var lyingLegRaiseAttemptedRepCount: Int = 0
+    private val lyingLegRaiseVerdict = RepCycleVerdict("LYING_LEG_RAISES")
     private var lyingLegRaiseInUpPosition: Boolean = false
     private var lyingLegRaiseStableFrames: Int = 0
     private var lyingLegRaiseLastRepTimeMs: Long = 0L
@@ -88,6 +112,8 @@ class ExerciseDetector {
     fun analyzeSquat(pose: Pose): ExerciseResult {
         val feedback = mutableListOf<String>()
         var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
 
         val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
         val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
@@ -103,7 +129,12 @@ class ExerciseDetector {
         if (leftHip == null || rightHip == null || leftKnee == null || rightKnee == null || leftShoulder == null || rightShoulder == null || leftAnkle == null || rightAnkle == null) {
             feedback.add("Ensure major body parts are visible.")
             resetSquatStateInternals()
-            return ExerciseResult(ExerciseState.INVALID, feedback, repCount = squatRepCount)
+            return ExerciseResult(
+                ExerciseState.INVALID,
+                feedback,
+                repCount = squatRepCount,
+                attemptedRepCount = squatAttemptedRepCount
+            )
         }
 
         val avgHipY = (leftHip.position.y + rightHip.position.y) / 2f
@@ -119,7 +150,25 @@ class ExerciseDetector {
         val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 4f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(squatState, feedback, repCompletedThisFrame, confidence, squatRepCount, formScore = null)
+            return ExerciseResult(
+                squatState,
+                feedback,
+                repCompletedThisFrame,
+                confidence,
+                squatRepCount,
+                formScore = null,
+                attemptedRepCount = squatAttemptedRepCount
+            )
+        }
+
+        val frameFlags = takePendingFlags()
+        // Sample depth only while still at the bottom. The stand-up frames that
+        // complete the rep must not look like a shallow squat, and must not clear
+        // a depth error that was already latched.
+        val squatAtBottom =
+            (avgHipY > avgKneeY + squatDownThreshold && hipAngle <= 145f) || avgKneeAngle <= 115f
+        if (squatState == ExerciseState.DOWN && squatAtBottom) {
+            squatVerdict.observe(squatWorkingIssues(avgKneeAngle, hipAngle), frameFlags)
         }
 
         val isStandingReady = avgHipY < avgKneeY - squatStandThreshold && hipAngle >= 155f
@@ -153,10 +202,20 @@ class ExerciseDetector {
                     if (squatStableFrames >= requiredStableFrames) {
                         squatState = ExerciseState.UP
                         val now = System.currentTimeMillis()
-                        if (squatInDownPosition && now - squatLastRepTimeMs >= squatMinRepIntervalMs) {
-                            squatRepCount++
-                            repCompletedThisFrame = true
-                            squatLastRepTimeMs = now
+                        if (squatInDownPosition) {
+                            val intervalOk = now - squatLastRepTimeMs >= squatMinRepIntervalMs
+                            val outcome = squatVerdict.consume(intervalOk)
+                            if (outcome.attempted) {
+                                squatAttemptedRepCount++
+                                squatLastRepTimeMs = now
+                                if (outcome.valid) {
+                                    squatRepCount++
+                                    repCompletedThisFrame = true
+                                } else {
+                                    repRejectedThisFrame = true
+                                    rejectedError = outcome.error
+                                }
+                            }
                         }
                         squatInDownPosition = false
                         squatStandingHipY = avgHipY
@@ -198,12 +257,31 @@ class ExerciseDetector {
             formIssueCount = feedback.size
         )
 
-        return ExerciseResult(squatState, feedback, repCompletedThisFrame, confidence, squatRepCount, formScore)
+        return ExerciseResult(
+            squatState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            squatRepCount,
+            formScore,
+            attemptedRepCount = squatAttemptedRepCount,
+            repRejected = repRejectedThisFrame,
+            rejectedErrorCode = rejectedError
+        )
+    }
+
+    private fun squatWorkingIssues(avgKneeAngle: Float, hipAngle: Float): List<String> {
+        val issues = mutableListOf<String>()
+        if (avgKneeAngle > 130f) issues.add("Squat deeper — bend your knees more.")
+        if (hipAngle > 155f) issues.add("Hinge at the hips and sit back into the squat.")
+        return issues
     }
 
     fun analyzePushup(pose: Pose): ExerciseResult {
         val feedback = mutableListOf<String>()
         var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
 
         val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
         val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
@@ -216,14 +294,35 @@ class ExerciseDetector {
         if (leftShoulder == null || rightShoulder == null || leftElbow == null || rightElbow == null || leftWrist == null || rightWrist == null) {
             feedback.add("Ensure shoulders, elbows, and wrists are visible.")
             resetPushupStateInternals()
-            return ExerciseResult(ExerciseState.INVALID, feedback, repCount = pushupRepCount)
+            return ExerciseResult(
+                ExerciseState.INVALID,
+                feedback,
+                repCount = pushupRepCount,
+                attemptedRepCount = pushupAttemptedRepCount
+            )
         }
 
         val avgElbowAngle = (angle(leftShoulder, leftElbow, leftWrist) + angle(rightShoulder, rightElbow, rightWrist)) / 2f
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftElbow.inFrameLikelihood + rightElbow.inFrameLikelihood + leftWrist.inFrameLikelihood + rightWrist.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount, formScore = null)
+            return ExerciseResult(
+                pushupState,
+                feedback,
+                repCompletedThisFrame,
+                confidence,
+                pushupRepCount,
+                formScore = null,
+                attemptedRepCount = pushupAttemptedRepCount
+            )
+        }
+
+        val frameFlags = takePendingFlags()
+        // Plank frames can latch pike/sag. The press back up is not a new low-ROM error
+        // and must not clear an error latched at the bottom.
+        val pushupAtBottom = avgElbowAngle <= 95f
+        if (pushupState == ExerciseState.UP || (pushupState == ExerciseState.DOWN && pushupAtBottom)) {
+            pushupVerdict.observe(pushupWorkingIssues(pushupState, avgElbowAngle), frameFlags)
         }
 
         when (pushupState) {
@@ -248,10 +347,20 @@ class ExerciseDetector {
                     if (pushupStableFrames >= requiredStableFrames) {
                         pushupState = ExerciseState.UP
                         val now = System.currentTimeMillis()
-                        if (pushupInDownPosition && now - pushupLastRepTimeMs >= pushupMinRepIntervalMs) {
-                            pushupRepCount++
-                            repCompletedThisFrame = true
-                            pushupLastRepTimeMs = now
+                        if (pushupInDownPosition) {
+                            val intervalOk = now - pushupLastRepTimeMs >= pushupMinRepIntervalMs
+                            val outcome = pushupVerdict.consume(intervalOk)
+                            if (outcome.attempted) {
+                                pushupAttemptedRepCount++
+                                pushupLastRepTimeMs = now
+                                if (outcome.valid) {
+                                    pushupRepCount++
+                                    repCompletedThisFrame = true
+                                } else {
+                                    repRejectedThisFrame = true
+                                    rejectedError = outcome.error
+                                }
+                            }
                         }
                         pushupInDownPosition = false
                         pushupStableFrames = 0
@@ -285,7 +394,25 @@ class ExerciseDetector {
             formIssueCount = feedback.size
         )
 
-        return ExerciseResult(pushupState, feedback, repCompletedThisFrame, confidence, pushupRepCount, formScore)
+        return ExerciseResult(
+            pushupState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            pushupRepCount,
+            formScore,
+            attemptedRepCount = pushupAttemptedRepCount,
+            repRejected = repRejectedThisFrame,
+            rejectedErrorCode = rejectedError
+        )
+    }
+
+    private fun pushupWorkingIssues(state: ExerciseState, avgElbowAngle: Float): List<String> {
+        val issues = mutableListOf<String>()
+        if (state == ExerciseState.DOWN && avgElbowAngle > 110f) {
+            issues.add("Lower your chest closer to the ground.")
+        }
+        return issues
     }
 
     fun analyzeSitup(pose: Pose): ExerciseResult {
@@ -376,6 +503,8 @@ class ExerciseDetector {
     fun analyzeGluteBridge(pose: Pose): ExerciseResult {
         val feedback = mutableListOf<String>()
         var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
 
         val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
         val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
@@ -387,7 +516,12 @@ class ExerciseDetector {
         if (leftShoulder == null || rightShoulder == null || leftHip == null || rightHip == null || leftKnee == null || rightKnee == null) {
             feedback.add("Keep shoulders, hips, and knees visible.")
             resetGluteBridgeStateInternals()
-            return ExerciseResult(ExerciseState.INVALID, feedback, repCount = gluteBridgeRepCount)
+            return ExerciseResult(
+                ExerciseState.INVALID,
+                feedback,
+                repCount = gluteBridgeRepCount,
+                attemptedRepCount = gluteBridgeAttemptedRepCount
+            )
         }
 
         val avgShoulderY = (leftShoulder.position.y + rightShoulder.position.y) / 2f
@@ -399,7 +533,23 @@ class ExerciseDetector {
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(gluteBridgeState, feedback, repCompletedThisFrame, confidence, gluteBridgeRepCount, formScore = null)
+            return ExerciseResult(
+                gluteBridgeState,
+                feedback,
+                repCompletedThisFrame,
+                confidence,
+                gluteBridgeRepCount,
+                formScore = null,
+                attemptedRepCount = gluteBridgeAttemptedRepCount
+            )
+        }
+
+        val frameFlags = takePendingFlags()
+        val gluteLowering =
+            hipAngle <= 135f || avgHipY >= max(avgShoulderY, avgKneeY) - raisedThreshold * 0.3f
+        // The descent that finishes the rep is not a low-ROM error.
+        if (gluteBridgeState == ExerciseState.DOWN && !gluteLowering) {
+            gluteBridgeVerdict.observe(gluteWorkingIssues(hipAngle), frameFlags)
         }
 
         when (gluteBridgeState) {
@@ -417,16 +567,25 @@ class ExerciseDetector {
                 }
             }
             ExerciseState.DOWN -> {
-                val lowerCandidate = hipAngle <= 135f || avgHipY >= max(avgShoulderY, avgKneeY) - raisedThreshold * 0.3f
-                if (lowerCandidate) {
+                if (gluteLowering) {
                     gluteBridgeStableFrames++
                     if (gluteBridgeStableFrames >= requiredStableFrames) {
                         gluteBridgeState = ExerciseState.UP
                         val now = System.currentTimeMillis()
-                        if (gluteBridgeInRaisedPosition && now - gluteBridgeLastRepTimeMs >= gluteBridgeMinRepIntervalMs) {
-                            gluteBridgeRepCount++
-                            repCompletedThisFrame = true
-                            gluteBridgeLastRepTimeMs = now
+                        if (gluteBridgeInRaisedPosition) {
+                            val intervalOk = now - gluteBridgeLastRepTimeMs >= gluteBridgeMinRepIntervalMs
+                            val outcome = gluteBridgeVerdict.consume(intervalOk)
+                            if (outcome.attempted) {
+                                gluteBridgeAttemptedRepCount++
+                                gluteBridgeLastRepTimeMs = now
+                                if (outcome.valid) {
+                                    gluteBridgeRepCount++
+                                    repCompletedThisFrame = true
+                                } else {
+                                    repRejectedThisFrame = true
+                                    rejectedError = outcome.error
+                                }
+                            }
                         }
                         gluteBridgeInRaisedPosition = false
                         gluteBridgeStableFrames = 0
@@ -459,13 +618,31 @@ class ExerciseDetector {
             formIssueCount = feedback.size
         )
 
-        return ExerciseResult(gluteBridgeState, feedback, repCompletedThisFrame, confidence, gluteBridgeRepCount, formScore)
+        return ExerciseResult(
+            gluteBridgeState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            gluteBridgeRepCount,
+            formScore,
+            attemptedRepCount = gluteBridgeAttemptedRepCount,
+            repRejected = repRejectedThisFrame,
+            rejectedErrorCode = rejectedError
+        )
+    }
+
+    private fun gluteWorkingIssues(hipAngle: Float): List<String> {
+        val issues = mutableListOf<String>()
+        if (hipAngle < 145f) issues.add("Drive your hips higher into a full bridge.")
+        return issues
     }
 
 
     fun analyzeStaticLunge(pose: Pose): ExerciseResult {
         val feedback = mutableListOf<String>()
         var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
 
         val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
         val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
@@ -479,7 +656,12 @@ class ExerciseDetector {
         if (leftHip == null || rightHip == null || leftKnee == null || rightKnee == null || leftAnkle == null || rightAnkle == null || leftShoulder == null || rightShoulder == null) {
             feedback.add("Keep your hips, knees, and ankles visible.")
             resetStaticLungeStateInternals()
-            return ExerciseResult(ExerciseState.INVALID, feedback, repCount = staticLungeRepCount)
+            return ExerciseResult(
+                ExerciseState.INVALID,
+                feedback,
+                repCount = staticLungeRepCount,
+                attemptedRepCount = staticLungeAttemptedRepCount
+            )
         }
 
         val leftKneeAngle = angle(leftHip, leftKnee, leftAnkle)
@@ -494,6 +676,13 @@ class ExerciseDetector {
         val bentLegAngle = min(leftKneeAngle, rightKneeAngle)
         val straightLegAngle = max(leftKneeAngle, rightKneeAngle)
 
+        val frameFlags = takePendingFlags()
+        // Depth is only meaningful while the front knee is still in the lunge.
+        // Standing back up must not latch DEPTH_LOW or clear an error from the bottom.
+        if (staticLungeState == ExerciseState.DOWN && bentLegAngle <= 120f) {
+            staticLungeVerdict.observe(emptyList(), frameFlags)
+        }
+
         when (staticLungeState) {
             ExerciseState.WAITING, ExerciseState.UP -> {
                 if (bentLegAngle <= 115f && straightLegAngle >= 140f && avgHipY > avgShoulderY - downThreshold) {
@@ -505,8 +694,17 @@ class ExerciseDetector {
                 if (bentLegAngle >= 150f && straightLegAngle >= 150f) {
                     staticLungeState = ExerciseState.UP
                     if (staticLungeInDownPosition) {
-                        staticLungeRepCount++
-                        repCompletedThisFrame = true
+                        val outcome = staticLungeVerdict.consume(intervalAllowsNewAttempt = true)
+                        if (outcome.attempted) {
+                            staticLungeAttemptedRepCount++
+                            if (outcome.valid) {
+                                staticLungeRepCount++
+                                repCompletedThisFrame = true
+                            } else {
+                                repRejectedThisFrame = true
+                                rejectedError = outcome.error
+                            }
+                        }
                     }
                     staticLungeInDownPosition = false
                 }
@@ -517,7 +715,17 @@ class ExerciseDetector {
         val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(staticLungeState, feedback, repCompletedThisFrame, confidence, staticLungeRepCount, formScore = null)
+            return ExerciseResult(
+                staticLungeState,
+                feedback,
+                repCompletedThisFrame,
+                confidence,
+                staticLungeRepCount,
+                formScore = null,
+                attemptedRepCount = staticLungeAttemptedRepCount,
+                repRejected = repRejectedThisFrame,
+                rejectedErrorCode = rejectedError
+            )
         }
 
         when (staticLungeState) {
@@ -549,7 +757,17 @@ class ExerciseDetector {
             formIssueCount = feedback.size
         )
 
-        return ExerciseResult(staticLungeState, feedback, repCompletedThisFrame, confidence, staticLungeRepCount, formScore)
+        return ExerciseResult(
+            staticLungeState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            staticLungeRepCount,
+            formScore,
+            attemptedRepCount = staticLungeAttemptedRepCount,
+            repRejected = repRejectedThisFrame,
+            rejectedErrorCode = rejectedError
+        )
     }
 
     fun analyzeLyingLegRaise(pose: Pose): ExerciseResult {
@@ -569,7 +787,8 @@ class ExerciseDetector {
             return ExerciseResult(
                 ExerciseState.INVALID,
                 listOf("Keep hips, knees, ankles, and shoulders visible."),
-                repCount = lyingLegRaiseRepCount
+                repCount = lyingLegRaiseRepCount,
+                attemptedRepCount = lyingLegRaiseAttemptedRepCount
             )
         }
 
@@ -616,6 +835,8 @@ class ExerciseDetector {
     ): ExerciseResult {
         val feedback = mutableListOf<String>()
         var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
 
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
@@ -625,7 +846,8 @@ class ExerciseDetector {
                 feedback,
                 false,
                 confidence,
-                lyingLegRaiseRepCount
+                lyingLegRaiseRepCount,
+                attemptedRepCount = lyingLegRaiseAttemptedRepCount
             )
         }
 
@@ -696,9 +918,12 @@ class ExerciseDetector {
                 feedback,
                 false,
                 confidence,
-                lyingLegRaiseRepCount
+                lyingLegRaiseRepCount,
+                attemptedRepCount = lyingLegRaiseAttemptedRepCount
             )
         }
+
+        val frameFlags = takePendingFlags()
 
         if (!kneesOkForCount) {
             feedback.add("Keep your legs straighter for better control.")
@@ -708,6 +933,16 @@ class ExerciseDetector {
         }
         if (!hipsStable || !torsoStable) {
             feedback.add("Keep your hips and torso on the floor.")
+        }
+
+        // Observe only while the legs are raised. Lowering back to the floor is the
+        // end of the rep, not a new low-ROM error, and must not clear a latched error.
+        if (bothRaised) {
+            val issues = feedback.toMutableList()
+            if (avgAnkleY >= avgHipY - raiseThreshold * 0.7f) {
+                issues.add("Raise your legs higher while keeping them controlled.")
+            }
+            lyingLegRaiseVerdict.observe(issues, frameFlags)
         }
 
         // Soft quality sampled during the raise — does not block entering the raised phase.
@@ -747,13 +982,19 @@ class ExerciseDetector {
                         lyingLegRaiseState = ExerciseState.UP
                         // Count only a full cycle that achieved raise ROM + soft quality
                         // at some point during the raised phase (not necessarily on lower).
-                        if (lyingLegRaiseInUpPosition &&
-                            lyingLegRaiseRaiseQualityOk &&
-                            canCount
-                        ) {
-                            lyingLegRaiseRepCount++
-                            repCompletedThisFrame = true
-                            lyingLegRaiseLastRepTimeMs = nowMs
+                        if (lyingLegRaiseInUpPosition) {
+                            val outcome = lyingLegRaiseVerdict.consume(canCount)
+                            if (outcome.rejected) {
+                                lyingLegRaiseAttemptedRepCount++
+                                lyingLegRaiseLastRepTimeMs = nowMs
+                                repRejectedThisFrame = true
+                                rejectedError = outcome.error
+                            } else if (outcome.valid && lyingLegRaiseRaiseQualityOk && canCount) {
+                                lyingLegRaiseAttemptedRepCount++
+                                lyingLegRaiseRepCount++
+                                repCompletedThisFrame = true
+                                lyingLegRaiseLastRepTimeMs = nowMs
+                            }
                         }
                         lyingLegRaiseInUpPosition = false
                         lyingLegRaiseRaiseQualityOk = false
@@ -831,7 +1072,17 @@ class ExerciseDetector {
 
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
-            return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore = null)
+            return ExerciseResult(
+                lyingLegRaiseState,
+                feedback,
+                repCompletedThisFrame,
+                confidence,
+                lyingLegRaiseRepCount,
+                formScore = null,
+                attemptedRepCount = lyingLegRaiseAttemptedRepCount,
+                repRejected = repRejectedThisFrame,
+                rejectedErrorCode = rejectedError
+            )
         }
 
         when (lyingLegRaiseState) {
@@ -857,7 +1108,17 @@ class ExerciseDetector {
             formIssueCount = feedback.size
         )
 
-        return ExerciseResult(lyingLegRaiseState, feedback, repCompletedThisFrame, confidence, lyingLegRaiseRepCount, formScore)
+        return ExerciseResult(
+            lyingLegRaiseState,
+            feedback,
+            repCompletedThisFrame,
+            confidence,
+            lyingLegRaiseRepCount,
+            formScore,
+            attemptedRepCount = lyingLegRaiseAttemptedRepCount,
+            repRejected = repRejectedThisFrame,
+            rejectedErrorCode = rejectedError
+        )
     }
 
     /**
@@ -895,21 +1156,25 @@ class ExerciseDetector {
         squatState = ExerciseState.WAITING
         squatInDownPosition = false
         squatStandingHipY = null
+        squatVerdict.reset()
     }
 
     private fun resetPushupStateInternals() {
         pushupState = ExerciseState.WAITING
         pushupInDownPosition = false
+        pushupVerdict.reset()
     }
 
     private fun resetGluteBridgeStateInternals() {
         gluteBridgeState = ExerciseState.WAITING
         gluteBridgeInRaisedPosition = false
+        gluteBridgeVerdict.reset()
     }
 
     private fun resetStaticLungeStateInternals() {
         staticLungeState = ExerciseState.WAITING
         staticLungeInDownPosition = false
+        staticLungeVerdict.reset()
     }
 
     private fun resetLyingLegRaiseStateInternals() {
@@ -922,6 +1187,7 @@ class ExerciseDetector {
         lyingLegRaiseRestingLegSpan = 0f
         lyingLegRaisePrevAnkleY = null
         lyingLegRaiseRaiseQualityOk = false
+        lyingLegRaiseVerdict.reset()
         // #region agent log
         lyingLegRaiseLastLoggedState = null
         // #endregion
@@ -944,6 +1210,16 @@ class ExerciseDetector {
             ExerciseType.LYING_LEG_RAISE -> lyingLegRaiseRepCount
         }
 
+    fun currentAttemptedRepCount(type: ExerciseType): Int =
+        when (type) {
+            ExerciseType.SQUAT -> squatAttemptedRepCount
+            ExerciseType.PUSHUP -> pushupAttemptedRepCount
+            ExerciseType.SIT_UP -> situpRepCount
+            ExerciseType.GLUTE_BRIDGE -> gluteBridgeAttemptedRepCount
+            ExerciseType.STATIC_LUNGE -> staticLungeAttemptedRepCount
+            ExerciseType.LYING_LEG_RAISE -> lyingLegRaiseAttemptedRepCount
+        }
+
     /**
      * Abort an in-progress rep cycle without clearing the session count.
      * Framing failures must not complete a DOWN→UP transition from a cropped pose.
@@ -964,23 +1240,33 @@ class ExerciseDetector {
     fun resetExercise() {
         squatState = ExerciseState.WAITING
         squatRepCount = 0
+        squatAttemptedRepCount = 0
+        squatVerdict.reset()
         squatInDownPosition = false
         squatStandingHipY = null
 
         pushupState = ExerciseState.WAITING
         pushupRepCount = 0
+        pushupAttemptedRepCount = 0
+        pushupVerdict.reset()
         pushupInDownPosition = false
 
         gluteBridgeState = ExerciseState.WAITING
         gluteBridgeRepCount = 0
+        gluteBridgeAttemptedRepCount = 0
+        gluteBridgeVerdict.reset()
         gluteBridgeInRaisedPosition = false
 
         staticLungeState = ExerciseState.WAITING
         staticLungeRepCount = 0
+        staticLungeAttemptedRepCount = 0
+        staticLungeVerdict.reset()
         staticLungeInDownPosition = false
 
         lyingLegRaiseState = ExerciseState.WAITING
         lyingLegRaiseRepCount = 0
+        lyingLegRaiseAttemptedRepCount = 0
+        lyingLegRaiseVerdict.reset()
         lyingLegRaiseInUpPosition = false
         lyingLegRaiseStableFrames = 0
         lyingLegRaiseLastRepTimeMs = 0L
@@ -998,5 +1284,7 @@ class ExerciseDetector {
 
     /** Test helper: current LLR absolute rep count. */
     internal fun lyingLegRaiseRepCountForTests(): Int = lyingLegRaiseRepCount
+
+    internal fun lyingLegRaiseAttemptedRepCountForTests(): Int = lyingLegRaiseAttemptedRepCount
 
 }

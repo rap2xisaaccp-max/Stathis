@@ -5,6 +5,7 @@ export type FormMasteryChartItem = {
   formMasteryPercent?: number;
   eligibleAttemptCount?: number;
   lastAttemptAt?: string | null;
+  state?: string | null;
 };
 
 export function formMasteryDisplayPercent(formMasteryLevel: number): number {
@@ -15,9 +16,22 @@ export function formMasteryDisplayPercent(formMasteryLevel: number): number {
  * Teacher/mobile Form Mastery bars from dedicated FormMasteryDTO rows.
  * Coaching-frequency masteryLevel must never be passed here.
  */
+export function formMasteryStateLabel(state: string | null | undefined): string {
+  switch ((state || '').trim().toUpperCase()) {
+    case 'IMPROVING':
+      return 'Improving';
+    case 'MASTERED':
+      return 'Mastered';
+    case 'LEARNING':
+      return 'Learning';
+    default:
+      return '';
+  }
+}
+
 export function buildFormMasteryByExerciseChartData(
   formMastery: FormMasteryChartItem[] | null | undefined
-): Array<{ exercise: string; masteryPct: number; attemptCount: number }> {
+): Array<{ exercise: string; masteryPct: number; attemptCount: number; state: string }> {
   return [...(formMastery || [])]
     .filter((item) => item != null && Number.isFinite(item.formMasteryLevel))
     .sort((a, b) => {
@@ -26,9 +40,14 @@ export function buildFormMasteryByExerciseChartData(
       if (tb !== ta) return tb - ta;
       return (b.formMasteryLevel || 0) - (a.formMasteryLevel || 0);
     })
-    .map((item) => ({
-      exercise: (item.exerciseType || 'UNKNOWN').replaceAll('_', ' '),
-      masteryPct: formMasteryDisplayPercent(item.formMasteryLevel),
-      attemptCount: item.eligibleAttemptCount || 0,
-    }));
+    .map((item) => {
+      const state = formMasteryStateLabel(item.state);
+      const name = (item.exerciseType || 'UNKNOWN').replaceAll('_', ' ');
+      return {
+        exercise: state ? `${name} · ${state}` : name,
+        masteryPct: formMasteryDisplayPercent(item.formMasteryLevel),
+        attemptCount: item.eligibleAttemptCount || 0,
+        state,
+      };
+    });
 }

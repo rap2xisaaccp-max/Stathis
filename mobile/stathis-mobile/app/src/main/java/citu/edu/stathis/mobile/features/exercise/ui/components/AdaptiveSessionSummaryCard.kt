@@ -90,7 +90,7 @@ fun StudentMasterySection(
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Average form quality across completed classroom attempts. This is not percent of correct reps.",
+            text = "Persistent form quality across classroom attempts. Learning, Improving, or Mastered. This is not coaching frequency.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -134,7 +134,7 @@ fun StudentMasterySection(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "${FormMasteryDisplay.percentLabel(item.formMasteryLevel)} form quality · ${item.eligibleAttemptCount} classroom ${if (item.eligibleAttemptCount == 1) "attempt" else "attempts"}",
+                                        text = "${FormMasteryDisplay.percentLabel(item.formMasteryLevel)} · ${FormMasteryDisplay.stateLabel(item.state)} · ${item.eligibleAttemptCount} classroom ${if (item.eligibleAttemptCount == 1) "attempt" else "attempts"}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

@@ -64,6 +64,10 @@ public class ScoreAttempt {
     @Column(name = "reps")
     private Integer reps;
 
+    /** Completed movements including reps rejected for form. Null on rows saved before this field. */
+    @Column(name = "attempted_reps")
+    private Integer attemptedReps;
+
     @Column(name = "goal_reps")
     private Integer goalReps;
 

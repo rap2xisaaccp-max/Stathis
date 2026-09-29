@@ -7,7 +7,8 @@ data class ExerciseResultSubmission(
     val goalReps: Int? = null,
     val caloriesBurned: Double? = null,
     val exerciseType: String? = null,
-    val classroomId: String? = null
+    val classroomId: String? = null,
+    val attemptedReps: Int? = null
 )
 
 data class ExerciseProgressPayload(

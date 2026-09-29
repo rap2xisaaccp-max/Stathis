@@ -9,6 +9,8 @@ import lombok.*;
 @Builder
 public class ExerciseResultSubmissionDTO {
     private int reps;
+    /** Completed movements including form-rejected reps. Null when an older client omits it. */
+    private Integer attemptedReps;
     private double accuracy;
     private long timeTaken; // in milliseconds
     private Integer goalReps;

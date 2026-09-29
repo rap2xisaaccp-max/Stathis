@@ -9,4 +9,12 @@ object FormMasteryDisplay {
         kotlin.math.round(formMasteryLevel.coerceIn(0.0, 1.0) * 100.0).toInt()
 
     fun percentLabel(formMasteryLevel: Double): String = "${percent(formMasteryLevel)}%"
+
+    fun stateLabel(state: String?): String =
+        when (state?.trim()?.uppercase()) {
+            "IMPROVING" -> "Improving"
+            "MASTERED" -> "Mastered"
+            "LEARNING" -> "Learning"
+            else -> "Learning"
+        }
 }

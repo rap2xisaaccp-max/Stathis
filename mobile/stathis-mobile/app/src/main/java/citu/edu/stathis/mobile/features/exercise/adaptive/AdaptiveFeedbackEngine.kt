@@ -18,7 +18,7 @@ import timber.log.Timber
 /**
  * On-device coaching orchestrator.
  *
- * Confirmed physical form error → highlight + TTS cue; at most one evidence snapshot per attempt.
+ * Confirmed physical form error → highlight + TTS cue; one evidence snapshot per correction cycle.
  * Form signals are serialized; lifecycle claims before delivery.
  */
 @Singleton
@@ -40,6 +40,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
     @Volatile private var cooldownMs: Long = 8000L
     @Volatile private var activeDelivery: DeliveredFeedback? = null
     private val interventionLifecycle = InterventionLifecycle()
+    private val encouragement = EncouragementPolicy()
     private val sessionErrorCodes = linkedSetOf<String>()
     @Volatile private var sessionInterventionCount: Int = 0
     @Volatile private var sessionRecorded: Boolean = false
@@ -66,6 +67,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
         this.sessionRecorded = false
         sessionErrorCodes.clear()
         interventionLifecycle.reset()
+        encouragement.reset()
         pendingResponses.clear()
         delivery.resetSessionSpeech()
         delivery.ensureInitialized()
@@ -83,6 +85,30 @@ class AdaptiveFeedbackEngine @Inject constructor(
         )
 
     fun activeFeedback(): DeliveredFeedback? = activeDelivery
+
+    /**
+     * A completed movement was rejected for a supported form error.
+     * Speaks once. Does not claim an intervention and does not capture evidence.
+     */
+    fun onRepRejected(errorCode: FormErrorCode?, now: Long = System.currentTimeMillis()) {
+        encouragement.onRejected()
+        if (!FormErrorClassifier.isCoachableForExercise(exerciseType, errorCode) || errorCode == null) {
+            return
+        }
+        sessionErrorCodes.add(errorCode.name)
+        delivery.speakRepNotCounted(
+            AttemptResultCopy.notCountedLine(exerciseType, errorCode),
+            now
+        )
+    }
+
+    /** A valid rep. Praise is skipped while a correction cycle is open or speech is busy. */
+    fun onValidRep(now: Long = System.currentTimeMillis()) {
+        val correctionOpen = interventionLifecycle.hasOpenIntervention()
+        encouragement.onValidRep(now) { line ->
+            if (correctionOpen) false else delivery.speakEncouragement(line, now)
+        }
+    }
 
     fun clearActiveFeedbackIfExpired(now: Long = System.currentTimeMillis()) {
         val active = activeDelivery ?: return

@@ -14,6 +14,11 @@ import javax.inject.Singleton
 @Singleton
 class OnDeviceExerciseAnalyzer @Inject constructor() {
     private val exerciseDetector = ExerciseDetector()
+    private var pendingFlags: List<String> = emptyList()
+
+    fun setPendingFlags(flags: List<String>) {
+        pendingFlags = flags
+    }
 
     fun analyzePose(
         pose: Pose,
@@ -41,6 +46,8 @@ class OnDeviceExerciseAnalyzer @Inject constructor() {
                 previewHeight = previewHeight
             )
         if (!framing.ok) {
+            pendingFlags = emptyList()
+            exerciseDetector.setPendingFlags(emptyList())
             exerciseDetector.resetPhaseKeepReps()
             return OnDeviceFeedback(
                 exerciseType = exerciseType,
@@ -50,10 +57,13 @@ class OnDeviceExerciseAnalyzer @Inject constructor() {
                 confidence = framing.minLikelihood,
                 angleData = emptyMap(),
                 formScore = null,
-                framingInvalid = true
+                framingInvalid = true,
+                attemptedRepCount = exerciseDetector.currentAttemptedRepCount(exerciseType)
             )
         }
 
+        exerciseDetector.setPendingFlags(pendingFlags)
+        pendingFlags = emptyList()
         val exerciseResult: ExerciseResult = when (exerciseType) {
             ExerciseType.SQUAT -> exerciseDetector.analyzeSquat(pose)
             ExerciseType.PUSHUP -> exerciseDetector.analyzePushup(pose)
@@ -70,7 +80,10 @@ class OnDeviceExerciseAnalyzer @Inject constructor() {
             formIssues = exerciseResult.feedback,
             confidence = exerciseResult.confidence ?: 0.0f,
             angleData = emptyMap(),
-            formScore = exerciseResult.formScore
+            formScore = exerciseResult.formScore,
+            attemptedRepCount = exerciseResult.attemptedRepCount,
+            repRejected = exerciseResult.repRejected,
+            rejectedErrorCode = exerciseResult.rejectedErrorCode
         )
     }
 

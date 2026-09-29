@@ -1,5 +1,6 @@
 package citu.edu.stathis.mobile.features.exercise.data
 
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorCode
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 
 
@@ -14,5 +15,10 @@ data class ExerciseResult(
      * Exercise form quality for this frame [0,1], or null when form cannot be assessed
      * (waiting / missing landmarks / low detection). Used for session accuracy.
      */
-    val formScore: Float? = null
+    val formScore: Float? = null,
+    /** Completed movements this session, including reps rejected for form. */
+    val attemptedRepCount: Int = 0,
+    /** True on the single frame where a completed movement was not counted. */
+    val repRejected: Boolean = false,
+    val rejectedErrorCode: FormErrorCode? = null
 )

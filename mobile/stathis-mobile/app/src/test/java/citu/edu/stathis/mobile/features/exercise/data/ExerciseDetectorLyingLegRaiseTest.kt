@@ -105,6 +105,7 @@ class ExerciseDetectorLyingLegRaiseTest {
             frame(leftAnkleY = 520f, rightAnkleY = 520f, leftKneeAngle = 110f, rightKneeAngle = 110f)
         }
         assertEquals(0, detector.lyingLegRaiseRepCountForTests())
+        assertEquals(1, detector.lyingLegRaiseAttemptedRepCountForTests())
     }
 
     @Test

@@ -111,7 +111,7 @@ export function AdaptiveLearningInsights({
               <CardContent className="pt-6">
                 <BarChart
                   title="Form mastery by exercise"
-                  description="Average form quality across completed classroom attempts. Not percent of correct reps, and not how often coaching cues fired."
+                  description="Persistent form quality across classroom attempts (Learning, Improving, or Mastered). Not coaching frequency, and not percent of correct reps."
                   data={masteryChart.map((row) => ({
                     exercise: row.exercise,
                     masteryPct: row.masteryPct,

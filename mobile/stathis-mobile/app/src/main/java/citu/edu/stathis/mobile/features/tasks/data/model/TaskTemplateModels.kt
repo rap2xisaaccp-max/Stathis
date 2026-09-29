@@ -125,7 +125,12 @@ data class ExercisePerformance(
     val score: Int, // Calculated score based on performance
     val caloriesBurned: Double = 0.0,
     val exerciseType: String? = null,
-    val classroomId: String? = null
+    val classroomId: String? = null,
+    /** Completed movements, including reps rejected for form. */
+    val attemptedReps: Int = actualReps,
+    val formErrorCodes: List<String> = emptyList(),
+    val didWell: String = "",
+    val improve: String = ""
 )
 
 

@@ -370,6 +370,7 @@ fun ExerciseScreen(
                                         // #endregion
                                         // Prefer live AtomicBoolean so Start/Stop is not stuck on a stale CameraX closure.
                                         if (trackingLive && exerciseType != null) {
+                                            onDeviceExerciseAnalyzer.setPendingFlags(backendSignalRef.flags)
                                             val analyzed = onDeviceExerciseAnalyzer.analyzePose(
                                                 pose = pose,
                                                 exerciseType = exerciseType,

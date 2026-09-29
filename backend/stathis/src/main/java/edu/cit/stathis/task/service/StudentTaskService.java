@@ -224,7 +224,7 @@ public class StudentTaskService {
         existingScore.setAccuracy(quizAccuracy);
 
         Score savedScore = scoreRepository.save(existingScore);
-        recordScoreAttempt(savedScore, score, existingScore.getMaxScore(), quizAccuracy, null, null, null, 0L);
+        recordScoreAttempt(savedScore, score, existingScore.getMaxScore(), quizAccuracy, null, null, null, 0L, null);
         updateTaskCompletion(studentId, taskId, "quiz", true);
         return savedScore;
     }
@@ -321,7 +321,7 @@ public class StudentTaskService {
         existingScore.setAccuracy(quizAccuracy);
 
         Score savedScore = scoreRepository.save(existingScore);
-        recordScoreAttempt(savedScore, computedScore, maxScore, quizAccuracy, null, null, null, 0L);
+        recordScoreAttempt(savedScore, computedScore, maxScore, quizAccuracy, null, null, null, 0L, null);
         updateTaskCompletion(studentId, taskId, "quiz", true);
         return savedScore;
     }
@@ -340,7 +340,8 @@ public class StudentTaskService {
             Integer reps,
             Integer goalReps,
             Double caloriesBurned,
-            long timeTaken) {
+            long timeTaken,
+            Integer attemptedReps) {
         ScoreAttempt attempt = ScoreAttempt.builder()
                 .physicalId("ATTEMPT-" + UUID.randomUUID().toString().toUpperCase())
                 .scorePhysicalId(score.getPhysicalId())
@@ -353,6 +354,7 @@ public class StudentTaskService {
                 .maxScore(maxScore)
                 .accuracy(accuracy)
                 .reps(reps)
+                .attemptedReps(attemptedReps)
                 .goalReps(goalReps)
                 .caloriesBurned(caloriesBurned)
                 .timeTaken(timeTaken)
@@ -381,6 +383,10 @@ public class StudentTaskService {
                                 "Exercise template not found with ID: " + exerciseTemplateId));
 
         int reps = result != null ? Math.max(0, result.getReps()) : 0;
+        Integer attemptedReps = result != null ? result.getAttemptedReps() : null;
+        if (attemptedReps != null && attemptedReps < reps) {
+            attemptedReps = reps;
+        }
         double accuracy = result != null ? result.getAccuracy() : 0.0;
         long timeTaken = result != null ? Math.max(0L, result.getTimeTaken()) : 0L;
         int goalReps = result != null && result.getGoalReps() != null
@@ -452,7 +458,8 @@ public class StudentTaskService {
                 reps,
                 goalReps,
                 sessionCalories,
-                timeTaken);
+                timeTaken,
+                attemptedReps);
         updateTaskCompletion(studentId, taskId, "exercise", true);
 
         String classroomId = result != null ? result.getClassroomId() : null;

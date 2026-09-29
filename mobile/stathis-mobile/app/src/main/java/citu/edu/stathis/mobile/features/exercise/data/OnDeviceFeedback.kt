@@ -1,5 +1,6 @@
 package citu.edu.stathis.mobile.features.exercise.data
 
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorCode
 import citu.edu.stathis.mobile.features.exercise.data.model.ExerciseState
 
 data class OnDeviceFeedback(
@@ -20,5 +21,8 @@ data class OnDeviceFeedback(
      */
     val formScore: Float? = null,
     /** True when the live framing gate rejected this pose. Physical flags must not be attached. */
-    val framingInvalid: Boolean = false
+    val framingInvalid: Boolean = false,
+    val attemptedRepCount: Int = 0,
+    val repRejected: Boolean = false,
+    val rejectedErrorCode: FormErrorCode? = null
 )

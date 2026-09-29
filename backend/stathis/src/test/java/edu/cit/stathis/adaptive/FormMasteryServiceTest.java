@@ -46,10 +46,13 @@ class FormMasteryServiceTest {
         rows.stream().filter(r -> "SQUATS".equals(r.getExerciseType())).findFirst().orElseThrow();
     FormMasteryDTO pushRow =
         rows.stream().filter(r -> "PUSH_UP".equals(r.getExerciseType())).findFirst().orElseThrow();
-    assertEquals(0.50, squatRow.getFormMasteryLevel(), 1e-9);
-    assertEquals(50.0, squatRow.getFormMasteryPercent(), 1e-9);
+    // 40 then 60, historical rows without goal/attempted: 0.65*0.40 + 0.35*0.60 = 0.47
+    assertEquals(0.47, squatRow.getFormMasteryLevel(), 1e-9);
+    assertEquals(47.0, squatRow.getFormMasteryPercent(), 1e-9);
+    assertEquals("LEARNING", squatRow.getState());
     assertEquals(2, squatRow.getEligibleAttemptCount());
     assertEquals(1.0, pushRow.getFormMasteryLevel(), 1e-9);
+    assertEquals("LEARNING", pushRow.getState());
     assertEquals(1, pushRow.getEligibleAttemptCount());
   }
 
@@ -67,7 +70,9 @@ class FormMasteryServiceTest {
     List<FormMasteryDTO> rows = service.listForStudent("STUDENT-1");
     assertEquals(1, rows.size());
     assertEquals("SQUATS", rows.get(0).getExerciseType());
-    assertEquals(0.60, rows.get(0).getFormMasteryLevel(), 1e-9);
+    // 40 then 80: 0.65*0.40 + 0.35*0.80 = 0.54
+    assertEquals(0.54, rows.get(0).getFormMasteryLevel(), 1e-9);
+    assertEquals("LEARNING", rows.get(0).getState());
   }
 
   @Test

@@ -60,6 +60,8 @@ class AdaptiveSessionViewModel @Inject constructor(
     private val _profileError = MutableStateFlow<String?>(null)
     val profileError: StateFlow<String?> = _profileError.asStateFlow()
 
+    private var lastValidReps: Int = 0
+
     fun startSession(
         exerciseType: String,
         taskId: String? = null,
@@ -67,8 +69,10 @@ class AdaptiveSessionViewModel @Inject constructor(
         attemptNumber: Int? = null
     ) {
         frameBuffer.clear()
+        lastValidReps = 0
         engine.startSession(exerciseType, taskId, classroomId, attemptNumber)
         _sessionSummary.value = AdaptiveSessionSummary()
+        loadLearningProfileAndMastery()
     }
 
     fun onCopiedPreviewFrame(bitmap: Bitmap) {
@@ -106,6 +110,14 @@ class AdaptiveSessionViewModel @Inject constructor(
                     currentReps = feedback.repCount,
                     visibilityOk = !framingInvalid
                 )
+            if (feedback.repRejected) {
+                engine.onRepRejected(feedback.rejectedErrorCode)
+            } else if (feedback.repCount > lastValidReps) {
+                repeat(feedback.repCount - lastValidReps) {
+                    engine.onValidRep()
+                }
+            }
+            lastValidReps = feedback.repCount
             publishDelivery(delivered)
             _sessionSummary.value = engine.sessionSummary()
         }

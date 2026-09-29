@@ -21,6 +21,7 @@ public class ScoreAttemptResponseDTO {
     private int maxScore;
     private Double accuracy;
     private Integer reps;
+    private Integer attemptedReps;
     private Integer goalReps;
     private Double caloriesBurned;
     private Long timeTaken;

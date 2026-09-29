@@ -10,7 +10,7 @@ assert.equal(formMasteryDisplayPercent(1), 100);
 assert.equal(
   formMasteryDisplayPercent((40 + 60) / 2 / 100),
   50,
-  'retries 40 and 60 average to 50 for student and teacher'
+  'display percent rounds a 0.50 level to 50'
 );
 
 assert.equal(
@@ -24,6 +24,31 @@ assert.equal(
     },
   ])[0].masteryPct,
   50
+);
+
+const withoutState = buildFormMasteryByExerciseChartData([
+  {
+    exerciseType: 'SQUATS',
+    formMasteryLevel: 0.47,
+    eligibleAttemptCount: 2,
+  },
+])[0];
+assert.equal(withoutState.exercise, 'SQUATS');
+assert.equal(withoutState.state, '');
+assert.equal(withoutState.masteryPct, 47);
+
+const withStates = buildFormMasteryByExerciseChartData([
+  { exerciseType: 'PUSH_UP', formMasteryLevel: 0.9, state: 'MASTERED', eligibleAttemptCount: 4 },
+  { exerciseType: 'STATIC_LUNGES', formMasteryLevel: 0.72, state: 'IMPROVING', eligibleAttemptCount: 3 },
+  { exerciseType: 'LYING_LEG_RAISES', formMasteryLevel: 0.4, state: 'LEARNING', eligibleAttemptCount: 1 },
+]);
+assert.deepEqual(
+  withStates.map((row) => row.exercise),
+  ['PUSH UP · Mastered', 'STATIC LUNGES · Improving', 'LYING LEG RAISES · Learning']
+);
+assert.deepEqual(
+  withStates.map((row) => row.masteryPct),
+  [90, 72, 40]
 );
 
 assert.equal(

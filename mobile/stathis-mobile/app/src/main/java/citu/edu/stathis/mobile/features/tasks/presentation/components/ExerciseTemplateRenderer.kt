@@ -58,6 +58,10 @@ import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
+import citu.edu.stathis.mobile.features.exercise.adaptive.AttemptResultCopy
+import citu.edu.stathis.mobile.features.exercise.adaptive.CoachingInstructionCatalog
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDisplay
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.LiveCoachingUiPolicy
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
@@ -98,9 +102,12 @@ private fun buildExercisePerformance(
     actualReps: Int,
     actualAccuracy: Float,
     actualTime: Int,
-    weightKg: Double? = null
+    weightKg: Double? = null,
+    attemptedReps: Int = actualReps,
+    formErrorCodes: List<String> = emptyList()
 ): ExercisePerformance {
     val (classroomId, taskId) = parseClassroomAndTaskId(classroomIdEncoded)
+    val safeAttempted = attemptedReps.coerceAtLeast(actualReps)
     val calories = ExerciseCalorieCalculator.calculate(template.exerciseType, actualReps, weightKg)
     return ExercisePerformance(
         taskId = taskId.orEmpty(),
@@ -115,7 +122,11 @@ private fun buildExercisePerformance(
         score = calculateScore(actualReps, actualAccuracy, actualTime, template),
         caloriesBurned = calories,
         exerciseType = template.exerciseType,
-        classroomId = classroomId
+        classroomId = classroomId,
+        attemptedReps = safeAttempted,
+        formErrorCodes = formErrorCodes,
+        didWell = AttemptResultCopy.didWell(actualReps),
+        improve = AttemptResultCopy.improve(template.exerciseType, formErrorCodes)
     )
 }
 
@@ -169,6 +180,7 @@ fun ExerciseTemplateRenderer(
     val adaptiveHighlightLandmarks by adaptiveSessionViewModel.highlightLandmarks.collectAsState()
     val adaptiveHighlightBones by adaptiveSessionViewModel.highlightBones.collectAsState()
     val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
+    val formMastery by adaptiveSessionViewModel.formMastery.collectAsState()
     val context = LocalContext.current
 
     fun endAdaptiveSession() {
@@ -474,6 +486,7 @@ fun ExerciseTemplateRenderer(
                     attemptsUsed = displayedAttempts,
                     maxAttempts = maxAttempts,
                     adaptiveSummary = adaptiveSessionSummary,
+                    formMastery = formMasteryFor(template.exerciseType, formMastery),
                     onRetry = {
                         val allowRetry = sessionContext != "TASK" ||
                             citu.edu.stathis.mobile.features.tasks.presentation.GradedSubmitPolicy.canStartNewAttempt(submitState)
@@ -942,6 +955,8 @@ private fun ExerciseControlsOverlay(
     exerciseSyncViewModel: ExerciseSyncViewModel = hiltViewModel()
 ) {
     var currentReps by remember { mutableIntStateOf(sessionReps) }
+    var currentAttempted by remember { mutableIntStateOf(sessionReps) }
+    val attemptErrorCodes = remember { mutableStateListOf<String>() }
     // Keep local display in sync with parent-owned session total
     LaunchedEffect(sessionReps) {
         if (currentReps != sessionReps) currentReps = sessionReps
@@ -963,7 +978,8 @@ private fun ExerciseControlsOverlay(
     var exerciseConfidence by remember { mutableFloatStateOf(0f) }
     var exerciseFeedback by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    fun applyLiveReps(detectorReps: Int) {
+    fun applyLiveReps(feedback: OnDeviceFeedback) {
+        val detectorReps = feedback.repCount
         // #region agent log
         if (detectorReps > 0 && sessionReps == 0) {
             DebugSessionLog.log(
@@ -978,16 +994,21 @@ private fun ExerciseControlsOverlay(
             )
         }
         // #endregion
-        val total = sessionRepAccumulator.applyDetectorReps(detectorReps)
-        currentReps = total
-        onSessionRepsChange(total)
+        val totals = sessionRepAccumulator.applyCounts(detectorReps, feedback.attemptedRepCount)
+        currentReps = totals.valid
+        currentAttempted = totals.attempted
+        onSessionRepsChange(totals.valid)
+        val rejected = feedback.rejectedErrorCode?.name
+        if (feedback.repRejected && rejected != null && rejected !in attemptErrorCodes) {
+            attemptErrorCodes.add(rejected)
+        }
     }
 
     // Re-apply when timer resumes after re-verify even if feedback object identity is unchanged
     LaunchedEffect(liveExerciseFeedback, isTimerRunning, onTrackingActive, identityPhase) {
         val feedback = liveExerciseFeedback ?: return@LaunchedEffect
         if (onTrackingActive && isTimerRunning && identityPhase == IdentityPhase.VERIFIED) {
-            applyLiveReps(feedback.repCount)
+            applyLiveReps(feedback)
             exerciseState = feedback.exerciseState
             exerciseConfidence = feedback.confidence
             exerciseFeedback = feedback.formIssues.filterNot { isDetectionIssue(it) }
@@ -1053,7 +1074,20 @@ private fun ExerciseControlsOverlay(
             else -> ExerciseResult(ExerciseState.WAITING, emptyList(), false, 0f, currentReps)
         }
 
-        applyLiveReps(result.repCount)
+        applyLiveReps(
+            OnDeviceFeedback(
+                exerciseType = resolveExerciseType(template.exerciseType) ?: ExerciseType.SQUAT,
+                exerciseState = result.state,
+                repCount = result.repCount,
+                formIssues = result.feedback,
+                confidence = result.confidence ?: 0f,
+                angleData = emptyMap(),
+                formScore = result.formScore,
+                attemptedRepCount = result.attemptedRepCount,
+                repRejected = result.repRejected,
+                rejectedErrorCode = result.rejectedErrorCode
+            )
+        )
         exerciseState = result.state
         exerciseConfidence = result.confidence ?: 0f
         exerciseFeedback = result.feedback
@@ -1176,6 +1210,8 @@ private fun ExerciseControlsOverlay(
                 currentTime = 0
                 currentAccuracy = 0f
                 accuracySampleCount = 0
+                currentAttempted = 0
+                attemptErrorCodes.clear()
             } else {
                 currentReps = sessionReps
             }
@@ -1226,7 +1262,9 @@ private fun ExerciseControlsOverlay(
                 actualReps = currentReps,
                 actualAccuracy = currentAccuracy,
                 actualTime = currentTime,
-                weightKg = weightKg
+                weightKg = weightKg,
+                attemptedReps = currentAttempted,
+                formErrorCodes = attemptErrorCodes.toList()
             )
             exerciseSyncViewModel.publishProgress(
                 classroomId = parsedClassroomId,
@@ -1266,7 +1304,9 @@ private fun ExerciseControlsOverlay(
             actualReps = currentReps,
             actualAccuracy = currentAccuracy,
             actualTime = currentTime,
-            weightKg = weightKg
+            weightKg = weightKg,
+            attemptedReps = currentAttempted,
+            formErrorCodes = attemptErrorCodes.toList()
         )
         exerciseSyncViewModel.publishProgress(
             classroomId = parsedClassroomId,
@@ -1600,7 +1640,9 @@ private fun ExerciseControlsOverlay(
                                         actualReps = currentReps,
                                         actualAccuracy = currentAccuracy,
                                         actualTime = currentTime,
-                                        weightKg = weightKg
+                                        weightKg = weightKg,
+                                        attemptedReps = currentAttempted,
+                                        formErrorCodes = attemptErrorCodes.toList()
                                     )
                                     exerciseSyncViewModel.publishProgress(
                                         classroomId = parsedClassroomId,
@@ -1686,7 +1728,9 @@ private fun ExerciseControlsOverlay(
                             actualReps = currentReps,
                             actualAccuracy = currentAccuracy,
                             actualTime = currentTime,
-                            weightKg = weightKg
+                            weightKg = weightKg,
+                            attemptedReps = currentAttempted,
+                            formErrorCodes = attemptErrorCodes.toList()
                         )
                         exerciseSyncViewModel.publishProgress(
                             classroomId = parsedClassroomId,
@@ -1753,6 +1797,7 @@ private fun ExerciseResults(
     attemptsUsed: Int,
     maxAttempts: Int,
     adaptiveSummary: AdaptiveSessionSummary = AdaptiveSessionSummary(),
+    formMastery: FormMasteryDto? = null,
     onRetry: () -> Unit,
     onComplete: () -> Unit,
     submitState: citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState =
@@ -1775,6 +1820,16 @@ private fun ExerciseResults(
     } else {
         "Attempts: $attemptsUsed / $maxAttempts"
     }
+    val invalidReps = (performance.attemptedReps - performance.actualReps).coerceAtLeast(0)
+    val detectedErrors = (performance.formErrorCodes + adaptiveSummary.errorCodes)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+    val improveText = AttemptResultCopy.improve(template.exerciseType, detectedErrors)
+    val masteryText = formMastery?.let { row ->
+        val state = FormMasteryDisplay.stateLabel(row.state)
+        "${FormMasteryDisplay.percentLabel(row.formMasteryLevel)} · $state"
+    } ?: "Not enough classroom attempts yet"
 
     Card(
         modifier = modifier
@@ -1835,7 +1890,7 @@ private fun ExerciseResults(
             )
 
             Text(
-                text = "Reps ${performance.actualReps}/${performance.goalReps} Â· ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
+                text = "Valid reps ${performance.actualReps}/${performance.goalReps} · ${(if (performance.goalReps > 0) (performance.actualReps * 100 / performance.goalReps).coerceAtMost(100) else 0)}%",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -1872,10 +1927,57 @@ private fun ExerciseResults(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     PerformanceItem(
-                        label = "Repetitions",
+                        label = "Valid reps",
                         actual = performance.actualReps,
                         goal = performance.goalReps,
                         isGood = performance.actualReps >= performance.goalReps
+                    )
+
+                    Text(
+                        text = "Not counted: $invalidReps",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Text(
+                        text = "Form accuracy: ${performance.actualAccuracy.toInt()}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Text(
+                        text = if (detectedErrors.isEmpty()) {
+                            "Form errors: none"
+                        } else {
+                            "Form errors: ${detectedErrors.joinToString(", ") { it.replace('_', ' ').lowercase() }}"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Text(
+                        text = performance.didWell.ifBlank { AttemptResultCopy.didWell(performance.actualReps) },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+
+                    Text(
+                        text = improveText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Text(
+                        text = "Exercise mastery: $masteryText",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
 
                     PerformanceItem(
@@ -2051,6 +2153,11 @@ private fun PerformanceItem(
             )
         }
     }
+}
+
+private fun formMasteryFor(exerciseType: String?, rows: List<FormMasteryDto>): FormMasteryDto? {
+    val key = CoachingInstructionCatalog.normalizeExercise(exerciseType)
+    return rows.firstOrNull { CoachingInstructionCatalog.normalizeExercise(it.exerciseType) == key }
 }
 
 private fun calculateScore(
