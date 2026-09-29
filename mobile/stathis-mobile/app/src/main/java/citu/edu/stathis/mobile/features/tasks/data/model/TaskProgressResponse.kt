@@ -44,5 +44,6 @@ data class TaskExerciseProgress(
     val attempts: Int = 0,
     val latestValidReps: Int? = null,
     val score: Int? = null,
-    val completionStatus: String? = null
+    val completionStatus: String? = null,
+    val demonstrationAvailable: Boolean = false
 )

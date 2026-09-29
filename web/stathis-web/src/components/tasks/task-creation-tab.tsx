@@ -893,6 +893,7 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
                   loading={isLoadingExercises}
                   value={editExercises}
                   locked={selectedTask?.started === true}
+                  taskId={selectedTask?.physicalId}
                   onChange={setEditExercises}
                 />
               </div>

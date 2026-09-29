@@ -25,6 +25,7 @@ export interface TaskExerciseProgressDTO {
   latestValidReps?: number;
   score?: number | null;
   completionStatus?: string;
+  demonstrationAvailable?: boolean;
 }
 
 export interface TaskBodyDTO {

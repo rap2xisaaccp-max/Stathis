@@ -193,6 +193,11 @@ fun TaskTemplateScreen(
                                 val classroomIdEncoded = currentTaskDetail?.let {
                                     "${it.classroomPhysicalId}|${it.physicalId}"
                                 } ?: "|$taskId"
+                                ExerciseWithDemonstration(
+                                    taskId = taskId,
+                                    exerciseTemplateId = templateId ?: exerciseTemplate.physicalId,
+                                    onBack = onNavigateBack
+                                ) {
                                 ExerciseTemplateRenderer(
                                     template = exerciseTemplate,
                                     classroomId = classroomIdEncoded,
@@ -217,6 +222,7 @@ fun TaskTemplateScreen(
                                     onRetrySave = { viewModel.retryExerciseSubmit(taskId) },
                                     modifier = Modifier.fillMaxSize()
                                 )
+                                }
                             } else {
                                 ErrorMessage("Invalid exercise template")
                             }
