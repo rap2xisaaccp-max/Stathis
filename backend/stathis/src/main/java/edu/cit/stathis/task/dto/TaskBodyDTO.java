@@ -1,8 +1,10 @@
 package edu.cit.stathis.task.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.Data;
 
 @Data
@@ -33,6 +35,10 @@ public class TaskBodyDTO {
     @Pattern(regexp = "^EXERCISE-[A-Z0-9-]+$", message = "Invalid exercise template ID format")
     private String exerciseTemplateId;
 
+    /** Ordered exercises. When present, this list wins over {@link #exerciseTemplateId}. */
+    @Valid
+    private List<TaskExerciseInputDTO> exercises;
+
     @Pattern(regexp = "^LESSON-[A-Z0-9-]+$", message = "Invalid lesson template ID format")
     private String lessonTemplateId;
 
@@ -42,6 +48,9 @@ public class TaskBodyDTO {
     private Integer maxAttempts;
 
     public boolean hasAtLeastOneTemplate() {
-        return exerciseTemplateId != null || lessonTemplateId != null || quizTemplateId != null;
+        return (exercises != null && !exercises.isEmpty())
+            || exerciseTemplateId != null
+            || lessonTemplateId != null
+            || quizTemplateId != null;
     }
 }

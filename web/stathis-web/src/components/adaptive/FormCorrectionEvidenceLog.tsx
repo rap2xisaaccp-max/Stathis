@@ -88,7 +88,13 @@ function evidenceTime(item: FormCorrectionEvidenceDTO): number {
 }
 
 function attemptLabel(item: FormCorrectionEvidenceDTO, fallbackIndex: number): string {
-  return item.attemptNumber != null ? `Attempt ${item.attemptNumber}` : `Attempt ${fallbackIndex}`;
+  const exercise = formatExercise(item.exerciseType);
+  const attempt =
+    item.attemptNumber != null ? `Attempt ${item.attemptNumber}` : `Attempt ${fallbackIndex}`;
+  const error = (item.errorLabel || formErrorLabel(item.errorCode) || '').trim();
+  const time = formatTime(item.capturedAt || item.createdAt);
+  const when = time && time !== '—' ? time : '';
+  return [exercise, attempt, error, when].filter(Boolean).join(' · ');
 }
 
 function groupEvidenceByTask(
@@ -107,6 +113,8 @@ function groupEvidenceByTask(
   const groups: TaskEvidenceGroup[] = [];
   for (const [taskKey, groupItems] of buckets) {
     const sorted = [...groupItems].sort((a, b) => {
+      const exerciseA = (a.exerciseType || '').localeCompare(b.exerciseType || '');
+      if (exerciseA !== 0) return exerciseA;
       const attemptA = a.attemptNumber ?? Number.MAX_SAFE_INTEGER;
       const attemptB = b.attemptNumber ?? Number.MAX_SAFE_INTEGER;
       if (attemptA !== attemptB) return attemptA - attemptB;
@@ -279,7 +287,7 @@ function TaskEvidenceCard({
           Task {group.taskIndex} – {group.taskName}
         </CardTitle>
         <CardDescription className="text-xs">
-          {total} attempt{total === 1 ? '' : 's'} with evidence
+          {total} snapshot{total === 1 ? '' : 's'}
         </CardDescription>
       </CardHeader>
 
@@ -287,20 +295,28 @@ function TaskEvidenceCard({
         <div className="flex flex-wrap gap-1.5">
           {group.items.map((item, index) => {
             const active = index === safeIndex;
+            const previous = index > 0 ? group.items[index - 1] : null;
+            const showExercise = !previous || previous.exerciseType !== item.exerciseType;
             return (
-              <button
-                key={item.physicalId}
-                type="button"
-                onClick={() => setSelectedIndex(index)}
-                className={cn(
-                  'rounded-md border px-2 py-1 text-[11px] font-medium transition',
-                  active
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-border/60 bg-background text-muted-foreground hover:bg-muted/50'
-                )}
-              >
-                {attemptLabel(item, index + 1)}
-              </button>
+              <React.Fragment key={item.physicalId}>
+                {showExercise ? (
+                  <span className="w-full pt-1 text-[11px] font-semibold text-foreground">
+                    {formatExercise(item.exerciseType)}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setSelectedIndex(index)}
+                  className={cn(
+                    'rounded-md border px-2 py-1 text-[11px] font-medium transition',
+                    active
+                      ? 'border-primary/40 bg-primary/10 text-primary'
+                      : 'border-border/60 bg-background text-muted-foreground hover:bg-muted/50'
+                  )}
+                >
+                  {attemptLabel(item, index + 1)}
+                </button>
+              </React.Fragment>
             );
           })}
         </div>

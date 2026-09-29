@@ -24,6 +24,7 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final ClassroomService classroomService;
+    private final TaskExerciseService taskExerciseService;
 
     @Transactional
     @PreAuthorize("hasRole('TEACHER')")
@@ -46,7 +47,10 @@ public class TaskService {
                 .isStarted(false)
                 .build();
 
-        return taskRepository.save(task);
+        Task saved = taskRepository.save(task);
+        taskExerciseService.applyRequestedExercises(saved, taskBodyDTO);
+        taskExerciseService.attachCatalog(saved);
+        return saved;
     }
 
     @Transactional
@@ -69,7 +73,10 @@ public class TaskService {
             task.setMaxAttempts(taskBodyDTO.getMaxAttempts());
         }
 
-        return taskRepository.save(task);
+        taskExerciseService.applyRequestedExercises(task, taskBodyDTO);
+        Task saved = taskRepository.save(task);
+        taskExerciseService.attachCatalog(saved);
+        return saved;
     }
 
     @Transactional
@@ -77,6 +84,7 @@ public class TaskService {
     public void deleteTask(String physicalId) {
         Task task = taskRepository.findByPhysicalId(physicalId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with physical ID: " + physicalId));
+        taskExerciseService.replace(task, List.of());
         taskRepository.delete(task);
     }
 
@@ -90,6 +98,7 @@ public class TaskService {
                 return Optional.empty();
             }
         }
+        task.ifPresent(taskExerciseService::attachCatalog);
         return task;
     }
 
@@ -98,18 +107,26 @@ public class TaskService {
     public List<Task> getTasksByClassroom(String classroomPhysicalId) {
         // Students must not see unstarted tasks via the classroom list API
         if (isCurrentUserStudent()) {
-            return taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+            List<Task> tasks = taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+            taskExerciseService.attachCatalog(tasks);
+            return tasks;
         }
-        return taskRepository.findByClassroomPhysicalId(classroomPhysicalId);
+        List<Task> tasks = taskRepository.findByClassroomPhysicalId(classroomPhysicalId);
+        taskExerciseService.attachCatalog(tasks);
+        return tasks;
     }
 
     @Transactional(readOnly = true)
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     public List<Task> getActiveTasksByClassroom(String classroomPhysicalId) {
         if (isCurrentUserStudent()) {
-            return taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+            List<Task> tasks = taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+            taskExerciseService.attachCatalog(tasks);
+            return tasks;
         }
-        return taskRepository.findActiveTasksByClassroom(classroomPhysicalId);
+        List<Task> tasks = taskRepository.findActiveTasksByClassroom(classroomPhysicalId);
+        taskExerciseService.attachCatalog(tasks);
+        return tasks;
     }
 
     private boolean isCurrentUserStudent() {
@@ -124,7 +141,9 @@ public class TaskService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     public List<Task> getStartedTasksByClassroom(String classroomPhysicalId) {
-        return taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+        List<Task> tasks = taskRepository.findStartedTasksByClassroom(classroomPhysicalId);
+        taskExerciseService.attachCatalog(tasks);
+        return tasks;
     }
 
     @Transactional
@@ -141,7 +160,8 @@ public class TaskService {
         }
         
         task.setStarted(true);
-        taskRepository.save(task);
+        Task saved = taskRepository.save(task);
+        taskExerciseService.attachCatalog(saved);
     }
 
     @Transactional
@@ -184,6 +204,8 @@ public class TaskService {
         
         try {
             classroomService.getClassroomById(taskBodyDTO.getClassroomPhysicalId());
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Classroom not found");
         }

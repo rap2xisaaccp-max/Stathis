@@ -16,7 +16,9 @@ import java.util.Random;
 import java.util.List;
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ClassroomService {
@@ -60,14 +62,17 @@ public class ClassroomService {
 
     @Transactional(readOnly = true)
     public Classroom getClassroomById(String physicalId) {
-        return classroomRepository.findByPhysicalId(physicalId)
+        Classroom classroom = classroomRepository.findByPhysicalId(physicalId)
             .orElseThrow(() -> new RuntimeException("Classroom not found"));
+        assertCallerCanRead(classroom);
+        return classroom;
     }
 
     @Transactional
     public void deleteClassroomById(String physicalId) {
         Classroom classroom = classroomRepository.findByPhysicalId(physicalId)
             .orElseThrow(() -> new RuntimeException("Classroom not found"));
+        assertTeacherOwns(classroom);
         classroomRepository.delete(classroom);
     }
 
@@ -145,8 +150,7 @@ public class ClassroomService {
 
     @Transactional(readOnly = true)
     public List<StudentListResponseDTO> getStudentListByClassroomPhysicalId(String classroomPhysicalId) {
-        Classroom classroom = classroomRepository.findByPhysicalId(classroomPhysicalId)
-            .orElseThrow(() -> new RuntimeException("Classroom not found"));
+        Classroom classroom = getClassroomById(classroomPhysicalId);
         return classroom.getClassroomStudents().stream()
             .map(this::buildStudentListResponse)
             .collect(Collectors.toList());
@@ -157,6 +161,7 @@ public class ClassroomService {
     public void verifyStudentStatus(String classroomPhysicalId, String studentId) {
         Classroom classroom = classroomRepository.findByPhysicalId(classroomPhysicalId)
             .orElseThrow(() -> new RuntimeException("Classroom not found"));
+        assertTeacherOwns(classroom);
         ClassroomStudents classroomStudents = classroom.getClassroomStudents().stream()
             .filter(cs -> cs.getStudent().getUser().getPhysicalId().equals(studentId))
             .findFirst()
@@ -170,6 +175,7 @@ public class ClassroomService {
     public void unenrollStudentInClassroom(String classroomPhysicalId, String studentId) {
         Classroom classroom = classroomRepository.findByPhysicalId(classroomPhysicalId)
             .orElseThrow(() -> new RuntimeException("Classroom not found"));
+        assertTeacherOwns(classroom);
         classroom.getClassroomStudents().removeIf(cs -> cs.getStudent().getUser().getPhysicalId().equals(studentId));
         classroomRepository.save(classroom);
     }
@@ -232,7 +238,8 @@ public class ClassroomService {
     @PreAuthorize("hasRole('TEACHER')")
     @Transactional
     public void deactivateClassroom(String physicalId) {
-        Classroom classroom = getClassroomById(physicalId);
+        Classroom classroom = loadClassroom(physicalId);
+        assertTeacherOwns(classroom);
         if (!classroom.isActive()) {
             throw new RuntimeException("Classroom is already deactivated");
         }
@@ -243,7 +250,8 @@ public class ClassroomService {
     @PreAuthorize("hasRole('TEACHER')")
     @Transactional
     public void activateClassroom(String physicalId) {
-        Classroom classroom = getClassroomById(physicalId);
+        Classroom classroom = loadClassroom(physicalId);
+        assertTeacherOwns(classroom);
         if (classroom.isActive()) {
             throw new RuntimeException("Classroom is already active");
         }
@@ -253,7 +261,7 @@ public class ClassroomService {
 
     @Transactional(readOnly = true)
     public boolean isUserEnrolledInClassroom(String userPhysicalId, String classroomPhysicalId) {
-        Classroom classroom = getClassroomById(classroomPhysicalId);
+        Classroom classroom = loadClassroom(classroomPhysicalId);
         return classroom.getClassroomStudents().stream()
             .anyMatch(cs -> cs.getStudent().getUser().getPhysicalId().equals(userPhysicalId)) ||
             classroom.getTeacherId().equals(userPhysicalId);
@@ -261,8 +269,35 @@ public class ClassroomService {
 
     @Transactional(readOnly = true)
     public boolean isUserEnrolledAndVerifiedInClassroom(String userPhysicalId, String classroomPhysicalId) {
-        Classroom classroom = getClassroomById(classroomPhysicalId);
+        Classroom classroom = loadClassroom(classroomPhysicalId);
         return classroom.getClassroomStudents().stream()
             .anyMatch(cs -> cs.getStudent().getUser().getPhysicalId().equals(userPhysicalId) && cs.isVerified());
+    }
+
+    private Classroom loadClassroom(String physicalId) {
+        return classroomRepository.findByPhysicalId(physicalId)
+            .orElseThrow(() -> new RuntimeException("Classroom not found"));
+    }
+
+    private void assertCallerCanRead(Classroom classroom) {
+        String callerId = physicalIdService.getCurrentUserPhysicalId();
+        if (callerId != null && callerId.equals(classroom.getTeacherId())) {
+            return;
+        }
+        boolean enrolled = classroom.getClassroomStudents().stream()
+            .anyMatch(cs -> callerId != null
+                && cs.getStudent() != null
+                && cs.getStudent().getUser() != null
+                && callerId.equals(cs.getStudent().getUser().getPhysicalId()));
+        if (!enrolled) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized for this classroom");
+        }
+    }
+
+    private void assertTeacherOwns(Classroom classroom) {
+        String callerId = physicalIdService.getCurrentUserPhysicalId();
+        if (callerId == null || !callerId.equals(classroom.getTeacherId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized for this classroom");
+        }
     }
 }

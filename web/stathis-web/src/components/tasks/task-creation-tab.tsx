@@ -39,6 +39,8 @@ import {
   SelectLabel,
 } from "@/components/ui/select";
 import { TemplateCreationModal } from '../templates/template-creation-modal';
+import { ExerciseAssignmentEditor } from './exercise-assignment-editor';
+import { AssignedExercise, toExerciseRequests } from '@/lib/tasks/task-exercises';
 import { CreateLessonForm } from '../templates/create-lesson-form';
 import { CreateQuizForm } from '../templates/create-quiz-form';
 import { CreateExerciseForm } from '../templates/create-exercise-form';
@@ -192,6 +194,7 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
   const [editTaskClosingDate, setEditTaskClosingDate] = useState('');
   const [editTaskTime, setEditTaskTime] = useState('23:59');
   const [editTaskMaxAttempts, setEditTaskMaxAttempts] = useState<number | undefined>(undefined);
+  const [editExercises, setEditExercises] = useState<AssignedExercise[]>([]);
   
   // Track tasks currently being deactivated to prevent duplicate attempts
   const [deactivatingTasks, setDeactivatingTasks] = useState<Set<string>>(new Set());
@@ -231,6 +234,24 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
     queryFn: () => getTeacherExerciseTemplates(),
     enabled: selectedTemplateType === 'EXERCISE',
   });
+
+  useEffect(() => {
+    if (!editDialogOpen || !exerciseTemplates) return;
+    setEditExercises((current) =>
+      current.map((item) => {
+        const match = exerciseTemplates.find((template) => template.physicalId === item.physicalId);
+        if (!match) return item;
+        return {
+          physicalId: match.physicalId,
+          title: match.title,
+          exerciseType: match.exerciseType,
+          goalReps: match.goalReps,
+          goalAccuracy: match.goalAccuracy,
+          goalTime: match.goalTime,
+        };
+      })
+    );
+  }, [editDialogOpen, exerciseTemplates]);
 
   // Fetch tasks for this classroom
   const { 
@@ -385,9 +406,31 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
     setEditTaskMaxAttempts(task.maxAttempts);
     
     // Determine template type from task data
-    if (task.exerciseTemplateId) {
+    if (task.exerciseTemplateId || (task.exercises && task.exercises.length > 0)) {
       setSelectedTemplateType('EXERCISE');
-      setSelectedTemplateId(task.exerciseTemplateId);
+      setSelectedTemplateId(task.exerciseTemplateId || task.exercises?.[0]?.exerciseTemplateId || '');
+      const ordered = [...(task.exercises ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      setEditExercises(
+        ordered.length > 0
+          ? ordered.map((row) => ({
+              physicalId: row.exerciseTemplateId,
+              title: row.title || row.exerciseTemplateId,
+              exerciseType: row.exerciseType || '',
+              goalReps: row.goalReps ?? 0,
+              goalAccuracy: row.goalAccuracy ?? 0,
+              goalTime: row.goalTime ?? 0,
+            }))
+          : task.exerciseTemplateId
+            ? [{
+                physicalId: task.exerciseTemplateId,
+                title: task.exerciseTemplateId,
+                exerciseType: '',
+                goalReps: 0,
+                goalAccuracy: 0,
+                goalTime: 0,
+              }]
+            : []
+      );
     } else if (task.lessonTemplateId) {
       setSelectedTemplateType('LESSON');
       setSelectedTemplateId(task.lessonTemplateId);
@@ -397,6 +440,7 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
     } else {
       setSelectedTemplateType(null);
       setSelectedTemplateId('');
+      setEditExercises([]);
     }
     
     setEditDialogOpen(true);
@@ -404,8 +448,10 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
   
   // Helper function to handle template type change
   const handleTemplateTypeChange = (value: string) => {
+    if (selectedTask?.started) return;
     setSelectedTemplateType(value);
     setSelectedTemplateId('');
+    setEditExercises([]);
   };
   
   // Helper function to check if templates are loading
@@ -477,13 +523,13 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
     
     // Set the appropriate template ID based on selected type and clear others
     // This helps avoid sending multiple template IDs which would be invalid
-    if (selectedTemplateType === 'EXERCISE' && selectedTemplateId) {
-      // Pattern must be: ^EXERCISE-[A-Z0-9-]+$
-      let exerciseId = selectedTemplateId;
-      if (!exerciseId.startsWith('EXERCISE-')) {
-        exerciseId = exerciseId.includes('EXERCISE-') ? exerciseId : `EXERCISE-${exerciseId}`;
+    if (selectedTemplateType === 'EXERCISE') {
+      if (editExercises.length === 0) {
+        toast.error('Add at least one exercise');
+        return;
       }
-      updateData.exerciseTemplateId = exerciseId.toUpperCase();
+      updateData.exercises = toExerciseRequests(editExercises);
+      updateData.exerciseTemplateId = editExercises[0].physicalId.toUpperCase();
       updateData.lessonTemplateId = undefined;
       updateData.quizTemplateId = undefined;
     } else if (selectedTemplateType === 'LESSON' && selectedTemplateId) {
@@ -825,6 +871,7 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
                 <Select 
                   onValueChange={handleTemplateTypeChange}
                   value={selectedTemplateType || undefined}
+                  disabled={selectedTask?.started === true}
                 >
                   <SelectTrigger className="w-full bg-background/60 backdrop-blur-sm border-border/30 rounded-2xl h-14 text-base">
                     <SelectValue placeholder="Choose content type" />
@@ -839,7 +886,19 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
               </div>
             
             {/* Template Selection */}
-            {selectedTemplateType && (
+            {selectedTemplateType === 'EXERCISE' && (
+              <div className="md:col-span-2">
+                <ExerciseAssignmentEditor
+                  templates={exerciseTemplates || []}
+                  loading={isLoadingExercises}
+                  value={editExercises}
+                  locked={selectedTask?.started === true}
+                  onChange={setEditExercises}
+                />
+              </div>
+            )}
+
+            {selectedTemplateType && selectedTemplateType !== 'EXERCISE' && (
               <div className="md:col-span-2">
                 <div className="flex justify-between items-center mb-3">
                   <label htmlFor="templateId" className="text-lg font-semibold">Template</label>
@@ -862,7 +921,7 @@ export function TaskCreationTab({ classroomId }: TaskCreationTabProps) {
                 <Select 
                   onValueChange={(value) => setSelectedTemplateId(value)}
                   value={selectedTemplateId}
-                  disabled={isLoadingTemplates()}
+                  disabled={isLoadingTemplates() || selectedTask?.started === true}
                 >
                   <SelectTrigger className="w-full bg-background/60 backdrop-blur-sm border-border/30 rounded-2xl h-14 text-base">
                     {isLoadingTemplates() ? (

@@ -24,12 +24,14 @@ import edu.cit.stathis.task.dto.QuizSubmissionDTO;
 import edu.cit.stathis.task.dto.ExerciseResultSubmissionDTO;
 import edu.cit.stathis.task.dto.ExerciseProgressDTO;
 import edu.cit.stathis.task.entity.ExerciseTemplate;
-import edu.cit.stathis.task.TaskComponentCompletion;
+import edu.cit.stathis.task.dto.TaskExerciseProgressDTO;
+import edu.cit.stathis.task.ExerciseCompletionPolicy;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
+import edu.cit.stathis.task.TaskComponentCompletion;
 import edu.cit.stathis.classroom.service.ClassroomService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.web.server.ResponseStatusException;
@@ -67,6 +69,9 @@ public class StudentTaskService {
 
     @Autowired
     private ClassroomService classroomService;
+
+    @Autowired
+    private TaskExerciseService taskExerciseService;
 
     @Transactional(readOnly = true)
     public List<StudentTaskResponseDTO> getStudentTasks(String classroomPhysicalId, String studentId) {
@@ -111,52 +116,38 @@ public class StudentTaskService {
         Score quizScore = task.getQuizTemplateId() != null
             ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
             : null;
-        Score exerciseScore = task.getExerciseTemplateId() != null
-            ? scoreRepository.findExerciseScore(studentId, taskId, task.getExerciseTemplateId()).orElse(null)
-            : null;
+        ExerciseRollup exercises = exerciseRollup(task, studentId);
+        TaskExerciseProgressDTO first = exercises.first();
 
         boolean lessonDone = completion != null && completion.isLessonCompleted();
         boolean quizDone = (completion != null && completion.isQuizCompleted())
             || (quizScore != null && quizScore.getAttempts() > 0);
-        boolean exerciseDone = (completion != null && completion.isExerciseCompleted())
-            || (exerciseScore != null && (exerciseScore.getAttempts() > 0 || exerciseScore.isCompleted()));
-        boolean fullyComplete = isTaskFullyComplete(task, lessonDone, quizDone, exerciseDone);
+        boolean exerciseDone = exercises.componentDone();
+        boolean fullyComplete = isTaskFullyComplete(task, lessonDone, quizDone, exerciseDone, exercises.required());
 
-        if (completion == null) {
-            return TaskProgressDTO.builder()
-                .lessonCompleted(false)
-                .exerciseCompleted(exerciseDone)
-                .quizCompleted(quizDone)
-                .quizScore(0)
-                .maxQuizScore(0)
-                .quizAttempts(quizScore != null ? quizScore.getAttempts() : 0)
-                .exerciseAttempts(exerciseScore != null ? exerciseScore.getAttempts() : 0)
-                .exerciseScore(exerciseScore != null ? exerciseScore.getScore() : 0)
-                .maxExerciseScore(exerciseScore != null ? exerciseScore.getMaxScore() : 100)
-                .exerciseReps(exerciseScore != null ? exerciseScore.getReps() : 0)
-                .exerciseGoalReps(exerciseScore != null ? exerciseScore.getGoalReps() : null)
-                .totalTimeTaken(0L)
-                .completed(fullyComplete)
-                .build();
-        }
-
-        return TaskProgressDTO.builder()
-            .lessonCompleted(completion.isLessonCompleted())
+        TaskProgressDTO.TaskProgressDTOBuilder progress = TaskProgressDTO.builder()
+            .lessonCompleted(lessonDone)
             .exerciseCompleted(exerciseDone)
             .quizCompleted(quizDone)
             .quizScore(quizScore != null ? quizScore.getScore() : 0)
             .maxQuizScore(quizScore != null ? quizScore.getMaxScore() : 0)
             .quizAttempts(quizScore != null ? quizScore.getAttempts() : 0)
-            .exerciseAttempts(exerciseScore != null ? exerciseScore.getAttempts() : 0)
-            .exerciseScore(exerciseScore != null ? exerciseScore.getScore() : 0)
-            .maxExerciseScore(exerciseScore != null ? exerciseScore.getMaxScore() : 100)
-            .exerciseReps(exerciseScore != null ? exerciseScore.getReps() : 0)
-            .exerciseGoalReps(exerciseScore != null ? exerciseScore.getGoalReps() : null)
-            .totalTimeTaken(completion.getTotalTimeTaken())
-            .startedAt(completion.getStartedAt().toString())
-            .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null)
-            .completed(fullyComplete)
-            .build();
+            .exerciseAttempts(exercises.legacyAttempts())
+            .exerciseScore(first != null && first.getScore() != null ? first.getScore() : 0)
+            .maxExerciseScore(100)
+            .exerciseReps(first != null ? first.getLatestValidReps() : 0)
+            .exerciseGoalReps(first != null ? first.getGoalReps() : null)
+            .exercises(exercises.rows())
+            .exercisesCompleted(exercises.qualified())
+            .exercisesRequired(exercises.required())
+            .totalTimeTaken(completion != null && completion.getTotalTimeTaken() != null ? completion.getTotalTimeTaken() : 0L)
+            .completed(fullyComplete);
+        if (completion != null) {
+            progress
+                .startedAt(completion.getStartedAt() != null ? completion.getStartedAt().toString() : null)
+                .completedAt(completion.getCompletedAt() != null ? completion.getCompletedAt().toString() : null);
+        }
+        return progress.build();
     }
 
     @Transactional
@@ -403,6 +394,10 @@ public class StudentTaskService {
         Task task = taskRepository.findByPhysicalId(taskId)
                 .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
         requireTaskStarted(task);
+        if (!taskExerciseService.belongsToTask(task, exerciseTemplateId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Exercise is not part of this task");
+        }
 
         Score existingScore = scoreRepository
                 .findExerciseScore(studentId, taskId, exerciseTemplateId)
@@ -535,25 +530,33 @@ public class StudentTaskService {
                 completion.setQuizCompleted(completed);
                 break;
             case "exercise":
-                completion.setExerciseCompleted(completed);
+                completion.setExerciseCompleted(false);
                 break;
         }
 
         // Get the task to check which components are required
         Task task = taskRepository.findByPhysicalId(taskId)
             .orElseThrow(() -> new EntityNotFoundException("Task not found with ID: " + taskId));
+        ExerciseRollup exercises = exerciseRollup(task, studentId);
+        completion.setExerciseCompleted(exercises.componentDone());
         boolean allRequiredCompleted = isTaskFullyComplete(
             task,
             completion.isLessonCompleted(),
             completion.isQuizCompleted(),
-            completion.isExerciseCompleted());
+            exercises.componentDone(),
+            exercises.required());
 
         if (allRequiredCompleted) {
             completion.setFullyCompleted(true);
-            completion.setCompletedAt(OffsetDateTime.now());
+            if (completion.getCompletedAt() == null) {
+                completion.setCompletedAt(OffsetDateTime.now());
+            }
             completion.setTotalTimeTaken(
                 completion.getCompletedAt().toEpochSecond() - completion.getStartedAt().toEpochSecond()
             );
+        } else {
+            completion.setFullyCompleted(false);
+            completion.setCompletedAt(null);
         }
 
         taskCompletionRepository.save(completion);
@@ -571,24 +574,48 @@ public class StudentTaskService {
             Task task,
             boolean lessonCompleted,
             boolean quizCompleted,
-            boolean exerciseCompleted) {
+            boolean exerciseCompleted,
+            int requiredExercises) {
         return TaskComponentCompletion.isFullyComplete(
             task.getLessonTemplateId() != null,
             task.getQuizTemplateId() != null,
-            task.getExerciseTemplateId() != null,
+            requiredExercises > 0,
             lessonCompleted,
             quizCompleted,
             exerciseCompleted);
     }
+
+    private ExerciseRollup exerciseRollup(Task task, String studentId) {
+        List<Score> scores = scoreRepository.findByStudentIdAndTaskId(studentId, task.getPhysicalId());
+        List<TaskExerciseProgressDTO> rows = taskExerciseService.progressFor(task, scores);
+        int qualified = taskExerciseService.qualifiedCount(rows);
+        int required = rows.size();
+        boolean componentDone = TaskComponentCompletion.allAssignedExercisesComplete(required, qualified);
+        TaskExerciseProgressDTO first = rows.isEmpty() ? null : rows.get(0);
+        int firstAttempts = first == null ? 0 : first.getAttempts();
+        return new ExerciseRollup(
+            rows,
+            required,
+            qualified,
+            componentDone,
+            first,
+            ExerciseCompletionPolicy.legacyExerciseAttempts(required, qualified, firstAttempts));
+    }
+
+    private record ExerciseRollup(
+        List<TaskExerciseProgressDTO> rows,
+        int required,
+        int qualified,
+        boolean componentDone,
+        TaskExerciseProgressDTO first,
+        int legacyAttempts) {}
 
     private StudentTaskResponseDTO buildStudentTaskResponse(Task task, String studentId) {
         String taskId = task.getPhysicalId();
         Score quizScore = task.getQuizTemplateId() != null
             ? scoreRepository.findQuizScore(studentId, taskId, task.getQuizTemplateId()).orElse(null)
             : null;
-        Score exerciseScore = task.getExerciseTemplateId() != null
-            ? scoreRepository.findExerciseScore(studentId, taskId, task.getExerciseTemplateId()).orElse(null)
-            : null;
+        ExerciseRollup exercises = exerciseRollup(task, studentId);
         java.util.List<TaskCompletion> completionRows =
             taskCompletionRepository.findAllByStudentIdAndTaskId(studentId, taskId);
         TaskCompletion completion = completionRows.isEmpty() ? null : completionRows.get(0);
@@ -596,10 +623,16 @@ public class StudentTaskService {
         boolean lessonDone = completion != null && completion.isLessonCompleted();
         boolean quizDone = (completion != null && completion.isQuizCompleted())
             || (quizScore != null && quizScore.getAttempts() > 0);
-        boolean exerciseDone = (completion != null && completion.isExerciseCompleted())
-            || (exerciseScore != null && (exerciseScore.getAttempts() > 0 || exerciseScore.isCompleted()));
+        boolean exerciseDone = exercises.componentDone();
 
-        Score score = quizScore != null ? quizScore : exerciseScore;
+        Score score = quizScore;
+        if (score == null && exercises.first() != null) {
+            score = scoresForTemplate(studentId, taskId, exercises.first().getExerciseTemplateId());
+        }
+
+        String mirroredTemplateId = exercises.first() != null
+            ? exercises.first().getExerciseTemplateId()
+            : task.getExerciseTemplateId();
 
         return StudentTaskResponseDTO.builder()
             .physicalId(task.getPhysicalId())
@@ -609,7 +642,7 @@ public class StudentTaskService {
             .closingDate(task.getClosingDate().toString())
             .imageUrl(task.getImageUrl())
             .classroomPhysicalId(task.getClassroomPhysicalId())
-            .exerciseTemplateId(task.getExerciseTemplateId())
+            .exerciseTemplateId(mirroredTemplateId)
             .lessonTemplateId(task.getLessonTemplateId())
             .quizTemplateId(task.getQuizTemplateId())
             .maxAttempts(task.getMaxAttempts())
@@ -617,14 +650,24 @@ public class StudentTaskService {
                 buildLessonTemplateDTO(task.getLessonTemplateId()) : null)
             .quizTemplate(task.getQuizTemplateId() != null ? 
                 buildQuizTemplateDTO(task.getQuizTemplateId()) : null)
-            .exerciseTemplate(task.getExerciseTemplateId() != null ? 
-                buildExerciseTemplateDTO(task.getExerciseTemplateId()) : null)
+            .exerciseTemplate(mirroredTemplateId != null ? 
+                buildExerciseTemplateDTO(mirroredTemplateId) : null)
+            .exercises(exercises.rows())
+            .exercisesCompleted(exercises.qualified())
+            .exercisesRequired(exercises.required())
             .score(score != null ? buildScoreDTO(score) : null)
-            .isCompleted(isTaskFullyComplete(task, lessonDone, quizDone, exerciseDone))
+            .isCompleted(isTaskFullyComplete(task, lessonDone, quizDone, exerciseDone, exercises.required()))
             .isStarted(task.isStarted())
             .createdAt(task.getCreatedAt().toString())
             .updatedAt(task.getUpdatedAt().toString())
             .build();
+    }
+
+    private Score scoresForTemplate(String studentId, String taskId, String exerciseTemplateId) {
+        if (exerciseTemplateId == null) {
+            return null;
+        }
+        return scoreRepository.findExerciseScore(studentId, taskId, exerciseTemplateId).orElse(null);
     }
 
     private LessonTemplateResponseDTO buildLessonTemplateDTO(String lessonTemplateId) {

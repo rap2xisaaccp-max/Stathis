@@ -57,6 +57,80 @@ class AdaptiveFeedbackEngineHeldErrorTest {
     }
 
     @Test
+    fun startingAnotherExerciseResetsSessionAndLifecycle() = runBlocking {
+        val capture = RecordingEvidenceCapture()
+        val delivery = RecordingCoachingDelivery()
+        val engine =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                delivery,
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                capture
+            )
+        engine.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        var now = 1_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Push knees outward over toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        val squatSession = engine.currentSessionId()
+        assertEquals(1, engine.sessionSummary().interventionCount)
+        assertEquals(1, capture.events.size)
+
+        engine.startSession("PUSH_UP", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        assertTrue(engine.currentSessionId().isNotBlank())
+        assertTrue(engine.currentSessionId() != squatSession)
+        assertEquals(0, engine.sessionSummary().interventionCount)
+        assertEquals(InterventionPhase.OBSERVING, engine.lifecyclePhase())
+        assertEquals(1, capture.events.size)
+    }
+
+    @Test
+    fun leavingOneExerciseDoesNotEndTheNextExerciseSession() = runBlocking {
+        val api = FakeAdaptiveApi()
+        val delivery = RecordingCoachingDelivery()
+        val engine =
+            AdaptiveFeedbackEngine(
+                api,
+                delivery,
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                RecordingEvidenceCapture()
+            )
+        engine.startSession("PUSH_UP", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        val pushToken = engine.captureFlushToken()
+
+        engine.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        val squatSession = engine.currentSessionId()
+        repeat(3) { index ->
+            engine.onFormSignal(
+                formIssues = listOf("Push knees outward over toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = 0,
+                now = 1_000L + index * 100L
+            )
+        }
+        assertEquals(1, engine.sessionSummary().interventionCount)
+
+        engine.flush(pushToken)
+        engine.endSession(pushToken.sessionId)
+
+        assertEquals(squatSession, engine.currentSessionId())
+        assertEquals(1, engine.sessionSummary().interventionCount)
+        assertEquals(InterventionPhase.RESPONSE_OBSERVATION, engine.lifecyclePhase())
+        assertEquals(listOf("PUSH_UP"), api.recordedSessions)
+        assertTrue(engine.activeFeedback()?.speak == true)
+    }
+
+    @Test
     fun correctsThenRepeatsMistakeCreatesSecondCoachingAndSnapshot() = runBlocking {
         val capture = RecordingEvidenceCapture()
         val delivery = RecordingCoachingDelivery()
@@ -429,7 +503,62 @@ class AdaptiveFeedbackEngineHeldErrorTest {
         assertTrue(engine.activeFeedback()?.speak == true)
         assertTrue(engine.activeFeedback()?.highlightJoints == true)
     }
+
+    @Test
+    fun failedEvidenceUploadStaysQueuedAndSuccessfulUploadIsAcknowledged() = runBlocking {
+        val queue = InMemoryEvidenceQueue()
+        var uploads = 0
+        val api =
+            object : AdaptiveApi by FakeAdaptiveApi() {
+                override suspend fun uploadEvidence(
+                    interventionId: RequestBody,
+                    sessionId: RequestBody,
+                    taskId: RequestBody?,
+                    classroomId: RequestBody?,
+                    attemptNumber: RequestBody?,
+                    exerciseType: RequestBody,
+                    errorCode: RequestBody,
+                    errorDescription: RequestBody,
+                    correctionText: RequestBody,
+                    capturedAt: RequestBody,
+                    file: MultipartBody.Part
+                ): Map<String, Any?> {
+                    uploads += 1
+                    if (uploads == 1) throw java.io.IOException("storage unavailable")
+                    return mapOf("physicalId" to "FCE-OK")
+                }
+            }
+        val engine =
+            AdaptiveFeedbackEngine(
+                api,
+                RecordingCoachingDelivery(),
+                AdaptiveOfflineQueue(),
+                queue,
+                RecordingEvidenceCapture()
+            )
+        queue.enqueue(queuedEvidence("FI-FAIL"), byteArrayOf(1, 2, 3))
+        queue.enqueue(queuedEvidence("FI-OK"), byteArrayOf(4, 5, 6))
+
+        engine.flush()
+
+        assertEquals(listOf("FI-FAIL"), queue.pending().map { it.event.interventionId })
+        assertEquals(2, uploads)
+    }
 }
+
+private fun queuedEvidence(interventionId: String) =
+    FormEvidenceEvent(
+        interventionId = interventionId,
+        sessionId = "SES-1",
+        taskId = "TASK-1",
+        classroomId = "ROOM-1",
+        attemptNumber = 1,
+        exerciseType = "SQUATS",
+        errorCode = FormErrorCode.SAG,
+        errorDescription = "Hips sagging",
+        correctionText = "Keep hips level",
+        capturedAtIso = "2026-08-21T00:00:00Z"
+    )
 
 internal class RecordingEvidenceCapture : FormEvidenceCapture {
     val events = mutableListOf<FormEvidenceEvent>()
@@ -502,6 +631,8 @@ internal class RecordingCoachingDelivery : CoachingDelivery {
 }
 
 internal class FakeAdaptiveApi : AdaptiveApi {
+    val recordedSessions = mutableListOf<String>()
+
     override suspend fun ingestBatch(body: AdaptiveBatchIngestDto) = AdaptiveBatchResultDto()
 
     override suspend fun uploadEvidence(
@@ -518,7 +649,10 @@ internal class FakeAdaptiveApi : AdaptiveApi {
         file: MultipartBody.Part
     ): Map<String, Any?> = emptyMap()
 
-    override suspend fun recordSession(exerciseType: String) = emptyMap<String, Any?>()
+    override suspend fun recordSession(exerciseType: String): Map<String, Any?> {
+        recordedSessions += exerciseType
+        return emptyMap()
+    }
 
     override suspend fun getOwnProfile() = StudentLearningProfileDto()
 

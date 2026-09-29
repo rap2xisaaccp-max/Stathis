@@ -81,7 +81,7 @@ class TaskTemplateViewModel @Inject constructor(
                 if (templateType == "EXERCISE") {
                     runCatching { taskRepository.getTaskProgress(taskId).first() }
                         .onSuccess { progress ->
-                            _exerciseAttempts.value = progress.exerciseAttempts ?: 0
+                            _exerciseAttempts.value = TaskCompletionTruth.attemptsForExercise(progress, templateId)
                         }
                 }
 
@@ -170,7 +170,7 @@ class TaskTemplateViewModel @Inject constructor(
                     taskRepository.completeLesson(taskId, lessonTemplateId)
                 }
                 LessonAttemptsCache.increment(taskId)
-                TaskCompletionCache.markCompleted(taskId)
+                cacheIfTaskFullyComplete(taskId)
                 _submitState.value = TemplateSubmitState.Success
                 android.util.Log.d("TaskTemplateViewModel", "Lesson submitted successfully")
             } catch (e: Exception) {
@@ -198,8 +198,7 @@ class TaskTemplateViewModel @Inject constructor(
                     val scoreResponse = taskRepository.autoCheckQuiz(taskId, template.physicalId, autoCheckRequest).first()
                     android.util.Log.d("TaskTemplateViewModel", "Quiz submitted successfully, score: ${scoreResponse.score ?: 0}")
                     
-                    // Optimistically mark completion for immediate UI feedback
-                    TaskCompletionCache.markCompleted(taskId)
+                    cacheIfTaskFullyComplete(taskId)
                     // Record streak
                     streakManager.recordActivity()
                 }
@@ -240,15 +239,16 @@ class TaskTemplateViewModel @Inject constructor(
                     taskRepository.completeExercise(taskId, performance.templateId, submission)
                 }
 
-                TaskCompletionCache.markCompleted(taskId)
-
                 _exerciseAttempts.value = score?.attempts
                     ?: (_exerciseAttempts.value + 1)
 
                 android.util.Log.d("TaskTemplateViewModel", "Exercise submitted successfully (calories=${performance.caloriesBurned}, attempts=${_exerciseAttempts.value})")
                 runCatching { taskRepository.getTaskProgress(taskId).first() }
                     .onSuccess { progress ->
-                        progress.exerciseAttempts?.let { _exerciseAttempts.value = it }
+                        _exerciseAttempts.value = TaskCompletionTruth.attemptsForExercise(progress, performance.templateId)
+                        if (progress.isCompleted) {
+                            TaskCompletionCache.markCompleted(taskId)
+                        }
                     }
                 streakManager.recordActivity()
                 _submitState.value = TemplateSubmitState.Success
@@ -282,6 +282,15 @@ class TaskTemplateViewModel @Inject constructor(
 
     fun clearError() {
         _error.value = null
+    }
+
+    private suspend fun cacheIfTaskFullyComplete(taskId: String) {
+        runCatching { taskRepository.getTaskProgress(taskId).first() }
+            .onSuccess { progress ->
+                if (progress.isCompleted) {
+                    TaskCompletionCache.markCompleted(taskId)
+                }
+            }
     }
 
     /**

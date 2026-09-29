@@ -68,6 +68,12 @@ export async function updateTask(physicalId: string, taskData: Partial<TaskRespo
     classroomPhysicalId: taskData.classroomPhysicalId || '',
     // Optional fields
     ...(taskData.exerciseTemplateId && { exerciseTemplateId: taskData.exerciseTemplateId }),
+    ...(taskData.exercises && taskData.exercises.length > 0 && {
+      exercises: taskData.exercises.map((item, index) => ({
+        exerciseTemplateId: item.exerciseTemplateId,
+        sortOrder: item.sortOrder ?? index + 1,
+      })),
+    }),
     ...(taskData.lessonTemplateId && { lessonTemplateId: taskData.lessonTemplateId }),
     ...(taskData.quizTemplateId && { quizTemplateId: taskData.quizTemplateId }),
     ...(taskData.maxAttempts !== undefined && { maxAttempts: taskData.maxAttempts }),

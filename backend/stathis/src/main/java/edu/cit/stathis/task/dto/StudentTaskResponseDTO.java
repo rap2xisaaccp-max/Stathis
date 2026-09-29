@@ -21,6 +21,9 @@ public class StudentTaskResponseDTO {
     private LessonTemplateResponseDTO lessonTemplate;
     private QuizTemplateResponseDTO quizTemplate;
     private ExerciseTemplateResponseDTO exerciseTemplate;
+    private java.util.List<TaskExerciseProgressDTO> exercises;
+    private int exercisesCompleted;
+    private int exercisesRequired;
     private ScoreDTO score;
     private boolean isCompleted;
     private boolean isStarted;

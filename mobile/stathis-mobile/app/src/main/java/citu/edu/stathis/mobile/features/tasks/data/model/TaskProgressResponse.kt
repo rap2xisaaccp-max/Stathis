@@ -23,8 +23,26 @@ data class TaskProgressResponse(
     val maxExerciseScore: Int? = null,
     val exerciseReps: Int? = null,
     val exerciseGoalReps: Int? = null,
+    val exercises: List<TaskExerciseProgress>? = null,
+    val exercisesCompleted: Int? = null,
+    val exercisesRequired: Int? = null,
     val totalTimeTaken: Long? = null,
     val startedAt: String? = null,
     val completedAt: String? = null,
     val submittedAt: String? = null
+)
+
+data class TaskExerciseProgress(
+    val exerciseTemplateId: String? = null,
+    val sortOrder: Int = 0,
+    val title: String? = null,
+    val exerciseType: String? = null,
+    val goalReps: Int? = null,
+    val goalAccuracy: Int? = null,
+    val goalTime: Int? = null,
+    val completed: Boolean = false,
+    val attempts: Int = 0,
+    val latestValidReps: Int? = null,
+    val score: Int? = null,
+    val completionStatus: String? = null
 )

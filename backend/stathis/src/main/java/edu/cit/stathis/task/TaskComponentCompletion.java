@@ -29,4 +29,9 @@ public final class TaskComponentCompletion {
         }
         return true;
     }
+
+    /** True when every assigned exercise qualifies. Zero assigned exercises is not a finished component. */
+    public static boolean allAssignedExercisesComplete(int requiredExercises, int qualifiedExercises) {
+        return requiredExercises > 0 && qualifiedExercises >= requiredExercises;
+    }
 }

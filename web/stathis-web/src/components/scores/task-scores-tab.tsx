@@ -55,6 +55,8 @@ import {
   invalidateAfterStudentScoreMutation,
   teacherStudentViewQueryOptions,
 } from '@/lib/query/teacher-student-freshness';
+import { getTask } from '@/services/tasks/api-task-client';
+import { studentExerciseBoards } from '@/lib/tasks/task-exercises';
 
 interface TaskScoresTabProps {
   taskId: string;
@@ -119,6 +121,16 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
     ...teacherStudentViewQueryOptions,
   });
 
+  const { data: taskDetail } = useQuery({
+    queryKey: ['task-detail', taskId],
+    queryFn: () => getTask(taskId),
+  });
+  const assignedExercises = taskDetail?.exercises ?? [];
+  const multiExercise = assignedExercises.length > 1;
+  const exerciseBoards = multiExercise ? studentExerciseBoards(assignedExercises, scores ?? []) : [];
+  const exerciseTitle = (templateIdValue?: string) =>
+    assignedExercises.find((item) => item.exerciseTemplateId === templateIdValue)?.title || templateIdValue;
+
   // Fetch average score if template ID is provided
   const { 
     data: averageScore,
@@ -135,7 +147,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
       }
       return null;
     },
-    enabled: !!templateId && !!taskType && (taskType === 'QUIZ' || taskType === 'EXERCISE')
+    enabled: !!templateId && !!taskType && (taskType === 'QUIZ' || taskType === 'EXERCISE') && !multiExercise
   });
 
   // Manual grading mutation
@@ -188,11 +200,12 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
     const isExerciseTask = taskType === 'EXERCISE' || scores.some(s => s.exerciseTemplateId);
     
     const headers = isExerciseTask 
-      ? ['Student ID', 'Reps', 'Goal Reps', 'Accuracy (%)', 'Goal Accuracy (%)', 'Calories Burned', 'Score', 'Max Score', 'Attempts', 'Remaining Attempts', 'Submission Date', 'Status', 'Feedback']
+      ? ['Student ID', 'Exercise', 'Reps', 'Goal Reps', 'Accuracy (%)', 'Goal Accuracy (%)', 'Calories Burned', 'Score', 'Max Score', 'Attempts', 'Remaining Attempts', 'Submission Date', 'Status', 'Feedback']
       : ['Student ID', 'Score', 'Max Score', 'Attempts', 'Remaining Attempts', 'Submission Date', 'Status', 'Feedback'];
     
     const rows = scores.map(score => isExerciseTask ? [
       score.studentId,
+      exerciseTitle(score.exerciseTemplateId) || '',
       score.reps || 0,
       score.goalReps || 'N/A',
       score.accuracy !== undefined ? score.accuracy.toFixed(1) : 'N/A',
@@ -310,12 +323,14 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average Score
+                {multiExercise ? 'Students finished' : 'Average Score'}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoadingAverage ? (
+                {multiExercise ? (
+                  `${exerciseBoards.filter((board) => board.required > 0 && board.completed === board.required).length} / ${exerciseBoards.length}`
+                ) : isLoadingAverage ? (
                   <Loader2 className="h-6 w-6 animate-spin" />
                 ) : averageScore !== null && averageScore !== undefined ? (
                   `${Number(averageScore).toFixed(1)}%`
@@ -348,6 +363,37 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
         </div>
       )}
 
+      {multiExercise && (
+        <div className="space-y-3">
+          {exerciseBoards.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No exercise submissions yet. Each exercise is tracked separately.</p>
+          ) : (
+            exerciseBoards.map((board) => (
+              <Card key={board.studentId}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">{board.studentId}</CardTitle>
+                  <CardDescription>
+                    {board.completed} of {board.required} exercises completed
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {board.lines.map((line) => (
+                    <div key={line.exerciseTemplateId} className="rounded-xl border border-border/40 p-3">
+                      <div className="font-medium">{line.title}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {line.reps}/{line.goalReps ?? '—'} valid reps
+                      </div>
+                      <div className="text-sm">{line.status}</div>
+                      {line.score != null && <div className="text-sm">Score: {line.score}%</div>}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+
       {/* Scores Table */}
       {isLoadingScores ? (
         <div className="flex justify-center items-center py-12">
@@ -361,6 +407,7 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
               <TableHeader>
                 <TableRow>
                   <TableHead>Student ID</TableHead>
+                  {multiExercise && <TableHead>Exercise</TableHead>}
                   <TableHead>{taskType === 'EXERCISE' ? 'Score & Reps' : 'Score'}</TableHead>
                   <TableHead>Attempts</TableHead>
                   <TableHead>Submission Date</TableHead>
@@ -376,6 +423,9 @@ export function TaskScoresTab({ taskId, taskType, templateId, classroomId }: Tas
                   return (
                     <TableRow key={score.physicalId}>
                       <TableCell className="font-medium">{score.studentId}</TableCell>
+                      {multiExercise && (
+                        <TableCell>{exerciseTitle(score.exerciseTemplateId)}</TableCell>
+                      )}
                       <TableCell>
                         {isExercise ? (
                           <div className="space-y-1">

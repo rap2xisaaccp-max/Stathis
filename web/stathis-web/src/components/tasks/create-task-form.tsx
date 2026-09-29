@@ -33,6 +33,8 @@ import {
 } from '@/services/templates/api-template-client';
 import { createTask } from '@/services/tasks/api-task-client';
 import { TaskBodyDTO } from '@/services/tasks/api-task-client';
+import { ExerciseAssignmentEditor } from './exercise-assignment-editor';
+import { AssignedExercise, toExerciseRequests } from '@/lib/tasks/task-exercises';
 import {
   Dialog,
   DialogContent,
@@ -109,6 +111,7 @@ interface CreateTaskFormProps {
 export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwitchToTemplate }: CreateTaskFormProps): React.ReactElement {
   const [selectedTemplateType, setSelectedTemplateType] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>();
+  const [assignedExercises, setAssignedExercises] = useState<AssignedExercise[]>([]);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTemplateData, setReviewTemplateData] = useState<any>(null);
   
@@ -169,6 +172,8 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
 
   const handleTemplateTypeChange = (value: string) => {
     setSelectedTemplateType(value);
+    setAssignedExercises([]);
+    form.setValue('templatePhysicalId', '');
   };
   
   const handleTemplateCreated = () => {
@@ -273,15 +278,11 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
       // Set the appropriate template ID based on selected type
       // Ensuring they match the exact required patterns
       if (data.templateType === 'EXERCISE') {
-        // Pattern must be: ^EXERCISE-[A-Z0-9-]+$
-        // Ensure it starts with EXERCISE- prefix
-        let exerciseId = data.templatePhysicalId;
-        if (!exerciseId.startsWith('EXERCISE-')) {
-          exerciseId = exerciseId.includes('EXERCISE-') 
-            ? exerciseId 
-            : `EXERCISE-${exerciseId}`;
+        if (assignedExercises.length === 0) {
+          throw new Error('Add at least one exercise');
         }
-        taskData.exerciseTemplateId = exerciseId.toUpperCase();
+        taskData.exercises = toExerciseRequests(assignedExercises);
+        taskData.exerciseTemplateId = assignedExercises[0].physicalId.toUpperCase();
       } else if (data.templateType === 'LESSON') {
         // Pattern must be: ^LESSON-[A-Z0-9-]+$
         // Ensure it starts with LESSON- prefix
@@ -310,6 +311,7 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
       toast.success('Task created successfully');
       onSuccess();
       form.reset();
+      setAssignedExercises([]);
     },
     onError: (error) => {
       toast.error(`Error creating task: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1347,7 +1349,19 @@ export function CreateTaskForm({ classroomPhysicalId, onSuccess, onCancel, onSwi
               )}
             />
 
-            {selectedTemplateType && (
+            {selectedTemplateType === 'EXERCISE' && (
+              <ExerciseAssignmentEditor
+                templates={exerciseTemplates || []}
+                loading={isLoadingExercises}
+                value={assignedExercises}
+                onChange={(next) => {
+                  setAssignedExercises(next);
+                  form.setValue('templatePhysicalId', next[0]?.physicalId ?? '', { shouldValidate: true });
+                }}
+              />
+            )}
+
+            {selectedTemplateType && selectedTemplateType !== 'EXERCISE' && (
               <FormField
                 control={form.control}
                 name="templatePhysicalId"

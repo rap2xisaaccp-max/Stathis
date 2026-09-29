@@ -19,6 +19,9 @@ public class TaskProgressDTO {
     private int maxExerciseScore;
     private Integer exerciseReps;
     private Integer exerciseGoalReps;
+    private java.util.List<edu.cit.stathis.task.dto.TaskExerciseProgressDTO> exercises;
+    private int exercisesCompleted;
+    private int exercisesRequired;
     private Long totalTimeTaken;
     private String startedAt;
     private String completedAt;

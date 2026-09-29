@@ -16,7 +16,10 @@ object TaskCompletionTruth {
         !task.quizTemplateId.isNullOrBlank() || task.quizTemplate != null
 
     fun hasExercise(task: Task): Boolean =
-        !task.exerciseTemplateId.isNullOrBlank() || task.exerciseTemplate != null
+        !task.exerciseTemplateId.isNullOrBlank() ||
+            task.exerciseTemplate != null ||
+            !task.exercises.isNullOrEmpty() ||
+            (task.exercisesRequired ?: 0) > 0
 
     fun isLessonDone(progress: TaskProgressResponse?): Boolean =
         progress?.lessonCompleted == true
@@ -24,8 +27,32 @@ object TaskCompletionTruth {
     fun isQuizDone(progress: TaskProgressResponse?): Boolean =
         progress?.quizCompleted == true || (progress?.quizAttempts ?: 0) > 0
 
-    fun isExerciseDone(progress: TaskProgressResponse?): Boolean =
-        progress?.exerciseCompleted == true || (progress?.exerciseAttempts ?: 0) > 0
+    /**
+     * One assigned exercise keeps the legacy attempt-or-flag rule.
+     * More than one assigned exercise is done only when every required exercise qualifies.
+     * Aggregate [TaskProgressResponse.exerciseAttempts] stays unused in that case so an older
+     * reading of "any attempt means the task exercise is done" cannot fire early.
+     */
+    fun isExerciseDone(progress: TaskProgressResponse?): Boolean {
+        val required = progress?.exercisesRequired ?: 0
+        if (required > 1) {
+            val done = progress?.exercisesCompleted ?: 0
+            return done >= required || progress?.exerciseCompleted == true
+        }
+        return progress?.exerciseCompleted == true || (progress?.exerciseAttempts ?: 0) > 0
+    }
+
+    fun attemptsForExercise(progress: TaskProgressResponse?, templateId: String?): Int {
+        if (progress == null) return 0
+        val required = progress.exercisesRequired ?: 0
+        if (required > 1) {
+            return progress.exercises
+                ?.firstOrNull { it.exerciseTemplateId == templateId }
+                ?.attempts
+                ?: 0
+        }
+        return progress.exerciseAttempts ?: 0
+    }
 
     /**
      * Fully complete iff every template on [task] is done. Exercise-only tasks

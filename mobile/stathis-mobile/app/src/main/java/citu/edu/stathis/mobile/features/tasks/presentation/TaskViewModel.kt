@@ -137,9 +137,7 @@ class TaskViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = submitQuizScoreResultUseCase(taskId, quizTemplateId, score)) {
                 is Result.Success -> {
-                    // Mark task as completed in cache for immediate UI feedback
-                    TaskCompletionCache.markCompleted(taskId)
-                    loadTaskProgress(taskId)
+                    refreshAndCacheIfComplete(taskId)
                 }
                 is Result.Error -> _error.value = result.message
             }
@@ -150,9 +148,7 @@ class TaskViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = completeLessonResultUseCase(taskId, lessonTemplateId)) {
                 is Result.Success -> {
-                    // Mark task as completed in cache for immediate UI feedback
-                    TaskCompletionCache.markCompleted(taskId)
-                    loadTaskProgress(taskId)
+                    refreshAndCacheIfComplete(taskId)
                 }
                 is Result.Error -> _error.value = result.message
             }
@@ -163,9 +159,7 @@ class TaskViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = completeExerciseResultUseCase(taskId, exerciseTemplateId)) {
                 is Result.Success -> {
-                    // Mark task as completed in cache for immediate UI feedback
-                    TaskCompletionCache.markCompleted(taskId)
-                    loadTaskProgress(taskId)
+                    refreshAndCacheIfComplete(taskId)
                 }
                 is Result.Error -> _error.value = result.message
             }
@@ -174,6 +168,20 @@ class TaskViewModel @Inject constructor(
 
     fun clearError() {
         _error.value = null
+    }
+
+    private fun refreshAndCacheIfComplete(taskId: String) {
+        viewModelScope.launch {
+            when (val result = getTaskProgressResultUseCase(taskId)) {
+                is Result.Success -> {
+                    _taskProgress.value = result.data
+                    if (result.data.isCompleted) {
+                        TaskCompletionCache.markCompleted(taskId)
+                    }
+                }
+                is Result.Error -> _error.value = result.message
+            }
+        }
     }
     
     fun refreshTaskProgress(taskId: String) {

@@ -131,12 +131,14 @@ class AdaptiveSessionViewModel @Inject constructor(
     }
 
     fun flushAndEnd() {
+        val token = engine.captureFlushToken()
         viewModelScope.launch {
             // Snapshot uploads run after the intervention batch, so they must survive the
             // student leaving this screen and the ViewModel being cleared mid-flush.
+            // The token is the session being left. A newer exercise must not be cleared.
             withContext(NonCancellable) {
-                engine.flush()
-                engine.endSession()
+                engine.flush(token)
+                engine.endSession(token.sessionId)
             }
             _sessionSummary.value = engine.sessionSummary()
             publishDelivery(null)

@@ -244,17 +244,103 @@ fun TaskDetailScreen(
                     }
 
                     // Exercise launcher → task_exercise graded session (not an attempt UI).
-                    val exerciseTemplatePhysicalId = currentTask.exerciseTemplateId ?: currentTask.exerciseTemplate?.physicalId
-                    if (!exerciseTemplatePhysicalId.isNullOrEmpty()) {
-                        val exerciseAttempts = progress?.exerciseAttempts
+                    val assignedExercises = progress?.exercises?.takeIf { it.isNotEmpty() }
+                        ?: currentTask.exercises?.takeIf { it.isNotEmpty() }
+                        ?: emptyList()
+                    val exercisesRequired = progress?.exercisesRequired?.takeIf { it > 0 }
+                        ?: currentTask.exercisesRequired?.takeIf { it > 0 }
+                        ?: assignedExercises.size
+                    val multiExercise = exercisesRequired > 1 && assignedExercises.isNotEmpty()
+                    val exerciseTemplatePhysicalId = assignedExercises.firstOrNull()?.exerciseTemplateId
+                        ?: currentTask.exerciseTemplateId
+                        ?: currentTask.exerciseTemplate?.physicalId
+                    if (multiExercise) {
+                        val exercisesCompleted = progress?.exercisesCompleted
+                            ?: assignedExercises.count { it.completed }
+                        item {
+                            Text(
+                                text = "$exercisesCompleted of $exercisesRequired exercises completed",
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        items(
+                            items = assignedExercises,
+                            key = { slot -> slot.exerciseTemplateId ?: slot.sortOrder.toString() }
+                        ) { slot ->
+                            val templateId = slot.exerciseTemplateId
+                            val slotAttempts = slot.attempts
+                            val maxAttempts = currentTask.maxAttempts
+                            val canStartExercise = !templateId.isNullOrBlank() &&
+                                !isUnavailable &&
+                                (maxAttempts <= 0 || slotAttempts < maxAttempts)
+                            val reps = slot.latestValidReps ?: 0
+                            val goal = slot.goalReps
+                            val status = when (slot.completionStatus) {
+                                "COMPLETED" -> "Completed"
+                                "IN_PROGRESS" -> "In Progress"
+                                else -> when {
+                                    slot.completed -> "Completed"
+                                    slotAttempts > 0 -> "In Progress"
+                                    else -> "Not Started"
+                                }
+                            }
+                            val mark = if (slot.completed || slot.completionStatus == "COMPLETED") "✓ " else ""
+                            val detail = buildString {
+                                append("$reps/${goal ?: "—"}")
+                                append(" · ")
+                                append(status)
+                                if (slot.score != null) {
+                                    append(" · Score: ")
+                                    append(slot.score)
+                                    append("%")
+                                }
+                            }
+                            TaskComponentCard(
+                                title = "$mark${slot.title?.takeIf { it.isNotBlank() } ?: "Exercise"}",
+                                icon = Icons.Default.FitnessCenter,
+                                isCompleted = slot.completed || slot.completionStatus == "COMPLETED",
+                                attempts = slotAttempts,
+                                maxAttempts = if (progress == null) 0 else maxAttempts,
+                                canStart = canStartExercise,
+                                score = detail,
+                                showAttemptBadge = progress != null,
+                                actionLabel = when {
+                                    !canStartExercise -> null
+                                    slotAttempts > 0 -> "Retry Exercise"
+                                    else -> "Start Exercise"
+                                },
+                                onClick = {
+                                    if (!isUnavailable && !templateId.isNullOrBlank()) {
+                                        onStartExercise(templateId)
+                                    } else {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                if (templateId.isNullOrBlank()) {
+                                                    "This exercise is missing a template."
+                                                } else {
+                                                    "This task is unavailable."
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    } else if (!exerciseTemplatePhysicalId.isNullOrEmpty()) {
+                        val singleSlot = assignedExercises.singleOrNull()
+                        val exerciseAttempts = singleSlot?.attempts
+                            ?: progress?.exerciseAttempts
                             ?: if (TaskCompletionTruth.isExerciseDone(progress)) 1 else 0
                         val isExerciseCompleted = TaskCompletionTruth.isExerciseDone(progress)
                         val maxAttempts = currentTask.maxAttempts
                         val canStartExercise = !isUnavailable && (maxAttempts <= 0 || exerciseAttempts < maxAttempts)
-                        val exerciseScore = progress?.exerciseScore
+                        val exerciseScore = singleSlot?.score ?: progress?.exerciseScore
                         val maxExerciseScore = progress?.maxExerciseScore ?: 100
-                        val exerciseReps = progress?.exerciseReps
-                        val exerciseGoalReps = progress?.exerciseGoalReps
+                        val exerciseReps = singleSlot?.latestValidReps ?: progress?.exerciseReps
+                        val exerciseGoalReps = singleSlot?.goalReps
+                            ?: progress?.exerciseGoalReps
                             ?: currentTask.exerciseTemplate?.goalReps
                         val exerciseScoreText = when {
                             exerciseScore != null && exerciseScore > 0 -> {
@@ -276,7 +362,9 @@ fun TaskDetailScreen(
 
                         item {
                             TaskComponentCard(
-                                title = currentTask.exerciseTemplate?.title?.takeIf { it.isNotBlank() } ?: "Exercise",
+                                title = singleSlot?.title?.takeIf { it.isNotBlank() }
+                                    ?: currentTask.exerciseTemplate?.title?.takeIf { it.isNotBlank() }
+                                    ?: "Exercise",
                                 icon = Icons.Default.FitnessCenter,
                                 isCompleted = isExerciseCompleted,
                                 attempts = exerciseAttempts,
@@ -288,7 +376,7 @@ fun TaskDetailScreen(
                                 actionLabel = exerciseActionLabel,
                                 onClick = {
                                     if (!isUnavailable) {
-                                        onStartExercise(exerciseTemplatePhysicalId!!)
+                                        onStartExercise(exerciseTemplatePhysicalId)
                                     } else {
                                         coroutineScope.launch {
                                             val reason = buildString {
@@ -312,8 +400,9 @@ fun TaskDetailScreen(
                                 }
                             )
                         }
+                    }
 
-                        // View History button below the exercise card
+                    if (multiExercise || !exerciseTemplatePhysicalId.isNullOrEmpty()) {
                         item {
                             OutlinedButton(
                                 onClick = {

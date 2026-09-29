@@ -7,6 +7,26 @@ import { serverApiClient } from '@/lib/api/server-client';
  */
 
 // Types
+export interface TaskExerciseInputDTO {
+  exerciseTemplateId: string;
+  sortOrder?: number;
+}
+
+export interface TaskExerciseProgressDTO {
+  exerciseTemplateId: string;
+  sortOrder: number;
+  title?: string;
+  exerciseType?: string;
+  goalReps?: number;
+  goalAccuracy?: number;
+  goalTime?: number;
+  completed?: boolean;
+  attempts?: number;
+  latestValidReps?: number;
+  score?: number | null;
+  completionStatus?: string;
+}
+
 export interface TaskBodyDTO {
   name: string; // Required
   description?: string;
@@ -17,6 +37,7 @@ export interface TaskBodyDTO {
   exerciseTemplateId?: string;
   lessonTemplateId?: string;
   quizTemplateId?: string;
+  exercises?: TaskExerciseInputDTO[];
   maxAttempts?: number;
 }
 
@@ -35,6 +56,7 @@ export interface TaskResponseDTO {
   exerciseTemplateId?: string;
   lessonTemplateId?: string;
   quizTemplateId?: string;
+  exercises?: TaskExerciseProgressDTO[];
   maxAttempts?: number;
   started: boolean;
   active: boolean;
@@ -67,10 +89,18 @@ export async function createTask(task: TaskBodyDTO) {
       closingDate: task.closingDate.replace(/\.\d{3}/, ''), // Remove milliseconds if present
       classroomPhysicalId: task.classroomPhysicalId.toUpperCase(), // Ensure uppercase
       
-      // Optional template IDs (only include one that's relevant)
-      ...(task.exerciseTemplateId && { 
-        exerciseTemplateId: task.exerciseTemplateId.toUpperCase() 
-      }),
+      // Optional template IDs. exercises[] wins on the server when both are sent.
+      ...(task.exercises && task.exercises.length > 0
+        ? {
+            exercises: task.exercises.map((item, index) => ({
+              exerciseTemplateId: item.exerciseTemplateId.toUpperCase(),
+              sortOrder: item.sortOrder ?? index + 1,
+            })),
+            exerciseTemplateId: (task.exerciseTemplateId || task.exercises[0].exerciseTemplateId).toUpperCase(),
+          }
+        : task.exerciseTemplateId
+          ? { exerciseTemplateId: task.exerciseTemplateId.toUpperCase() }
+          : {}),
       ...(task.lessonTemplateId && { 
         lessonTemplateId: task.lessonTemplateId.toUpperCase() 
       }),

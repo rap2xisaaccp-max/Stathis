@@ -76,6 +76,20 @@ class AdaptiveFeedbackEngine @Inject constructor(
 
     fun currentSessionId(): String = sessionId
 
+    /**
+     * Snapshot of the live session for a flush that may outlive the screen.
+     * Claiming [AdaptiveFlushToken.recordSession] here stops a second flush of the same
+     * session from recording twice. A later [startSession] owns a new id, so this token
+     * must not clear or end that newer session.
+     */
+    fun captureFlushToken(): AdaptiveFlushToken {
+        val record = !sessionRecorded && exerciseType.isNotBlank()
+        if (record) {
+            sessionRecorded = true
+        }
+        return AdaptiveFlushToken(sessionId, exerciseType, record)
+    }
+
     fun sessionSummary(): AdaptiveSessionSummary =
         AdaptiveSessionSummary(
             interventionCount = sessionInterventionCount,
@@ -345,8 +359,11 @@ class AdaptiveFeedbackEngine @Inject constructor(
         }
     }
 
-    suspend fun flush() {
-        pendingResponses.clear()
+    suspend fun flush(token: AdaptiveFlushToken? = null) {
+        val owned = token ?: captureFlushToken()
+        if (sessionId == owned.sessionId) {
+            pendingResponses.clear()
+        }
 
         val (queuedInterventions, _) = offlineQueue.drain()
         if (queuedInterventions.isNotEmpty()) {
@@ -367,15 +384,16 @@ class AdaptiveFeedbackEngine @Inject constructor(
 
         flushEvidence()
 
-        if (!sessionRecorded && exerciseType.isNotBlank()) {
-            sessionRecorded = true
+        if (owned.recordSession) {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    adaptiveApi.recordSession(exerciseType)
+                    adaptiveApi.recordSession(owned.exerciseType)
                 }
             }.onFailure { t ->
-                sessionRecorded = false
-                Timber.w(t, "Failed to record coaching session for %s", exerciseType)
+                if (sessionId == owned.sessionId) {
+                    sessionRecorded = false
+                }
+                Timber.w(t, "Failed to record coaching session for %s", owned.exerciseType)
             }
         }
     }
@@ -436,7 +454,10 @@ class AdaptiveFeedbackEngine @Inject constructor(
                 )
         }
 
-    fun endSession() {
+    fun endSession(expectedSessionId: String? = null) {
+        if (expectedSessionId != null && expectedSessionId != sessionId) {
+            return
+        }
         delivery.stopSpeaking()
         activeDelivery = null
     }
@@ -474,6 +495,12 @@ class AdaptiveFeedbackEngine @Inject constructor(
         private fun textPart(value: String) = value.toRequestBody("text/plain".toMediaType())
     }
 }
+
+data class AdaptiveFlushToken(
+    val sessionId: String,
+    val exerciseType: String,
+    val recordSession: Boolean
+)
 
 private fun PendingIntervention.toRequestDto(): InterventionRequestDto =
     InterventionRequestDto(

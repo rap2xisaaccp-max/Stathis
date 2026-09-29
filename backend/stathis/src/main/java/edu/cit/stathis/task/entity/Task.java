@@ -1,8 +1,10 @@
 package edu.cit.stathis.task.entity;
 
 import jakarta.persistence.*;
+import edu.cit.stathis.task.dto.TaskExerciseProgressDTO;
 import lombok.*;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -72,4 +74,8 @@ public class Task {
 
     @Column(name = "max_attempts", nullable = false)
     private int maxAttempts;
+
+    /** Ordered exercises. Not a column. Populated for teacher task responses. */
+    @Transient
+    private List<TaskExerciseProgressDTO> exercises;
 }

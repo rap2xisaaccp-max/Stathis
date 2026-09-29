@@ -76,6 +76,7 @@ public class TemplateController {
 
     // Exercise Template Endpoints
     @PostMapping("/exercises")
+    @PreAuthorize("hasRole('TEACHER')")
     @Operation(summary = "Create a new exercise template")
     public ResponseEntity<ExerciseTemplateResponseDTO> createExerciseTemplate(@RequestBody ExerciseTemplateBodyDTO exerciseTemplateBodyDTO) {
         return ResponseEntity.ok(exerciseTemplateService.getExerciseTemplateResponseDTO(
@@ -113,6 +114,7 @@ public class TemplateController {
     }
 
     @DeleteMapping("/exercises/{physicalId}")
+    @PreAuthorize("hasRole('TEACHER')")
     @Operation(summary = "Delete an exercise template by its physical ID")
     public ResponseEntity<Void> deleteExerciseTemplate(@PathVariable String physicalId) {
         exerciseTemplateService.deleteExerciseTemplate(physicalId);

@@ -57,6 +57,44 @@ class FormMasteryServiceTest {
   }
 
   @Test
+  void squatAttemptsDoNotChangeAnExistingPushMastery() {
+    ExerciseTemplate push = template("TPL-PUSH", ExerciseType.PUSH_UP);
+    when(scoreAttemptRepository.findByStudentIdAndExerciseTemplateIdIsNotNull("STUDENT-1"))
+        .thenReturn(List.of(attempt("A3", "TPL-PUSH", 8, 100.0, "2026-08-03T00:00:00Z")));
+    when(exerciseTemplateRepository.findByPhysicalIdIn(any())).thenReturn(List.of(push));
+    double pushOnly =
+        service.listForStudent("STUDENT-1").stream()
+            .filter(row -> "PUSH_UP".equals(row.getExerciseType()))
+            .findFirst()
+            .orElseThrow()
+            .getFormMasteryLevel();
+
+    ExerciseTemplate squats = template("TPL-SQUAT", ExerciseType.SQUATS);
+    when(scoreAttemptRepository.findByStudentIdAndExerciseTemplateIdIsNotNull("STUDENT-1"))
+        .thenReturn(
+            List.of(
+                attempt("A3", "TPL-PUSH", 8, 100.0, "2026-08-03T00:00:00Z"),
+                attempt("A1", "TPL-SQUAT", 10, 40.0, "2026-08-01T00:00:00Z"),
+                attempt("A2", "TPL-SQUAT", 10, 60.0, "2026-08-02T00:00:00Z")));
+    when(exerciseTemplateRepository.findByPhysicalIdIn(any())).thenReturn(List.of(push, squats));
+
+    FormMasteryDTO pushRow =
+        service.listForStudent("STUDENT-1").stream()
+            .filter(row -> "PUSH_UP".equals(row.getExerciseType()))
+            .findFirst()
+            .orElseThrow();
+    FormMasteryDTO squatRow =
+        service.listForStudent("STUDENT-1").stream()
+            .filter(row -> "SQUATS".equals(row.getExerciseType()))
+            .findFirst()
+            .orElseThrow();
+    assertEquals(pushOnly, pushRow.getFormMasteryLevel(), 1e-9);
+    assertEquals(1, pushRow.getEligibleAttemptCount());
+    assertEquals(2, squatRow.getEligibleAttemptCount());
+    assertEquals(0.47, squatRow.getFormMasteryLevel(), 1e-9);
+  }
+
+  @Test
   void normalizesExerciseAliasesOntoOneBucket() {
     ExerciseTemplate squats = template("TPL-SQUAT", ExerciseType.SQUATS);
     when(scoreAttemptRepository.findByStudentIdAndExerciseTemplateIdIsNotNull("STUDENT-1"))

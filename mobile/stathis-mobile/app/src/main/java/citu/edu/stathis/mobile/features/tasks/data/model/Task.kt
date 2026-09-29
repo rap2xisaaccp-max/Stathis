@@ -26,5 +26,8 @@ data class Task(
     val isStarted: Boolean? = null,
     val maxAttempts: Int,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val exercises: List<citu.edu.stathis.mobile.features.tasks.data.model.TaskExerciseProgress>? = null,
+    val exercisesCompleted: Int? = null,
+    val exercisesRequired: Int? = null
 ) 

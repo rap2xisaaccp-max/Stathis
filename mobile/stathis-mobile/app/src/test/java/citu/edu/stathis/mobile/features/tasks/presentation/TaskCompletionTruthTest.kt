@@ -68,6 +68,55 @@ class TaskCompletionTruthTest {
         assertEquals(0.5f, pct)
     }
 
+    @Test
+    fun multiExerciseTaskIsNotDoneAfterTheFirstSubmission() {
+        val task = sampleTask(exercise = "EX-PUSH").copy(
+            exercisesRequired = 3
+        )
+        val afterFirst = TaskProgressResponse(
+            exerciseCompleted = false,
+            exerciseAttempts = 0,
+            exercisesCompleted = 1,
+            exercisesRequired = 3,
+            isCompleted = false
+        )
+        assertFalse(TaskCompletionTruth.isExerciseDone(afterFirst))
+        assertFalse(TaskCompletionTruth.isFullyComplete(task, afterFirst))
+        assertEquals(2, TaskCompletionTruth.attemptsForExercise(
+            afterFirst.copy(
+                exercises = listOf(
+                    citu.edu.stathis.mobile.features.tasks.data.model.TaskExerciseProgress(
+                        exerciseTemplateId = "EX-PUSH",
+                        attempts = 2
+                    )
+                )
+            ),
+            "EX-PUSH"
+        ))
+        assertEquals(0, TaskCompletionTruth.attemptsForExercise(afterFirst, "EX-SQUAT"))
+
+        val allDone = afterFirst.copy(
+            exerciseCompleted = true,
+            exerciseAttempts = 2,
+            exercisesCompleted = 3,
+            isCompleted = true
+        )
+        assertTrue(TaskCompletionTruth.isExerciseDone(allDone))
+        assertTrue(TaskCompletionTruth.isFullyComplete(task, allDone))
+    }
+
+    @Test
+    fun oneExerciseTaskStillUsesLegacyAttemptCount() {
+        val progress = TaskProgressResponse(
+            exerciseCompleted = false,
+            exerciseAttempts = 1,
+            exercisesCompleted = 1,
+            exercisesRequired = 1
+        )
+        assertTrue(TaskCompletionTruth.isExerciseDone(progress))
+        assertEquals(1, TaskCompletionTruth.attemptsForExercise(progress, "EX-1"))
+    }
+
     private fun sampleTask(
         id: String = "TASK-1",
         lesson: String? = null,
