@@ -8,15 +8,24 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.cit.stathis.task.controller.ExerciseDemonstrationController;
+import jakarta.servlet.ServletException;
+import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 class SecurityConfigCorsTest {
 
@@ -69,6 +78,54 @@ class SecurityConfigCorsTest {
   }
 
   @Test
+  void loginPreflightReturnsAllowOriginForEachConfiguredOrigin() throws Exception {
+    for (String origin : List.of(
+        "https://stathis-x68s.onrender.com",
+        "https://stathis.ryne.dev",
+        "https://stathis-backend-fresh.onrender.com",
+        "http://localhost:3000")) {
+      MockHttpServletResponse response = preflight(origin);
+      assertEquals(200, response.getStatus(), origin);
+      assertEquals(origin, response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
+      assertEquals("true", response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS));
+      String allowedHeaders = response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS);
+      assertNotNull(allowedHeaders);
+      assertTrue(allowedHeaders.toLowerCase().contains("authorization"));
+      assertTrue(allowedHeaders.toLowerCase().contains("content-type"));
+    }
+  }
+
+  @Test
+  void loginPreflightRejectsUnknownOriginWithoutAllowOriginHeader() throws Exception {
+    MockHttpServletResponse response = preflight("https://evil.example.com");
+    assertEquals(403, response.getStatus());
+    assertNull(response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
+  }
+
+  @Test
+  void corsEnvironmentVariableBindsAsSeparateOrigins() {
+    Map<String, Object> env = new HashMap<>();
+    env.put(
+        "CORS_ALLOWED_ORIGINS",
+        "https://stathis.ryne.dev,https://stathis-x68s.onrender.com,"
+            + "https://stathis-backend-fresh.onrender.com,http://localhost:3000");
+    StandardEnvironment environment = new StandardEnvironment();
+    environment.getPropertySources().replace(
+        StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+        new SystemEnvironmentPropertySource(
+            StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, env));
+
+    String bound = environment.getProperty("cors.allowed-origins");
+    assertEquals(
+        List.of(
+            "https://stathis.ryne.dev",
+            "https://stathis-x68s.onrender.com",
+            "https://stathis-backend-fresh.onrender.com",
+            "http://localhost:3000"),
+        SecurityConfig.parseAllowedOrigins(bound));
+  }
+
+  @Test
   void wildcardOriginIsRejected() {
     assertThrows(
         IllegalStateException.class,
@@ -90,6 +147,18 @@ class SecurityConfigCorsTest {
 
     assertEquals("hasRole('TEACHER')", upload.value());
     assertEquals("hasAnyRole('TEACHER', 'STUDENT')", metadata.value());
+  }
+
+  private MockHttpServletResponse preflight(String origin) throws ServletException, IOException {
+    MockHttpServletRequest request = new MockHttpServletRequest(HttpMethod.OPTIONS.name(), "/api/auth/login");
+    request.addHeader(HttpHeaders.ORIGIN, origin);
+    request.addHeader(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST");
+    request.addHeader(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "authorization,content-type");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    new CorsFilter(source).doFilter(request, response, (req, res) -> {
+      throw new AssertionError("preflight must be completed by the CORS filter");
+    });
+    return response;
   }
 
   private CorsConfiguration configurationFor(String path) {
