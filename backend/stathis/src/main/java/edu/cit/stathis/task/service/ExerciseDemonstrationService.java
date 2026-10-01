@@ -280,7 +280,11 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
   private void requireCanView(Task task) {
     Classroom classroom = requireClassroom(task);
     String caller = physicalIdService.getCurrentUserPhysicalId();
-    if (!classroomService.isUserEnrolledInClassroom(caller, classroom.getPhysicalId())) {
+    if (caller != null && caller.equals(classroom.getTeacherId())) {
+      return;
+    }
+    if (caller == null
+        || !classroomService.isUserEnrolledInClassroom(caller, classroom.getPhysicalId())) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized for this classroom");
     }
   }

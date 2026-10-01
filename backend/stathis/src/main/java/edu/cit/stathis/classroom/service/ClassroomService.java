@@ -262,9 +262,16 @@ public class ClassroomService {
     @Transactional(readOnly = true)
     public boolean isUserEnrolledInClassroom(String userPhysicalId, String classroomPhysicalId) {
         Classroom classroom = loadClassroom(classroomPhysicalId);
+        if (userPhysicalId != null && userPhysicalId.equals(classroom.getTeacherId())) {
+            return true;
+        }
+        if (userPhysicalId == null) {
+            return false;
+        }
         return classroom.getClassroomStudents().stream()
-            .anyMatch(cs -> cs.getStudent().getUser().getPhysicalId().equals(userPhysicalId)) ||
-            classroom.getTeacherId().equals(userPhysicalId);
+            .anyMatch(cs -> cs.getStudent() != null
+                && cs.getStudent().getUser() != null
+                && userPhysicalId.equals(cs.getStudent().getUser().getPhysicalId()));
     }
 
     @Transactional(readOnly = true)

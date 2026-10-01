@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import edu.cit.stathis.auth.service.PhysicalIdService;
@@ -144,6 +146,30 @@ class ExerciseDemonstrationServiceTest {
     assertFalse(meta.isAvailable());
     assertEquals(TASK, meta.getTaskId());
     assertEquals(PUSH, meta.getExerciseTemplateId());
+  }
+
+  @Test
+  void owningTeacherCanReadMissingDemonstrationWithoutEnrollmentLookup() {
+    ExerciseDemonstrationDTO meta = service.metadata(TASK, PUSH);
+    assertFalse(meta.isAvailable());
+    assertEquals(PUSH, meta.getExerciseTemplateId());
+    verify(classroomService, never()).isUserEnrolledInClassroom(any(), any());
+  }
+
+  @Test
+  void enrolledStudentCanReadButCannotUploadOrDelete() {
+    service.upload(TASK, PUSH, "push.mp4", "video/mp4", mp4());
+    caller = STUDENT;
+    assertTrue(service.metadata(TASK, PUSH).isAvailable());
+    ResponseStatusException upload =
+        assertThrows(
+            ResponseStatusException.class,
+            () -> service.upload(TASK, PUSH, "push.mp4", "video/mp4", mp4()));
+    assertEquals(HttpStatus.FORBIDDEN, upload.getStatusCode());
+    ResponseStatusException delete =
+        assertThrows(ResponseStatusException.class, () -> service.delete(TASK, PUSH));
+    assertEquals(HttpStatus.FORBIDDEN, delete.getStatusCode());
+    assertEquals(1, rows.size());
   }
 
   @Test
