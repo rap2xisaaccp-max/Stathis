@@ -92,6 +92,10 @@ assert.equal(
   demonstrationMessageFromBody('{"status":403,"error":"Not authorized for this classroom"}'),
   'Not authorized for this classroom'
 );
+assert.equal(
+  demonstrationMessageFromBody('{"status":502,"message":"Demonstration storage upload failed"}'),
+  'Demonstration storage upload failed'
+);
 assert.equal(demonstrationMessageFromBody('<html>forbidden</html>'), null);
 assert.equal(
   acceptDemonstrationFile({ type: 'application/x-msdownload', size: 20, name: 'a.exe' }),

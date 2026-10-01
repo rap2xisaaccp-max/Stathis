@@ -23,7 +23,8 @@ public class ApiExceptionHandler {
     if (error == null || error.isBlank()) {
       error = "Request failed";
     }
-    return ResponseEntity.status(ex.getStatusCode()).body(Map.of("status", code, "error", error));
+    return ResponseEntity.status(ex.getStatusCode())
+        .body(Map.of("status", code, "error", error, "message", error));
   }
 
   @ExceptionHandler(MaxUploadSizeExceededException.class)
@@ -37,12 +38,26 @@ public class ApiExceptionHandler {
       return payloadTooLarge();
     }
     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-        .body(Map.of("status", 400, "error", "Could not read the uploaded file"));
+        .body(
+            Map.of(
+                "status",
+                400,
+                "error",
+                "Could not read the uploaded file",
+                "message",
+                "Could not read the uploaded file"));
   }
 
   private static ResponseEntity<Map<String, Object>> payloadTooLarge() {
     return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-        .body(Map.of("status", 413, "error", "Demonstration videos must be 50 MB or smaller"));
+        .body(
+            Map.of(
+                "status",
+                413,
+                "error",
+                "Demonstration videos must be 50 MB or smaller",
+                "message",
+                "Demonstration videos must be 50 MB or smaller"));
   }
 
   private static boolean causedBySize(Throwable ex) {

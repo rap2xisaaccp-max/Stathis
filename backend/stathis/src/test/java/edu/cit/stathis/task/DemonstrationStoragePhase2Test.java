@@ -168,8 +168,215 @@ class DemonstrationStoragePhase2Test {
                     new ByteArrayInputStream(new byte[] {9, 9, 9, 9}),
                     1024));
     assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertEquals("Demonstration storage upload failed: 500", ex.getReason());
     assertArrayEquals(original, memory.objects.get("demos/TASK-A/EXERCISE-PUSH/DEMO-OLD.mp4"));
     assertFalse(memory.objects.containsKey("demos/TASK-A/EXERCISE-PUSH/DEMO-NEW.mp4"));
+  }
+
+  @Test
+  void earlySupabaseCloseBecomes502InsteadOfAnUncaughtIoException() throws Exception {
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    String objectPath = "/storage/v1/object/exercise-demonstrations/demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4";
+    server.createContext(
+        objectPath,
+        exchange -> {
+          byte[] body =
+              "{\"statusCode\":\"404\",\"error\":\"Bucket not found\",\"message\":\"Bucket not found\"}"
+                  .getBytes(StandardCharsets.UTF_8);
+          exchange.sendResponseHeaders(404, body.length);
+          try (var out = exchange.getResponseBody()) {
+            out.write(body);
+          }
+          exchange.close();
+        });
+    server.start();
+    try {
+      SupabaseExerciseDemonstrationStorage storage =
+          new SupabaseExerciseDemonstrationStorage(
+              "http://127.0.0.1:" + server.getAddress().getPort(), "test-service-key", null);
+      byte[] video = new byte[256 * 1024];
+      video[4] = 'f';
+      video[5] = 't';
+      video[6] = 'y';
+      video[7] = 'p';
+      ResponseStatusException ex =
+          assertThrows(
+              ResponseStatusException.class,
+              () ->
+                  storage.put(
+                      "demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4",
+                      new ByteArrayInputStream(video),
+                      50L * 1024L * 1024L));
+      assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+      assertTrue(ex.getReason().startsWith("Demonstration storage upload failed: 404"));
+      assertFalse(ex.getReason().contains("test-service-key"));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void completedSupabaseErrorIncludesStatusAndSafeMessage() throws Exception {
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    String objectPath = "/storage/v1/object/exercise-demonstrations/demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4";
+    server.createContext(
+        objectPath,
+        exchange -> {
+          exchange.getRequestBody().readAllBytes();
+          byte[] body =
+              "{\"statusCode\":\"400\",\"error\":\"Invalid\",\"message\":\"Invalid Compact JWS\"}"
+                  .getBytes(StandardCharsets.UTF_8);
+          exchange.sendResponseHeaders(400, body.length);
+          try (var out = exchange.getResponseBody()) {
+            out.write(body);
+          }
+          exchange.close();
+        });
+    server.start();
+    try {
+      SupabaseExerciseDemonstrationStorage storage =
+          new SupabaseExerciseDemonstrationStorage(
+              "http://127.0.0.1:" + server.getAddress().getPort(), "test-service-key", null);
+      byte[] video = new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'};
+      ResponseStatusException ex =
+          assertThrows(
+              ResponseStatusException.class,
+              () ->
+                  storage.put(
+                      "demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4",
+                      new ByteArrayInputStream(video),
+                      1024));
+      assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+      assertEquals("Demonstration storage upload failed: 400 (Invalid Compact JWS)", ex.getReason());
+      assertFalse(ex.getReason().contains("test-service-key"));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void supabaseErrorBodyThatLooksLikeACredentialIsNotReturned() throws Exception {
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    String objectPath = "/storage/v1/object/exercise-demonstrations/demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4";
+    server.createContext(
+        objectPath,
+        exchange -> {
+          exchange.getRequestBody().readAllBytes();
+          byte[] body =
+              "{\"message\":\"eyJhbGciOiJIUzI1NiJ9.secret\"}".getBytes(StandardCharsets.UTF_8);
+          exchange.sendResponseHeaders(401, body.length);
+          try (var out = exchange.getResponseBody()) {
+            out.write(body);
+          }
+          exchange.close();
+        });
+    server.start();
+    try {
+      SupabaseExerciseDemonstrationStorage storage =
+          new SupabaseExerciseDemonstrationStorage(
+              "http://127.0.0.1:" + server.getAddress().getPort(), "test-service-key", null);
+      ResponseStatusException ex =
+          assertThrows(
+              ResponseStatusException.class,
+              () ->
+                  storage.put(
+                      "demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4",
+                      new ByteArrayInputStream(new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'}),
+                      1024));
+      assertEquals("Demonstration storage upload failed: 401", ex.getReason());
+      assertFalse(ex.getReason().contains("eyJ"));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void successfulSupabasePutSendsTheVideoWithoutLoadingItAsTheResponse() throws Exception {
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    String objectPath = "/storage/v1/object/exercise-demonstrations/demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4";
+    java.util.concurrent.atomic.AtomicInteger seenBytes = new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.atomic.AtomicReference<String> seenType = new java.util.concurrent.atomic.AtomicReference<>();
+    java.util.concurrent.atomic.AtomicReference<String> seenAuth = new java.util.concurrent.atomic.AtomicReference<>();
+    java.util.concurrent.atomic.AtomicReference<String> seenApiKey = new java.util.concurrent.atomic.AtomicReference<>();
+    java.util.concurrent.atomic.AtomicReference<String> seenMethod = new java.util.concurrent.atomic.AtomicReference<>();
+    server.createContext(
+        objectPath,
+        exchange -> {
+          byte[] uploaded = exchange.getRequestBody().readAllBytes();
+          seenBytes.set(uploaded.length);
+          seenType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+          seenAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
+          seenApiKey.set(exchange.getRequestHeaders().getFirst("apikey"));
+          seenMethod.set(exchange.getRequestMethod());
+          byte[] ok = "{}".getBytes(StandardCharsets.UTF_8);
+          exchange.sendResponseHeaders(200, ok.length);
+          try (var out = exchange.getResponseBody()) {
+            out.write(ok);
+          }
+          exchange.close();
+        });
+    server.start();
+    try {
+      SupabaseExerciseDemonstrationStorage storage =
+          new SupabaseExerciseDemonstrationStorage(
+              "http://127.0.0.1:" + server.getAddress().getPort(), "test-service-key", null);
+      byte[] video = new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p', 1, 2, 3, 4};
+      storage.put("demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4", new ByteArrayInputStream(video), 1024);
+      assertEquals(video.length, seenBytes.get());
+      assertEquals("video/mp4", seenType.get());
+      assertEquals("PUT", seenMethod.get());
+      assertEquals("Bearer test-service-key", seenAuth.get());
+      assertEquals("test-service-key", seenApiKey.get());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void ioFailureBeforeAResponseIs502AndDoesNotReplaceTheStoredObject() {
+    MemoryObjects memory = new MemoryObjects();
+    memory.throwOnPut = new IOException("fixed content-length: 76, bytes received: 0");
+    SupabaseExerciseDemonstrationStorage storage =
+        new SupabaseExerciseDemonstrationStorage(
+            "https://example.supabase.co", "service-role-placeholder", memory);
+    byte[] original = new byte[] {1, 2, 3, 4};
+    memory.objects.put("demos/TASK-A/EXERCISE-PUSH/DEMO-OLD.mp4", original);
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () ->
+                storage.put(
+                    "demos/TASK-A/EXERCISE-PUSH/DEMO-NEW.mp4",
+                    new ByteArrayInputStream(new byte[] {9, 9, 9, 9}),
+                    1024));
+    assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertEquals("Demonstration storage upload failed", ex.getReason());
+    assertFalse(ex.getReason().contains("fixed content-length"));
+    assertArrayEquals(original, memory.objects.get("demos/TASK-A/EXERCISE-PUSH/DEMO-OLD.mp4"));
+    assertFalse(memory.objects.containsKey("demos/TASK-A/EXERCISE-PUSH/DEMO-NEW.mp4"));
+  }
+
+  @Test
+  void invalidSupabaseStatusIs502() {
+    MemoryObjects memory = new MemoryObjects();
+    memory.nextStatus = 0;
+    SupabaseExerciseDemonstrationStorage storage =
+        new SupabaseExerciseDemonstrationStorage(
+            "https://example.supabase.co", "service-role-placeholder", memory);
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () ->
+                storage.put(
+                    "demos/TASK-A/EXERCISE-PUSH/DEMO-1.mp4",
+                    new ByteArrayInputStream(new byte[] {9, 9, 9, 9}),
+                    1024));
+    assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertEquals("Demonstration storage upload failed", ex.getReason());
   }
 
   @Test
@@ -234,16 +441,28 @@ class DemonstrationStoragePhase2Test {
     private final Map<String, byte[]> objects = new LinkedHashMap<>();
     private String contentType = "";
     private boolean failNextPut;
+    private IOException throwOnPut;
+    private int nextStatus = 200;
 
     @Override
-    public int put(String storageKey, String contentType, Path file) throws IOException {
+    public SupabaseExerciseDemonstrationStorage.DemonstrationObjectClient.PutResult put(
+        String storageKey, String contentType, Path file) throws IOException {
       this.contentType = contentType;
+      if (throwOnPut != null) {
+        IOException ex = throwOnPut;
+        throwOnPut = null;
+        throw ex;
+      }
       if (failNextPut) {
         failNextPut = false;
-        return 500;
+        return new SupabaseExerciseDemonstrationStorage.DemonstrationObjectClient.PutResult(500, null);
+      }
+      if (nextStatus < 200 || nextStatus >= 300) {
+        return new SupabaseExerciseDemonstrationStorage.DemonstrationObjectClient.PutResult(
+            nextStatus, null);
       }
       objects.put(storageKey, Files.readAllBytes(file));
-      return 200;
+      return new SupabaseExerciseDemonstrationStorage.DemonstrationObjectClient.PutResult(200, null);
     }
 
     @Override

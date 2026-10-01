@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,17 +73,26 @@ public class SupabaseExerciseDemonstrationStorage implements ExerciseDemonstrati
     try {
       temp = Files.createTempFile("stathis-demo-", ".bin");
       long size = copyLimited(body, temp, maxBytes);
-      int status = client.put(storageKey, contentTypeFor(storageKey), temp);
-      if (status >= 300) {
-        client.delete(storageKey);
+      DemonstrationObjectClient.PutResult result =
+          client.put(storageKey, contentTypeFor(storageKey), temp);
+      if (result.status() < 200 || result.status() >= 300) {
+        try {
+          client.delete(storageKey);
+        } catch (IOException cleanup) {
+          log.warn("Demonstration storage cleanup after a rejected upload failed");
+        }
         throw new ResponseStatusException(
-            HttpStatus.BAD_GATEWAY, "Demonstration storage upload failed: " + status);
+            HttpStatus.BAD_GATEWAY, failureMessage(result.status(), result.safeDetail()));
       }
       return new StoredDemonstration(storageKey, size);
     } catch (ResponseStatusException ex) {
       throw ex;
     } catch (IOException ex) {
-      throw new IllegalStateException("Failed to store demonstration video", ex);
+      log.warn(
+          "Demonstration storage upload failed before a response ({})",
+          ex.getClass().getSimpleName());
+      throw new ResponseStatusException(
+          HttpStatus.BAD_GATEWAY, "Demonstration storage upload failed", ex);
     } finally {
       if (temp != null) {
         try {
@@ -163,11 +173,13 @@ public class SupabaseExerciseDemonstrationStorage implements ExerciseDemonstrati
   }
 
   public interface DemonstrationObjectClient {
-    int put(String storageKey, String contentType, Path file) throws IOException;
+    PutResult put(String storageKey, String contentType, Path file) throws IOException;
 
     GetResult get(String storageKey, String rangeHeader) throws IOException;
 
     void delete(String storageKey) throws IOException;
+
+    record PutResult(int status, String safeDetail) {}
 
     record GetResult(int status, InputStream body) {}
   }
@@ -190,16 +202,39 @@ public class SupabaseExerciseDemonstrationStorage implements ExerciseDemonstrati
     }
 
     @Override
-    public int put(String storageKey, String contentType, Path file) throws IOException {
+    public PutResult put(String storageKey, String contentType, Path file) throws IOException {
       HttpRequest request =
           authorized(storageKey)
               .timeout(TIMEOUT)
+              .version(HttpClient.Version.HTTP_1_1)
               .header("Content-Type", contentType)
               .header("x-upsert", "true")
               .PUT(HttpRequest.BodyPublishers.ofFile(file))
               .build();
-      HttpResponse<Void> response = send(request, HttpResponse.BodyHandlers.discarding());
-      return response.statusCode();
+      // Supabase often answers with a small error body and closes the connection while this
+      // client is still writing the video. HttpClient then throws
+      // "fixed content-length: N, bytes received: 0" instead of returning the status.
+      // The status is already known when response headers arrive, so keep it.
+      AtomicInteger status = new AtomicInteger(-1);
+      HttpResponse.BodyHandler<String> handler =
+          info -> {
+            status.set(info.statusCode());
+            return HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
+          };
+      try {
+        HttpResponse<String> response = send(request, handler);
+        return new PutResult(response.statusCode(), safeDetail(response.body()));
+      } catch (IOException ex) {
+        int seen = status.get();
+        if (seen >= 100) {
+          log.warn(
+              "Demonstration storage upload closed early with status {} ({})",
+              seen,
+              ex.getClass().getSimpleName());
+          return new PutResult(seen, null);
+        }
+        throw ex;
+      }
     }
 
     @Override
@@ -261,5 +296,56 @@ public class SupabaseExerciseDemonstrationStorage implements ExerciseDemonstrati
     private static String encode(String value) {
       return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
+
+    private static String safeDetail(String body) {
+      if (body == null || body.isBlank()) {
+        return null;
+      }
+      String trimmed = body.length() > 500 ? body.substring(0, 500) : body;
+      String lower = trimmed.toLowerCase();
+      if (lower.contains("bearer ") || trimmed.contains("eyJ") || lower.contains("service_role")) {
+        return null;
+      }
+      String message = jsonStringField(trimmed, "message");
+      if (message == null || message.isBlank()) {
+        message = jsonStringField(trimmed, "error");
+      }
+      if (message == null || message.isBlank() || message.length() > 160 || message.contains("eyJ")) {
+        return null;
+      }
+      return message;
+    }
+
+    private static String jsonStringField(String json, String field) {
+      String key = "\"" + field + "\"";
+      int fieldAt = json.indexOf(key);
+      if (fieldAt < 0) {
+        return null;
+      }
+      int colon = json.indexOf(':', fieldAt + key.length());
+      if (colon < 0) {
+        return null;
+      }
+      int start = json.indexOf('"', colon + 1);
+      if (start < 0) {
+        return null;
+      }
+      int end = json.indexOf('"', start + 1);
+      if (end <= start) {
+        return null;
+      }
+      return json.substring(start + 1, end);
+    }
+  }
+
+  private static String failureMessage(int status, String safeDetail) {
+    String message = "Demonstration storage upload failed";
+    if (status >= 300 && status <= 599) {
+      message = message + ": " + status;
+    }
+    if (safeDetail != null && !safeDetail.isBlank()) {
+      message = message + " (" + safeDetail + ")";
+    }
+    return message;
   }
 }

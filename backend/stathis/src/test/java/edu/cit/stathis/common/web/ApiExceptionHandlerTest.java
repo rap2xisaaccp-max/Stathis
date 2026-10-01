@@ -35,7 +35,8 @@ class ApiExceptionHandlerTest {
         .perform(get("/boom"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.status").value(502))
-        .andExpect(jsonPath("$.error").value("Demonstration storage upload failed: 400"));
+        .andExpect(jsonPath("$.error").value("Demonstration storage upload failed: 400"))
+        .andExpect(jsonPath("$.message").value("Demonstration storage upload failed: 400"));
   }
 
   @Test
