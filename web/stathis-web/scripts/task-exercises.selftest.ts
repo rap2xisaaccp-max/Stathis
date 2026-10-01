@@ -7,7 +7,7 @@ import {
   studentExerciseBoards,
   toExerciseRequests,
   type AssignedExercise,
-} from '../src/lib/tasks/task-exercises.ts';
+} from '../src/lib/tasks/task-exercises';
 
 const push: AssignedExercise = {
   physicalId: 'EXERCISE-PUSH',

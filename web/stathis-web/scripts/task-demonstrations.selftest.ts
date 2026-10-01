@@ -9,7 +9,7 @@ import {
   removeDemonstration,
   upsertDemonstration,
   type DemonstrationRecord,
-} from '../src/lib/tasks/task-demonstrations.ts';
+} from '../src/lib/tasks/task-demonstrations';
 
 assert.equal(canUploadDemonstration(null), false);
 assert.equal(canUploadDemonstration(''), false);
