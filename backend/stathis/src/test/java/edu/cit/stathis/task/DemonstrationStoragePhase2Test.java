@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.cit.stathis.task.service.DemonstrationRange;
 import edu.cit.stathis.task.service.ExerciseDemonstrationService;
+import edu.cit.stathis.task.service.ExerciseDemonstrationStorage;
 import edu.cit.stathis.task.service.LocalExerciseDemonstrationStorage;
 import edu.cit.stathis.task.service.SupabaseExerciseDemonstrationStorage;
 import java.io.ByteArrayInputStream;
@@ -20,8 +21,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -54,6 +58,26 @@ class DemonstrationStoragePhase2Test {
     assertEquals(
         "${apsle.demonstration.supabase-service-key:}",
         parameters[1].getAnnotation(Value.class).value());
+    assertTrue(
+        SupabaseExerciseDemonstrationStorage.class
+            .getConstructor(String.class, String.class)
+            .isAnnotationPresent(Autowired.class));
+  }
+
+  @Test
+  void springUsesTheConfiguredConstructorForSupabaseMode() {
+    try (AnnotationConfigApplicationContext context = storageContext("supabase")) {
+      assertTrue(context.getBean(ExerciseDemonstrationStorage.class) instanceof SupabaseExerciseDemonstrationStorage);
+      assertFalse(context.containsBean("localExerciseDemonstrationStorage"));
+    }
+  }
+
+  @Test
+  void springUsesLocalStorageWhenModeIsLocal() {
+    try (AnnotationConfigApplicationContext context = storageContext("local")) {
+      assertTrue(context.getBean(ExerciseDemonstrationStorage.class) instanceof LocalExerciseDemonstrationStorage);
+      assertFalse(context.containsBean("supabaseExerciseDemonstrationStorage"));
+    }
   }
 
   @Test
@@ -165,6 +189,21 @@ class DemonstrationStoragePhase2Test {
         assertThrows(
             ResponseStatusException.class, () -> DemonstrationRange.parse("bytes=20-30", 12));
     assertEquals(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE, ex.getStatusCode());
+  }
+
+  private static AnnotationConfigApplicationContext storageContext(String mode) {
+    AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+    Map<String, Object> properties = new LinkedHashMap<>();
+    properties.put("apsle.demonstration.storage", mode);
+    properties.put("apsle.demonstration.supabase-url", "https://example.supabase.co");
+    properties.put("apsle.demonstration.supabase-service-key", "configured-key");
+    context
+        .getEnvironment()
+        .getPropertySources()
+        .addFirst(new MapPropertySource("demonstration-storage", properties));
+    context.register(LocalExerciseDemonstrationStorage.class, SupabaseExerciseDemonstrationStorage.class);
+    context.refresh();
+    return context;
   }
 
   private static String resourceText(String path) throws Exception {

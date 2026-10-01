@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -43,6 +44,7 @@ public class SupabaseExerciseDemonstrationStorage implements ExerciseDemonstrati
   private final String bucket;
   private final DemonstrationObjectClient client;
 
+  @Autowired
   public SupabaseExerciseDemonstrationStorage(
       @Value("${apsle.demonstration.supabase-url:}") String supabaseUrl,
       @Value("${apsle.demonstration.supabase-service-key:}") String serviceKey) {
