@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,11 +31,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ExerciseDemonstrationService implements ExerciseDemonstrationRetention {
 
-  /**
-   * Matches the current servlet multipart cap of 1MB. Larger videos are rejected
-   * here when the bytes reach the service. The servlet may reject them first.
-   */
-  public static final long MAX_BYTES = 1024L * 1024L;
+  /** Fixed demonstration cap. Not read from configuration. */
+  public static final long DEFAULT_MAX_BYTES = 50L * 1024L * 1024L;
 
   private final ExerciseDemonstrationRepository demonstrationRepository;
   private final ExerciseDemonstrationStorage storage;
@@ -43,7 +41,9 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
   private final ClassroomRepository classroomRepository;
   private final ClassroomService classroomService;
   private final PhysicalIdService physicalIdService;
+  private final long maxBytes;
 
+  @Autowired
   public ExerciseDemonstrationService(
       ExerciseDemonstrationRepository demonstrationRepository,
       ExerciseDemonstrationStorage storage,
@@ -52,6 +52,27 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
       ClassroomRepository classroomRepository,
       ClassroomService classroomService,
       PhysicalIdService physicalIdService) {
+    this(
+        demonstrationRepository,
+        storage,
+        taskRepository,
+        taskExerciseRepository,
+        classroomRepository,
+        classroomService,
+        physicalIdService,
+        DEFAULT_MAX_BYTES);
+  }
+
+  /** Test hook for a smaller cap. The Spring constructor always uses {@link #DEFAULT_MAX_BYTES}. */
+  public ExerciseDemonstrationService(
+      ExerciseDemonstrationRepository demonstrationRepository,
+      ExerciseDemonstrationStorage storage,
+      TaskRepository taskRepository,
+      TaskExerciseRepository taskExerciseRepository,
+      ClassroomRepository classroomRepository,
+      ClassroomService classroomService,
+      PhysicalIdService physicalIdService,
+      long maxBytes) {
     this.demonstrationRepository = demonstrationRepository;
     this.storage = storage;
     this.taskRepository = taskRepository;
@@ -59,6 +80,7 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
     this.classroomRepository = classroomRepository;
     this.classroomService = classroomService;
     this.physicalIdService = physicalIdService;
+    this.maxBytes = maxBytes;
   }
 
   @Transactional(readOnly = true)
@@ -74,22 +96,46 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
 
   @Transactional(readOnly = true)
   public InputStream content(String taskId, String exerciseTemplateId) {
-    Task task = requireTask(taskId);
-    String templateId = requireTemplateOnTask(task, exerciseTemplateId);
-    requireCanView(task);
-    ExerciseDemonstration row =
-        demonstrationRepository
-            .findByTaskIdAndExerciseTemplateId(task.getPhysicalId(), templateId)
-            .orElseThrow(
-                () ->
-                    new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "No demonstration video for this exercise"));
+    ExerciseDemonstration row = requireRow(taskId, exerciseTemplateId);
     return storage
         .open(row.getStorageKey())
         .orElseThrow(
             () ->
                 new ResponseStatusException(
                     HttpStatus.NOT_FOUND, "Demonstration video file is missing"));
+  }
+
+  @Transactional(readOnly = true)
+  public DemonstrationBytes contentSlice(String taskId, String exerciseTemplateId, long start, long endInclusive) {
+    ExerciseDemonstration row = requireRow(taskId, exerciseTemplateId);
+    long total = row.getByteSize();
+    if (start < 0 || endInclusive < start || start >= total) {
+      throw new ResponseStatusException(
+          HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE, "Demonstration range is not satisfiable");
+    }
+    long end = Math.min(endInclusive, total - 1);
+    InputStream body =
+        storage
+            .openSlice(row.getStorageKey(), start, end)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Demonstration video file is missing"));
+    return new DemonstrationBytes(body, start, end, total);
+  }
+
+  public record DemonstrationBytes(InputStream body, long start, long endInclusive, long total) {}
+
+  private ExerciseDemonstration requireRow(String taskId, String exerciseTemplateId) {
+    Task task = requireTask(taskId);
+    String templateId = requireTemplateOnTask(task, exerciseTemplateId);
+    requireCanView(task);
+    return demonstrationRepository
+        .findByTaskIdAndExerciseTemplateId(task.getPhysicalId(), templateId)
+        .orElseThrow(
+            () ->
+                new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "No demonstration video for this exercise"));
   }
 
   @Transactional
@@ -116,7 +162,7 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
     String storageKey = storageKey(task.getPhysicalId(), templateId, physicalId, type);
     InputStream payload = new SequenceInputStream(new ByteArrayInputStream(header), body);
     ExerciseDemonstrationStorage.StoredDemonstration stored =
-        storage.put(storageKey, payload, MAX_BYTES);
+        storage.put(storageKey, payload, maxBytes);
     try {
       ExerciseDemonstration existing =
           demonstrationRepository

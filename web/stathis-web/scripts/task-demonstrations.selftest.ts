@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import {
   acceptDemonstrationFile,
   canUploadDemonstration,
+  DEMONSTRATION_MAX_BYTES,
   demonstrationFor,
   demonstrationPath,
+  demonstrationRequestError,
   removeDemonstration,
   upsertDemonstration,
   type DemonstrationRecord,
@@ -45,9 +47,22 @@ assert.equal(removed.length, 1);
 assert.equal(demonstrationFor(removed, 'EXERCISE-SQUAT'), null);
 assert.equal(demonstrationFor(removed, 'EXERCISE-PUSH')?.originalFilename, 'push-new.mp4');
 
+assert.equal(DEMONSTRATION_MAX_BYTES, 50 * 1024 * 1024);
 assert.equal(acceptDemonstrationFile({ type: 'video/mp4', size: 20, name: 'a.mp4' }), null);
 assert.equal(acceptDemonstrationFile({ type: 'video/webm', size: 20, name: 'a.webm' }), null);
+assert.equal(acceptDemonstrationFile({ type: 'video/mp4', size: DEMONSTRATION_MAX_BYTES, name: 'a.mp4' }), null);
+assert.equal(
+  acceptDemonstrationFile({ type: 'video/mp4', size: DEMONSTRATION_MAX_BYTES + 1, name: 'a.mp4' }),
+  'Demonstration videos must be 50 MB or smaller'
+);
 assert.equal(acceptDemonstrationFile({ type: '', size: 0, name: 'a.mp4' }), 'Choose a video file');
+assert.equal(demonstrationRequestError(403, 'upload'), 'You are not allowed to change this demonstration');
+assert.equal(
+  demonstrationRequestError(413, 'upload'),
+  'The server rejected this video because it is larger than the current upload limit'
+);
+assert.equal(demonstrationRequestError(0, 'upload'), 'Network error. Try again.');
+assert.equal(demonstrationRequestError(500, 'remove'), 'Could not remove demonstration');
 assert.equal(
   acceptDemonstrationFile({ type: 'application/x-msdownload', size: 20, name: 'a.exe' }),
   'Use an MP4 or WebM video'

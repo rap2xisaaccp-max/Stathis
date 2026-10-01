@@ -8,6 +8,9 @@ export type DemonstrationRecord = {
 
 const ACCEPTED = new Set(['video/mp4', 'video/webm']);
 
+/** Intended demonstration cap. The servlet limit is configured separately. */
+export const DEMONSTRATION_MAX_BYTES = 50 * 1024 * 1024;
+
 export function canUploadDemonstration(taskId: string | null | undefined): boolean {
   return Boolean(taskId && taskId.trim());
 }
@@ -48,10 +51,29 @@ export function acceptDemonstrationFile(file: {
   if (!ACCEPTED.has(type) && !extensionOk) {
     return 'Use an MP4 or WebM video';
   }
-  if (file.size > 1024 * 1024) {
-    return 'This environment currently accepts videos up to 1 MB';
+  if (file.size > DEMONSTRATION_MAX_BYTES) {
+    return 'Demonstration videos must be 50 MB or smaller';
   }
   return null;
+}
+
+export function demonstrationRequestError(status: number, action: 'upload' | 'remove' | 'load'): string {
+  if (status === 0) {
+    return 'Network error. Try again.';
+  }
+  if (status === 401 || status === 403) {
+    return 'You are not allowed to change this demonstration';
+  }
+  if (status === 413) {
+    return 'The server rejected this video because it is larger than the current upload limit';
+  }
+  if (action === 'remove') {
+    return 'Could not remove demonstration';
+  }
+  if (action === 'load') {
+    return 'Could not load demonstration';
+  }
+  return 'Could not upload demonstration';
 }
 
 export function demonstrationPath(taskId: string, exerciseTemplateId: string): string {

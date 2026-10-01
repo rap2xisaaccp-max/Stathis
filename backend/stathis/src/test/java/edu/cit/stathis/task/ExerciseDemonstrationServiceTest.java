@@ -25,6 +25,7 @@ import edu.cit.stathis.task.repository.ExerciseTemplateRepository;
 import edu.cit.stathis.task.repository.TaskExerciseRepository;
 import edu.cit.stathis.task.repository.TaskRepository;
 import edu.cit.stathis.task.service.ExerciseDemonstrationService;
+import edu.cit.stathis.task.service.ExerciseDemonstrationStorage;
 import edu.cit.stathis.task.service.LocalExerciseDemonstrationStorage;
 import edu.cit.stathis.task.service.TaskExerciseService;
 import java.io.ByteArrayInputStream;
@@ -289,14 +290,76 @@ class ExerciseDemonstrationServiceTest {
   }
 
   @Test
-  void oversizedUploadIsRejected() {
-    byte[] huge = new byte[(int) ExerciseDemonstrationService.MAX_BYTES + 1];
-    System.arraycopy(mp4Bytes(), 0, huge, 0, mp4Bytes().length);
+  void configuredMaxSizeIsEnforced() {
+    assertEquals(50L * 1024L * 1024L, ExerciseDemonstrationService.DEFAULT_MAX_BYTES);
+    ExerciseDemonstrationService limited =
+        new ExerciseDemonstrationService(
+            demonstrationRepository,
+            storage,
+            taskRepository,
+            taskExerciseRepository,
+            classroomRepository,
+            classroomService,
+            physicalIdService,
+            16L);
+    byte[] over = new byte[17];
+    System.arraycopy(mp4Bytes(), 0, over, 0, mp4Bytes().length);
     ResponseStatusException ex =
         assertThrows(
             ResponseStatusException.class,
-            () -> service.upload(TASK, PUSH, "big.mp4", "video/mp4", new ByteArrayInputStream(huge)));
+            () -> limited.upload(TASK, PUSH, "big.mp4", "video/mp4", new ByteArrayInputStream(over)));
     assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, ex.getStatusCode());
+    assertTrue(rows.isEmpty());
+  }
+
+  @Test
+  void replacementStorageFailureKeepsTheExistingVideo() throws Exception {
+    service.upload(TASK, PUSH, "old.mp4", "video/mp4", mp4());
+    String oldKey = rows.get(0).getStorageKey();
+    ExerciseDemonstrationStorage failing =
+        new ExerciseDemonstrationStorage() {
+          @Override
+          public ExerciseDemonstrationStorage.StoredDemonstration put(
+              String storageKey, InputStream body, long maxBytes) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "storage failed");
+          }
+
+          @Override
+          public Optional<InputStream> open(String storageKey) {
+            return storage.open(storageKey);
+          }
+
+          @Override
+          public void delete(String storageKey) {
+            storage.delete(storageKey);
+          }
+        };
+    ExerciseDemonstrationService guarded =
+        new ExerciseDemonstrationService(
+            demonstrationRepository,
+            failing,
+            taskRepository,
+            taskExerciseRepository,
+            classroomRepository,
+            classroomService,
+            physicalIdService);
+    assertThrows(
+        ResponseStatusException.class,
+        () -> guarded.upload(TASK, PUSH, "new.mp4", "video/mp4", mp4()));
+    assertEquals(1, rows.size());
+    assertEquals("old.mp4", rows.get(0).getOriginalFilename());
+    assertEquals(oldKey, rows.get(0).getStorageKey());
+    assertTrue(Files.exists(tempDir.resolve(oldKey)));
+    try (InputStream in = service.content(TASK, PUSH)) {
+      assertArrayEquals(mp4Bytes(), in.readAllBytes());
+    }
+  }
+
+  @Test
+  void deleteSucceedsWhenTheStoredFileIsAlreadyGone() throws Exception {
+    service.upload(TASK, PUSH, "push.mp4", "video/mp4", mp4());
+    Files.deleteIfExists(tempDir.resolve(rows.get(0).getStorageKey()));
+    service.delete(TASK, PUSH);
     assertTrue(rows.isEmpty());
   }
 

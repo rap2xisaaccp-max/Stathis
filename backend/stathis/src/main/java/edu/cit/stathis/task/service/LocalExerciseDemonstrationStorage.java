@@ -8,12 +8,20 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Local development store. Does not use the form-correction JPEG pipeline. */
+/**
+ * Local development store. Active when {@code apsle.demonstration.storage} is missing or
+ * {@code local}. Does not use the form-correction JPEG pipeline.
+ */
 @Service
+@ConditionalOnProperty(
+    name = "apsle.demonstration.storage",
+    havingValue = "local",
+    matchIfMissing = true)
 public class LocalExerciseDemonstrationStorage implements ExerciseDemonstrationStorage {
 
   private static final Logger log = LoggerFactory.getLogger(LocalExerciseDemonstrationStorage.class);
@@ -66,6 +74,33 @@ public class LocalExerciseDemonstrationStorage implements ExerciseDemonstrationS
         return Optional.empty();
       }
       return Optional.of(Files.newInputStream(file));
+    } catch (IOException ex) {
+      log.warn("Failed to open demonstration {}", storageKey, ex);
+      return Optional.empty();
+    }
+  }
+
+  @Override
+  public Optional<InputStream> openSlice(String storageKey, long startInclusive, long endInclusive) {
+    try {
+      Path file = resolveSafe(storageKey);
+      if (!Files.exists(file)) {
+        return Optional.empty();
+      }
+      InputStream in = Files.newInputStream(file);
+      long remaining = startInclusive;
+      while (remaining > 0) {
+        long skipped = in.skip(remaining);
+        if (skipped <= 0) {
+          if (in.read() < 0) {
+            break;
+          }
+          skipped = 1;
+        }
+        remaining -= skipped;
+      }
+      long length = Math.max(0, endInclusive - startInclusive + 1);
+      return Optional.of(new BoundedInputStream(in, length));
     } catch (IOException ex) {
       log.warn("Failed to open demonstration {}", storageKey, ex);
       return Optional.empty();

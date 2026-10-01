@@ -6,6 +6,7 @@ import { API_BASE_URL } from '@/lib/api/server-client';
 import {
   acceptDemonstrationFile,
   demonstrationPath,
+  demonstrationRequestError,
   type DemonstrationRecord,
 } from '@/lib/tasks/task-demonstrations';
 import { Loader2 } from 'lucide-react';
@@ -51,7 +52,7 @@ export function ExerciseDemonstrationControls({
           headers: authHeaders(),
         });
         if (!metaResponse.ok) {
-          throw new Error('Could not load demonstration');
+          throw new Error(demonstrationRequestError(metaResponse.status, 'load'));
         }
         const meta = (await metaResponse.json()) as RemoteDemonstration;
         if (!meta.available) {
@@ -71,7 +72,7 @@ export function ExerciseDemonstrationControls({
           { headers: authHeaders() }
         );
         if (!content.ok) {
-          throw new Error('Could not load demonstration video');
+          throw new Error(demonstrationRequestError(content.status, 'load'));
         }
         const blob = await content.blob();
         objectUrl = URL.createObjectURL(blob);
@@ -127,7 +128,7 @@ export function ExerciseDemonstrationControls({
         body,
       });
       if (!response.ok) {
-        throw new Error('Could not upload demonstration');
+        throw new Error(demonstrationRequestError(response.status, 'upload'));
       }
       const meta = (await response.json()) as RemoteDemonstration;
       const previewUrl = URL.createObjectURL(file);
@@ -145,7 +146,12 @@ export function ExerciseDemonstrationControls({
       setRecord((current) => ({
         ...current,
         uploading: false,
-        error: error instanceof Error ? error.message : 'Could not upload demonstration',
+        error:
+          error instanceof TypeError
+            ? demonstrationRequestError(0, 'upload')
+            : error instanceof Error
+              ? error.message
+              : demonstrationRequestError(0, 'upload'),
       }));
     }
   };
@@ -158,7 +164,7 @@ export function ExerciseDemonstrationControls({
         headers: authHeaders(),
       });
       if (!response.ok && response.status !== 204) {
-        throw new Error('Could not remove demonstration');
+        throw new Error(demonstrationRequestError(response.status, 'remove'));
       }
       setRecord((current) => {
         if (current.previewUrl) URL.revokeObjectURL(current.previewUrl);
