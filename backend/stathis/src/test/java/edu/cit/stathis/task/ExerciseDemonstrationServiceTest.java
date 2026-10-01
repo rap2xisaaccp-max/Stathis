@@ -255,6 +255,25 @@ class ExerciseDemonstrationServiceTest {
   }
 
   @Test
+  void octetStreamOrBlankTypeIsAcceptedWhenTheBytesAreMp4() {
+    ExerciseDemonstrationDTO saved =
+        service.upload(TASK, PUSH, "push.mp4", "application/octet-stream", mp4());
+    assertEquals("video/mp4", rows.get(0).getContentType());
+    assertEquals(saved.getPhysicalId(), rows.get(0).getPhysicalId());
+    service.delete(TASK, PUSH);
+    service.upload(TASK, PUSH, "push.mp4", "  ", mp4());
+    assertEquals("video/mp4", rows.get(0).getContentType());
+  }
+
+  @Test
+  void missingTaskIsRejectedBeforeStorage() {
+    assertThrows(
+        jakarta.persistence.EntityNotFoundException.class,
+        () -> service.upload("TASK-MISSING", PUSH, "push.mp4", "video/mp4", mp4()));
+    assertTrue(rows.isEmpty());
+  }
+
+  @Test
   void replacementLeavesOneRowAndDeletesTheOldFile() throws Exception {
     ExerciseDemonstrationDTO first = service.upload(TASK, PUSH, "old.mp4", "video/mp4", mp4());
     Path firstFile = tempDir.resolve(rows.get(0).getStorageKey());

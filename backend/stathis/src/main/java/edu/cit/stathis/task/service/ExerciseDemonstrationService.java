@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,8 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
 
   /** Fixed demonstration cap. Not read from configuration. */
   public static final long DEFAULT_MAX_BYTES = 50L * 1024L * 1024L;
+
+  private static final Logger log = LoggerFactory.getLogger(ExerciseDemonstrationService.class);
 
   private final ExerciseDemonstrationRepository demonstrationRepository;
   private final ExerciseDemonstrationStorage storage;
@@ -148,15 +152,11 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
     Task task = requireTask(taskId);
     String templateId = requireTemplateOnTask(task, exerciseTemplateId);
     requireOwner(task);
-    String type = normalizeType(contentType);
     byte[] header = readHeader(body);
     if (header.length == 0) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Demonstration video is empty");
     }
-    if (!matches(type, header)) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST, "Demonstration video must be an MP4 or WebM file");
-    }
+    String type = resolveType(contentType, header);
     String caller = physicalIdService.getCurrentUserPhysicalId();
     String physicalId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT);
     String storageKey = storageKey(task.getPhysicalId(), templateId, physicalId, type);
@@ -272,7 +272,13 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
   private void requireOwner(Task task) {
     Classroom classroom = requireClassroom(task);
     String caller = physicalIdService.getCurrentUserPhysicalId();
-    if (caller == null || !caller.equals(classroom.getTeacherId())) {
+    boolean owner = caller != null && caller.equals(classroom.getTeacherId());
+    if (!owner) {
+      log.warn(
+          "Demonstration upload denied endpoint=POST taskId={} classroomId={} callerPhysicalId={} ownerMatch=false",
+          task.getPhysicalId(),
+          classroom.getPhysicalId(),
+          caller);
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized for this classroom");
     }
   }
@@ -311,14 +317,41 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
         .build();
   }
 
-  static String normalizeType(String contentType) {
+  static String resolveType(String contentType, byte[] header) {
+    String declared = declaredVideoType(contentType);
+    if (matches("video/mp4", header)) {
+      if (declared != null && !"video/mp4".equals(declared)) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST, "Demonstration video must be an MP4 or WebM file");
+      }
+      return "video/mp4";
+    }
+    if (matches("video/webm", header)) {
+      if (declared != null && !"video/webm".equals(declared)) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST, "Demonstration video must be an MP4 or WebM file");
+      }
+      return "video/webm";
+    }
+    throw new ResponseStatusException(
+        HttpStatus.BAD_REQUEST, "Demonstration video must be an MP4 or WebM file");
+  }
+
+  /**
+   * A browser may send a blank type or {@code application/octet-stream} for an MP4. Those are
+   * resolved from the file bytes. An explicit non-video type is still rejected.
+   */
+  static String declaredVideoType(String contentType) {
     if (contentType == null || contentType.isBlank()) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Demonstration video type is required");
+      return null;
     }
     String type = contentType.trim().toLowerCase(Locale.ROOT);
     int separator = type.indexOf(';');
     if (separator >= 0) {
       type = type.substring(0, separator).trim();
+    }
+    if (type.isEmpty() || "application/octet-stream".equals(type)) {
+      return null;
     }
     if (!type.equals("video/mp4") && !type.equals("video/webm")) {
       throw new ResponseStatusException(

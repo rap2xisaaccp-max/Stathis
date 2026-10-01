@@ -2,6 +2,10 @@ package edu.cit.stathis.common.config;
 
 import edu.cit.stathis.auth.service.CustomUserDetailsService;
 import edu.cit.stathis.common.utils.JwtUtil;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -43,7 +47,9 @@ public class SecurityConfig {
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             auth ->
-                auth.requestMatchers(
+                auth.dispatcherTypeMatchers(DispatcherType.ERROR)
+                    .permitAll()
+                    .requestMatchers(
                         "/api/auth/**",
                         "/api/posture/**",
                         "/ws/**",
@@ -62,6 +68,18 @@ public class SecurityConfig {
                     .authenticated()
                     .anyRequest()
                     .authenticated())
+        .exceptionHandling(
+            handling ->
+                handling
+                    .authenticationEntryPoint(
+                        (request, response, ex) ->
+                            writeJsonStatus(response, HttpServletResponse.SC_FORBIDDEN, "Authentication required"))
+                    .accessDeniedHandler(
+                        (request, response, ex) ->
+                            writeJsonStatus(
+                                response,
+                                HttpServletResponse.SC_FORBIDDEN,
+                                "You are not allowed to perform this action")))
         .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         logger.debug("Security filter chain configured successfully");
@@ -92,6 +110,17 @@ public class SecurityConfig {
 
     logger.debug("CORS configuration completed");
     return source;
+  }
+
+  /**
+   * Writes the status on this response. A {@code sendError} forward to {@code /error} starts a
+   * new stateless dispatch, and that dispatch was returning an empty 403.
+   */
+  static void writeJsonStatus(HttpServletResponse response, int status, String error) throws IOException {
+    response.setStatus(status);
+    response.setContentType("application/json");
+    response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+    response.getWriter().write("{\"status\":" + status + ",\"error\":\"" + error + "\"}");
   }
 
   static List<String> parseAllowedOrigins(String rawOrigins) {

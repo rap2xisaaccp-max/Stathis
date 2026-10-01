@@ -105,6 +105,12 @@ class DemonstrationStoragePhase2Test {
     assertEquals(
         "spring.servlet.multipart.max-request-size=55MB",
         propertyLine(main, "spring.servlet.multipart.max-request-size"));
+    assertEquals(
+        "server.tomcat.max-http-form-post-size=55MB",
+        propertyLine(main, "server.tomcat.max-http-form-post-size"));
+    assertEquals(
+        "server.tomcat.max-swallow-size=55MB",
+        propertyLine(main, "server.tomcat.max-swallow-size"));
   }
 
   @Test

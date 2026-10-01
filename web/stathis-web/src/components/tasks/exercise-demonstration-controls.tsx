@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { API_BASE_URL } from '@/lib/api/server-client';
 import {
   acceptDemonstrationFile,
+  demonstrationMessageFromBody,
   demonstrationPath,
   demonstrationRequestError,
+  demonstrationUploadFile,
   type DemonstrationRecord,
 } from '@/lib/tasks/task-demonstrations';
 import { Loader2 } from 'lucide-react';
@@ -52,7 +54,13 @@ export function ExerciseDemonstrationControls({
           headers: authHeaders(),
         });
         if (!metaResponse.ok) {
-          throw new Error(demonstrationRequestError(metaResponse.status, 'load'));
+          throw new Error(
+            demonstrationRequestError(
+              metaResponse.status,
+              'load',
+              demonstrationMessageFromBody(await metaResponse.text())
+            )
+          );
         }
         const meta = (await metaResponse.json()) as RemoteDemonstration;
         if (!meta.available) {
@@ -72,7 +80,9 @@ export function ExerciseDemonstrationControls({
           { headers: authHeaders() }
         );
         if (!content.ok) {
-          throw new Error(demonstrationRequestError(content.status, 'load'));
+          throw new Error(
+            demonstrationRequestError(content.status, 'load', demonstrationMessageFromBody(await content.text()))
+          );
         }
         const blob = await content.blob();
         objectUrl = URL.createObjectURL(blob);
@@ -120,15 +130,22 @@ export function ExerciseDemonstrationControls({
     }
     setRecord((current) => ({ ...current, uploading: true, error: null }));
     try {
+      const uploadFile = demonstrationUploadFile(file);
       const body = new FormData();
-      body.append('file', file);
+      body.append('file', uploadFile, uploadFile.name);
       const response = await fetch(`${API_BASE_URL}${demonstrationPath(taskId, exerciseTemplateId)}`, {
         method: 'POST',
         headers: authHeaders(),
         body,
       });
       if (!response.ok) {
-        throw new Error(demonstrationRequestError(response.status, 'upload'));
+        throw new Error(
+          demonstrationRequestError(
+            response.status,
+            'upload',
+            demonstrationMessageFromBody(await response.text())
+          )
+        );
       }
       const meta = (await response.json()) as RemoteDemonstration;
       const previewUrl = URL.createObjectURL(file);
@@ -164,7 +181,13 @@ export function ExerciseDemonstrationControls({
         headers: authHeaders(),
       });
       if (!response.ok && response.status !== 204) {
-        throw new Error(demonstrationRequestError(response.status, 'remove'));
+        throw new Error(
+          demonstrationRequestError(
+            response.status,
+            'remove',
+            demonstrationMessageFromBody(await response.text())
+          )
+        );
       }
       setRecord((current) => {
         if (current.previewUrl) URL.revokeObjectURL(current.previewUrl);

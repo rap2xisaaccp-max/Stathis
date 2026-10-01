@@ -4,6 +4,7 @@ import {
   canUploadDemonstration,
   DEMONSTRATION_MAX_BYTES,
   demonstrationFor,
+  demonstrationMessageFromBody,
   demonstrationPath,
   demonstrationRequestError,
   removeDemonstration,
@@ -58,11 +59,40 @@ assert.equal(
 assert.equal(acceptDemonstrationFile({ type: '', size: 0, name: 'a.mp4' }), 'Choose a video file');
 assert.equal(demonstrationRequestError(403, 'upload'), 'You are not allowed to change this demonstration');
 assert.equal(
+  demonstrationRequestError(403, 'upload', 'Not authorized for this classroom'),
+  'Not authorized for this classroom'
+);
+assert.equal(
+  demonstrationRequestError(403, 'upload', 'Authentication required'),
+  'Sign in again. This request was not authenticated.'
+);
+assert.equal(
+  demonstrationRequestError(401, 'upload'),
+  'Sign in again. This request was not authenticated.'
+);
+assert.equal(
   demonstrationRequestError(413, 'upload'),
-  'The server rejected this video because it is larger than the current upload limit'
+  'Demonstration videos must be 50 MB or smaller'
+);
+assert.equal(
+  demonstrationRequestError(400, 'upload', 'Demonstration video must be an MP4 or WebM file'),
+  'Demonstration video must be an MP4 or WebM file'
+);
+assert.equal(
+  demonstrationRequestError(404, 'load'),
+  'This task, exercise, or demonstration was not found.'
+);
+assert.equal(
+  demonstrationRequestError(502, 'upload', 'Demonstration storage upload failed: 400'),
+  'Demonstration storage upload failed: 400'
 );
 assert.equal(demonstrationRequestError(0, 'upload'), 'Network error. Try again.');
-assert.equal(demonstrationRequestError(500, 'remove'), 'Could not remove demonstration');
+assert.equal(demonstrationRequestError(500, 'remove'), 'The video could not be stored. Try again.');
+assert.equal(
+  demonstrationMessageFromBody('{"status":403,"error":"Not authorized for this classroom"}'),
+  'Not authorized for this classroom'
+);
+assert.equal(demonstrationMessageFromBody('<html>forbidden</html>'), null);
 assert.equal(
   acceptDemonstrationFile({ type: 'application/x-msdownload', size: 20, name: 'a.exe' }),
   'Use an MP4 or WebM video'
