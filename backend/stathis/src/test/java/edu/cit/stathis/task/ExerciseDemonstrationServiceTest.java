@@ -186,7 +186,10 @@ class ExerciseDemonstrationServiceTest {
     assertTrue(squat.isAvailable());
     assertEquals("video/mp4", push.getContentType());
     assertEquals("video/webm", squat.getContentType());
+    assertTrue(push.getPhysicalId().startsWith("DEMO-"));
     assertEquals(2, rows.size());
+    assertNull(rows.get(0).getId());
+    assertNull(rows.get(1).getId());
     try (InputStream in = service.content(TASK, PUSH)) {
       assertArrayEquals(mp4Bytes(), in.readAllBytes());
     }

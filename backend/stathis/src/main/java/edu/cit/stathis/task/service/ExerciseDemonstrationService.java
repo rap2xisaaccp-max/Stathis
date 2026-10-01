@@ -176,7 +176,9 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
       String previousKey = existing == null ? null : existing.getStorageKey();
       ExerciseDemonstration row = existing == null ? new ExerciseDemonstration() : existing;
       if (existing == null) {
-        row.setId(UUID.randomUUID());
+        // Leave the UUID null. Spring Data persists a null id and the UUID generator assigns it.
+        // Assigning it here makes save() merge a row that does not exist, which throws
+        // StaleObjectStateException before the INSERT.
         row.setPhysicalId(physicalId);
         row.setTaskId(task.getPhysicalId());
         row.setExerciseTemplateId(templateId);
