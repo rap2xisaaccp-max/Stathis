@@ -337,6 +337,30 @@ class DemonstrationStoragePhase2Test {
   }
 
   @Test
+  void uncheckedStorageFailureIs502AndDoesNotReplaceTheStoredObject() {
+    MemoryObjects memory = new MemoryObjects();
+    memory.throwUnchecked = new IllegalStateException("Failed to store demonstration video");
+    SupabaseExerciseDemonstrationStorage storage =
+        new SupabaseExerciseDemonstrationStorage(
+            "https://example.supabase.co", "service-role-placeholder", memory);
+    byte[] original = new byte[] {1, 2, 3, 4};
+    memory.objects.put("demos/TASK-A/EXERCISE-PUSH/DEMO-OLD.mp4", original);
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () ->
+                storage.put(
+                    "demos/TASK-A/EXERCISE-PUSH/DEMO-NEW.mp4",
+                    new ByteArrayInputStream(new byte[] {9, 9, 9, 9}),
+                    1024));
+    assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertEquals("Demonstration storage upload failed", ex.getReason());
+    assertFalse(ex.getReason().contains("Failed to store"));
+    assertArrayEquals(original, memory.objects.get("demos/TASK-A/EXERCISE-PUSH/DEMO-OLD.mp4"));
+    assertFalse(memory.objects.containsKey("demos/TASK-A/EXERCISE-PUSH/DEMO-NEW.mp4"));
+  }
+
+  @Test
   void ioFailureBeforeAResponseIs502AndDoesNotReplaceTheStoredObject() {
     MemoryObjects memory = new MemoryObjects();
     memory.throwOnPut = new IOException("fixed content-length: 76, bytes received: 0");
@@ -442,12 +466,18 @@ class DemonstrationStoragePhase2Test {
     private String contentType = "";
     private boolean failNextPut;
     private IOException throwOnPut;
+    private RuntimeException throwUnchecked;
     private int nextStatus = 200;
 
     @Override
     public SupabaseExerciseDemonstrationStorage.DemonstrationObjectClient.PutResult put(
         String storageKey, String contentType, Path file) throws IOException {
       this.contentType = contentType;
+      if (throwUnchecked != null) {
+        RuntimeException ex = throwUnchecked;
+        throwUnchecked = null;
+        throw ex;
+      }
       if (throwOnPut != null) {
         IOException ex = throwOnPut;
         throwOnPut = null;

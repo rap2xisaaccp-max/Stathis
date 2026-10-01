@@ -3,10 +3,12 @@ package edu.cit.stathis.task;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,7 +34,7 @@ import edu.cit.stathis.task.service.LocalExerciseDemonstrationStorage;
 import edu.cit.stathis.task.service.TaskExerciseService;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.nio.file.Files;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,7 +48,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
@@ -355,6 +359,33 @@ class ExerciseDemonstrationServiceTest {
             () -> limited.upload(TASK, PUSH, "big.mp4", "video/mp4", new ByteArrayInputStream(over)));
     assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, ex.getStatusCode());
     assertTrue(rows.isEmpty());
+  }
+
+  @Test
+  void uploadDoesNotKeepADatabaseTransactionOpen() throws Exception {
+    Method upload =
+        ExerciseDemonstrationService.class.getMethod(
+            "upload", String.class, String.class, String.class, String.class, InputStream.class);
+    assertNull(upload.getAnnotation(Transactional.class));
+  }
+
+  @Test
+  void metadataSaveFailureKeepsTheExistingVideo() throws Exception {
+    service.upload(TASK, PUSH, "old.mp4", "video/mp4", mp4());
+    String oldKey = rows.get(0).getStorageKey();
+    doThrow(new DataIntegrityViolationException("constraint"))
+        .when(demonstrationRepository)
+        .save(any());
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () -> service.upload(TASK, PUSH, "new.mp4", "video/mp4", mp4()));
+    assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, ex.getStatusCode());
+    assertEquals("Demonstration metadata could not be saved", ex.getReason());
+    assertFalse(ex.getReason().contains("constraint"));
+    assertEquals(1, rows.size());
+    assertTrue(Files.exists(tempDir.resolve(oldKey)));
+    assertEquals(1, Files.list(tempDir.resolve("demos").resolve(TASK).resolve(PUSH)).count());
   }
 
   @Test

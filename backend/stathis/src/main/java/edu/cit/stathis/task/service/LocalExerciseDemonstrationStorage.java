@@ -62,7 +62,9 @@ public class LocalExerciseDemonstrationStorage implements ExerciseDemonstrationS
       throw ex;
     } catch (IOException ex) {
       deleteQuietly(file);
-      throw new IllegalStateException("Failed to store demonstration video", ex);
+      log.warn("Demonstration storage upload failed ({})", ex.getClass().getSimpleName());
+      throw new ResponseStatusException(
+          HttpStatus.BAD_GATEWAY, "Demonstration storage upload failed", ex);
     }
   }
 

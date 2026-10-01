@@ -142,7 +142,12 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
                     HttpStatus.NOT_FOUND, "No demonstration video for this exercise"));
   }
 
-  @Transactional
+  /**
+   * Not transactional. The Supabase upload sits between the authorization reads and the metadata
+   * insert. Production uses the transaction pooler, which will not keep that connection idle for
+   * the whole video. Repository calls still use their own short transactions. Evidence uploads are
+   * structured the same way.
+   */
   public ExerciseDemonstrationDTO upload(
       String taskId,
       String exerciseTemplateId,
@@ -189,6 +194,20 @@ public class ExerciseDemonstrationService implements ExerciseDemonstrationRetent
       return toDto(saved);
     } catch (RuntimeException ex) {
       storage.delete(stored.storageKey());
+      if (ex instanceof ResponseStatusException) {
+        throw ex;
+      }
+      if (ex instanceof org.springframework.dao.DataAccessException) {
+        Throwable cause = ex.getCause();
+        log.warn(
+            "Demonstration metadata save failed taskId={} exerciseTemplateId={} exception={} cause={}",
+            task.getPhysicalId(),
+            templateId,
+            ex.getClass().getSimpleName(),
+            cause == null ? "none" : cause.getClass().getSimpleName());
+        throw new ResponseStatusException(
+            HttpStatus.INTERNAL_SERVER_ERROR, "Demonstration metadata could not be saved", ex);
+      }
       throw ex;
     }
   }

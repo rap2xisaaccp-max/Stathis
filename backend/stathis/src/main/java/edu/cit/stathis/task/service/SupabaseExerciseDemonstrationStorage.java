@@ -87,10 +87,12 @@ public class SupabaseExerciseDemonstrationStorage implements ExerciseDemonstrati
       return new StoredDemonstration(storageKey, size);
     } catch (ResponseStatusException ex) {
       throw ex;
+    } catch (RuntimeException ex) {
+      log.warn("Demonstration storage upload failed ({})", ex.getClass().getSimpleName());
+      throw new ResponseStatusException(
+          HttpStatus.BAD_GATEWAY, "Demonstration storage upload failed", ex);
     } catch (IOException ex) {
-      log.warn(
-          "Demonstration storage upload failed before a response ({})",
-          ex.getClass().getSimpleName());
+      log.warn("Demonstration storage upload failed ({})", ex.getClass().getSimpleName());
       throw new ResponseStatusException(
           HttpStatus.BAD_GATEWAY, "Demonstration storage upload failed", ex);
     } finally {
