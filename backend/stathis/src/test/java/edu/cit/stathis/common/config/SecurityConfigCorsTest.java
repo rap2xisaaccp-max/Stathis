@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.cit.stathis.task.controller.ExerciseDemonstrationController;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,11 +20,18 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 class SecurityConfigCorsTest {
 
+  private static final String CONFIGURED_ORIGINS =
+      " https://stathis.ryne.dev, https://stathis-x68s.onrender.com, "
+          + "https://stathis-backend-fresh.onrender.com, http://localhost:3000 ";
+
   private CorsConfigurationSource source;
 
   @BeforeEach
-  void setUp() {
-    source = new SecurityConfig().corsConfigurationSource();
+  void setUp() throws Exception {
+    assertEquals(
+        "${cors.allowed-origins}",
+        SecurityConfig.class.getDeclaredField("allowedOrigins").getAnnotation(Value.class).value());
+    source = new SecurityConfig().corsConfigurationSource(CONFIGURED_ORIGINS);
   }
 
   @Test
@@ -47,10 +56,24 @@ class SecurityConfigCorsTest {
   void unknownOriginsStayRejected() {
     CorsConfiguration cors = configurationFor("/api/tasks/task/exercises/template/demonstration");
 
-    assertNull(cors.checkOrigin("https://evil.example"));
+    assertNull(cors.checkOrigin("https://evil.example.com"));
     assertNull(cors.checkOrigin("http://stathis.ryne.dev"));
-    assertNull(cors.checkOrigin("https://stathis.ryne.dev.evil.com"));
     assertNull(cors.checkOrigin("https://api-stathis.ryne.dev"));
+    assertEquals(
+        List.of(
+            "https://stathis.ryne.dev",
+            "https://stathis-x68s.onrender.com",
+            "https://stathis-backend-fresh.onrender.com",
+            "http://localhost:3000"),
+        cors.getAllowedOrigins());
+  }
+
+  @Test
+  void wildcardOriginIsRejected() {
+    assertThrows(
+        IllegalStateException.class,
+        () -> new SecurityConfig().corsConfigurationSource("https://stathis.ryne.dev,*"));
+    assertThrows(IllegalStateException.class, () -> new SecurityConfig().corsConfigurationSource(" * "));
   }
 
   @Test

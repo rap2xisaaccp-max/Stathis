@@ -7,17 +7,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.cit.stathis.task.service.DemonstrationRange;
+import edu.cit.stathis.task.service.ExerciseDemonstrationService;
 import edu.cit.stathis.task.service.LocalExerciseDemonstrationStorage;
 import edu.cit.stathis.task.service.SupabaseExerciseDemonstrationStorage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,7 +30,7 @@ class DemonstrationStoragePhase2Test {
   @TempDir Path tempDir;
 
   @Test
-  void configurationSelectsLocalByDefaultAndSupabaseByValue() {
+  void configurationSelectsLocalByDefaultAndSupabaseByValue() throws Exception {
     ConditionalOnProperty local =
         LocalExerciseDemonstrationStorage.class.getAnnotation(ConditionalOnProperty.class);
     ConditionalOnProperty remote =
@@ -40,6 +43,44 @@ class DemonstrationStoragePhase2Test {
     assertFalse(remote.matchIfMissing());
     assertEquals("exercise-demonstrations", SupabaseExerciseDemonstrationStorage.DEFAULT_BUCKET);
     assertFalse(SupabaseExerciseDemonstrationStorage.DEFAULT_BUCKET.contains("form-correction"));
+    assertEquals(52428800L, ExerciseDemonstrationService.DEFAULT_MAX_BYTES);
+    java.lang.reflect.Parameter[] parameters =
+        SupabaseExerciseDemonstrationStorage.class
+            .getConstructor(String.class, String.class)
+            .getParameters();
+    assertEquals(
+        "${apsle.demonstration.supabase-url:}",
+        parameters[0].getAnnotation(Value.class).value());
+    assertEquals(
+        "${apsle.demonstration.supabase-service-key:}",
+        parameters[1].getAnnotation(Value.class).value());
+  }
+
+  @Test
+  void demonstrationSupabaseSettingsComeFromEnvironmentPlaceholders() throws Exception {
+    String main = resourceText("/application.properties");
+    String prod = resourceText("/application-prod.properties");
+    assertEquals(
+        "apsle.demonstration.supabase-url=${APSLE_DEMONSTRATION_SUPABASE_URL:}",
+        propertyLine(main, "apsle.demonstration.supabase-url"));
+    assertEquals(
+        "apsle.demonstration.supabase-service-key=${APSLE_DEMONSTRATION_SUPABASE_SERVICE_KEY:}",
+        propertyLine(main, "apsle.demonstration.supabase-service-key"));
+    assertEquals(
+        "apsle.demonstration.storage=${APSLE_DEMONSTRATION_STORAGE:supabase}",
+        propertyLine(prod, "apsle.demonstration.storage"));
+    assertEquals(
+        "apsle.demonstration.supabase-url=${APSLE_DEMONSTRATION_SUPABASE_URL:}",
+        propertyLine(prod, "apsle.demonstration.supabase-url"));
+    assertEquals(
+        "apsle.demonstration.supabase-service-key=${APSLE_DEMONSTRATION_SUPABASE_SERVICE_KEY:}",
+        propertyLine(prod, "apsle.demonstration.supabase-service-key"));
+    assertEquals(
+        "spring.servlet.multipart.max-file-size=50MB",
+        propertyLine(main, "spring.servlet.multipart.max-file-size"));
+    assertEquals(
+        "spring.servlet.multipart.max-request-size=55MB",
+        propertyLine(main, "spring.servlet.multipart.max-request-size"));
   }
 
   @Test
@@ -124,6 +165,24 @@ class DemonstrationStoragePhase2Test {
         assertThrows(
             ResponseStatusException.class, () -> DemonstrationRange.parse("bytes=20-30", 12));
     assertEquals(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE, ex.getStatusCode());
+  }
+
+  private static String resourceText(String path) throws Exception {
+    try (InputStream input = DemonstrationStoragePhase2Test.class.getResourceAsStream(path)) {
+      assertTrue(input != null);
+      return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
+  private static String propertyLine(String properties, String key) {
+    String prefix = key + "=";
+    for (String line : properties.split("\\R")) {
+      String trimmed = line.trim();
+      if (trimmed.startsWith(prefix)) {
+        return trimmed;
+      }
+    }
+    throw new AssertionError("Missing property " + key);
   }
 
   private static final class MemoryObjects implements SupabaseExerciseDemonstrationStorage.DemonstrationObjectClient {

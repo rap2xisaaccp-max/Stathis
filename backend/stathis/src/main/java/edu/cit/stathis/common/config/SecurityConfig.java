@@ -2,6 +2,7 @@ package edu.cit.stathis.common.config;
 
 import edu.cit.stathis.auth.service.CustomUserDetailsService;
 import edu.cit.stathis.common.utils.JwtUtil;
+import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,24 +70,49 @@ public class SecurityConfig {
 
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
-        logger.debug("Configuring CORS with allowed origins: {}", allowedOrigins);
-        
+    return corsConfigurationSource(allowedOrigins);
+  }
+
+  /**
+   * Origins come from {@code cors.allowed-origins}. Spring Boot binds
+   * {@code CORS_ALLOWED_ORIGINS} to that property. Values are comma-separated
+   * and trimmed. {@code *} is rejected. Origin patterns are not used.
+   */
+  CorsConfigurationSource corsConfigurationSource(String rawOrigins) {
+    logger.debug("Configuring CORS with allowed origins: {}", rawOrigins);
+
     CorsConfiguration configuration = new CorsConfiguration();
-    configuration.setAllowedOrigins(List.of(
-            "http://localhost:3000", 
-            "https://stathis-x68s.onrender.com/",
-            "https://stathis-backend-fresh.onrender.com/",
-            "https://stathis.ryne.dev"
-        ));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+    configuration.setAllowedOrigins(parseAllowedOrigins(rawOrigins));
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
     configuration.setAllowedHeaders(List.of("*"));
     configuration.setAllowCredentials(true);
-        
+
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
-        
-        logger.debug("CORS configuration completed");
+
+    logger.debug("CORS configuration completed");
     return source;
+  }
+
+  static List<String> parseAllowedOrigins(String rawOrigins) {
+    if (rawOrigins == null || rawOrigins.isBlank()) {
+      throw new IllegalStateException("cors.allowed-origins must name at least one origin");
+    }
+    List<String> origins = new ArrayList<>();
+    for (String part : rawOrigins.split(",")) {
+      String origin = part.trim();
+      if (origin.isEmpty()) {
+        continue;
+      }
+      if (origin.indexOf('*') >= 0) {
+        throw new IllegalStateException("cors.allowed-origins must not use *");
+      }
+      origins.add(origin);
+    }
+    if (origins.isEmpty()) {
+      throw new IllegalStateException("cors.allowed-origins must name at least one origin");
+    }
+    return List.copyOf(origins);
   }
 
   @Bean
