@@ -7,5 +7,6 @@ data class ExerciseDemonstration(
     val exerciseTemplateId: String? = null,
     val originalFilename: String? = null,
     val contentType: String? = null,
-    val byteSize: Long? = null
+    val byteSize: Long? = null,
+    val createdAt: String? = null
 )
