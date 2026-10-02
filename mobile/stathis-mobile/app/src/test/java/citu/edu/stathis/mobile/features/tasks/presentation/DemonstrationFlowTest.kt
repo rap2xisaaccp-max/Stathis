@@ -194,6 +194,17 @@ class DemonstrationFlowTest {
     }
 
     @Test
+    fun videoFitsThePlayerWithoutStretching() {
+        val squareHost = DemonstrationPlayback.fitScale(1920, 1080, 1000, 1000)
+        assertEquals(1f, squareHost!!.first, 0.01f)
+        assertTrue(squareHost.second < 1f)
+        val matched = DemonstrationPlayback.fitScale(1920, 1080, 1600, 900)
+        assertEquals(1f, matched!!.first, 0.01f)
+        assertEquals(1f, matched.second, 0.01f)
+        assertNull(DemonstrationPlayback.fitScale(0, 1080, 1600, 900))
+    }
+
+    @Test
     fun leavingTheDemonstrationDoesNotRequireDeletingAReadyFile() {
         val flow = DemonstrationFlow("TASK-A", "EXERCISE-PUSH")
         flow.onMetadata(true)

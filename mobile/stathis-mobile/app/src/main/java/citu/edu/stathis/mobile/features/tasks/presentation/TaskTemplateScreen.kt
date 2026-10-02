@@ -43,6 +43,7 @@ fun TaskTemplateScreen(
     }
 
     val saveInFlight = GradedSubmitPolicy.isSaveInFlight(submitState)
+    var showingDemonstration by remember(taskId, templateId) { mutableStateOf(false) }
     BackHandler(enabled = saveInFlight) { }
 
     Scaffold(
@@ -53,7 +54,11 @@ fun TaskTemplateScreen(
                         text = when (templateType) {
                             "LESSON" -> "Lesson"
                             "QUIZ" -> "Quiz"
-                            "EXERCISE" -> "Exercise"
+                            "EXERCISE" -> if (showingDemonstration) {
+                                DemonstrationPlayback.SCREEN_TITLE
+                            } else {
+                                "Exercise"
+                            }
                             else -> "Task"
                         }
                     )
@@ -196,7 +201,7 @@ fun TaskTemplateScreen(
                                 ExerciseWithDemonstration(
                                     taskId = taskId,
                                     exerciseTemplateId = templateId ?: exerciseTemplate.physicalId,
-                                    onBack = onNavigateBack
+                                    onShowingDemonstration = { showingDemonstration = it }
                                 ) {
                                 ExerciseTemplateRenderer(
                                     template = exerciseTemplate,

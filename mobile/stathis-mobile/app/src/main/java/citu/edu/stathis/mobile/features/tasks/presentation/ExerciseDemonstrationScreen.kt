@@ -3,16 +3,32 @@ package citu.edu.stathis.mobile.features.tasks.presentation
 import android.content.Context
 import android.util.Log
 import android.widget.VideoView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +42,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -104,11 +125,6 @@ class ExerciseDemonstrationViewModel @Inject constructor(
         publish()
     }
 
-    fun back() {
-        flow.back()
-        publish()
-    }
-
     fun rememberPosition(positionMs: Int) {
         if (positionMs >= 0) {
             resumePositionMs = positionMs
@@ -117,7 +133,7 @@ class ExerciseDemonstrationViewModel @Inject constructor(
 
     fun onPlaybackFailed() {
         if (BuildConfig.DEBUG) {
-            Log.d(LOG_TAG, "player error cache=${cacheFile?.name}")
+            Log.d(PLAYER_LOG, "player error cache=${cacheFile?.name}")
         }
         flow.onDownloadFailed(DemonstrationPlayback.UNABLE_TO_PLAY)
         publish()
@@ -132,7 +148,7 @@ class ExerciseDemonstrationViewModel @Inject constructor(
         try {
             val response = taskService.getExerciseDemonstration(flow.taskId, flow.exerciseTemplateId)
             if (!response.isSuccessful || response.body() == null) {
-                flow.onMetadataFailed("Could not check for a demonstration")
+                flow.onMetadataFailed(DemonstrationPlayback.UNABLE_TO_PLAY)
             } else if (response.body()!!.available) {
                 metadata = response.body()
                 flow.onMetadata(true)
@@ -145,7 +161,7 @@ class ExerciseDemonstrationViewModel @Inject constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            flow.onMetadataFailed("Could not check for a demonstration")
+            flow.onMetadataFailed(DemonstrationPlayback.UNABLE_TO_PLAY)
         }
         publish()
     }
@@ -169,7 +185,7 @@ class ExerciseDemonstrationViewModel @Inject constructor(
             if (!response.isSuccessful || body == null) {
                 body?.close()
                 debugDownload(response.code(), demo.contentType, expected, 0L, file.name)
-                flow.onDownloadFailed("Could not download the demonstration")
+                flow.onDownloadFailed(DemonstrationPlayback.UNABLE_TO_PLAY)
                 publish()
                 return
             }
@@ -186,7 +202,7 @@ class ExerciseDemonstrationViewModel @Inject constructor(
             DemonstrationCache.delete(file)
             cacheFile = null
             debugDownload(0, demo.contentType, expected, 0L, file.name)
-            flow.onDownloadFailed("Could not download the demonstration")
+            flow.onDownloadFailed(DemonstrationPlayback.UNABLE_TO_PLAY)
         }
         publish()
     }
@@ -194,7 +210,7 @@ class ExerciseDemonstrationViewModel @Inject constructor(
     private fun debugDownload(status: Int, contentType: String?, expected: Long?, bytes: Long, name: String) {
         if (!BuildConfig.DEBUG) return
         Log.d(
-            LOG_TAG,
+            PLAYER_LOG,
             "status=$status type=$contentType expected=$expected bytes=$bytes cache=$name"
         )
     }
@@ -202,23 +218,26 @@ class ExerciseDemonstrationViewModel @Inject constructor(
     private fun publish() {
         _phase.value = flow.phase
     }
-
-    private companion object {
-        const val LOG_TAG = "DemoPlayback"
-    }
 }
 
 @Composable
 fun ExerciseWithDemonstration(
     taskId: String,
     exerciseTemplateId: String,
-    onBack: () -> Unit,
+    onShowingDemonstration: (Boolean) -> Unit = {},
     viewModel: ExerciseDemonstrationViewModel = hiltViewModel(),
     exercise: @Composable () -> Unit
 ) {
     val phase by viewModel.phase.collectAsState()
+    val showingDemonstration = phase is DemonstrationPhase.Demo || phase is DemonstrationPhase.MetadataFailed
     LaunchedEffect(taskId, exerciseTemplateId) {
         viewModel.open(taskId, exerciseTemplateId)
+    }
+    LaunchedEffect(showingDemonstration) {
+        onShowingDemonstration(showingDemonstration)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onShowingDemonstration(false) }
     }
     when (val current = phase) {
         is DemonstrationPhase.Checking -> {
@@ -229,7 +248,7 @@ fun ExerciseWithDemonstration(
             ) {
                 CircularProgressIndicator()
                 Text(
-                    "Loading demonstration...",
+                    DemonstrationPlayback.LOADING,
                     modifier = Modifier.padding(top = 12.dp)
                 )
             }
@@ -237,13 +256,7 @@ fun ExerciseWithDemonstration(
         is DemonstrationPhase.MetadataFailed -> {
             DemonstrationMessage(
                 message = current.message,
-                continueEnabled = false,
-                onRetry = { viewModel.retry() },
-                onContinue = {},
-                onBack = {
-                    viewModel.back()
-                    onBack()
-                }
+                onRetry = { viewModel.retry() }
             )
         }
         is DemonstrationPhase.Demo -> {
@@ -253,11 +266,7 @@ fun ExerciseWithDemonstration(
                 onPosition = viewModel::rememberPosition,
                 onRetry = { viewModel.retry() },
                 onPlaybackFailed = { viewModel.onPlaybackFailed() },
-                onContinue = { viewModel.continueToIdentity() },
-                onBack = {
-                    viewModel.back()
-                    onBack()
-                }
+                onContinue = { viewModel.continueToIdentity() }
             )
         }
         is DemonstrationPhase.Identity -> exercise()
@@ -272,23 +281,39 @@ private fun DemonstrationPlayer(
     onPosition: (Int) -> Unit,
     onRetry: () -> Unit,
     onPlaybackFailed: () -> Unit,
-    onContinue: () -> Unit,
-    onBack: () -> Unit
+    onContinue: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Demonstration", style = MaterialTheme.typography.headlineSmall)
-        Text("You can continue when you are ready. You do not have to watch the whole video.")
         if (!phase.ready && phase.error == null) {
-            CircularProgressIndicator()
-            Text("Loading demonstration...")
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CircularProgressIndicator()
+                Text(DemonstrationPlayback.LOADING)
+            }
         }
         phase.error?.let { message ->
-            Text(message, color = MaterialTheme.colorScheme.error)
+            Text(
+                message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            OutlinedButton(
+                onClick = onRetry,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text("Retry")
+            }
         }
         phase.filePath?.let { path ->
             LocalDemonstrationPlayer(
@@ -298,11 +323,18 @@ private fun DemonstrationPlayer(
                 onPlaybackFailed = onPlaybackFailed
             )
         }
-        if (phase.error != null) {
-            Button(onClick = onRetry) { Text("Retry") }
+        Text(
+            DemonstrationPlayback.INSTRUCTION,
+            style = MaterialTheme.typography.bodyLarge
+        )
+        Button(
+            onClick = onContinue,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+        ) {
+            Text("Continue")
         }
-        Button(onClick = onContinue) { Text("Continue") }
-        Button(onClick = onBack) { Text("Back") }
     }
 }
 
@@ -321,10 +353,16 @@ private fun LocalDemonstrationPlayer(
     var durationMs by remember(path) { mutableIntStateOf(0) }
     var positionMs by remember(path) { mutableIntStateOf(resumePositionMs.coerceAtLeast(0)) }
 
-    AndroidView(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(220.dp),
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
         factory = { context ->
             VideoView(context).apply {
                 setOnPreparedListener { player ->
@@ -335,6 +373,19 @@ private fun LocalDemonstrationPlayer(
                     if (startAt > 0 && DemonstrationPlayback.canSeek(true, duration)) {
                         player.seekTo(startAt)
                         positionMs = startAt
+                    }
+                    val host = this
+                    host.post {
+                        val scale = DemonstrationPlayback.fitScale(
+                            player.videoWidth,
+                            player.videoHeight,
+                            host.width,
+                            host.height
+                        )
+                        if (scale != null) {
+                            host.scaleX = scale.first
+                            host.scaleY = scale.second
+                        }
                     }
                     player.start()
                     playing = true
@@ -363,12 +414,14 @@ private fun LocalDemonstrationPlayer(
             }
         }
     )
+    }
 
     DisposableEffect(path) {
         onDispose {
             val view = videoView
             view?.setOnErrorListener(null)
             view?.setOnPreparedListener(null)
+            view?.setOnCompletionListener(null)
             view?.pause()
             view?.stopPlayback()
             onPosition(positionMs)
@@ -386,47 +439,19 @@ private fun LocalDemonstrationPlayer(
         }
     }
 
-    val status = when {
-        !prepared -> "Preparing video..."
-        finished -> "Video finished"
-        playing -> "Playing"
-        else -> "Paused"
+    if (!prepared) {
+        Text(
+            DemonstrationPlayback.PREPARING,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
+        )
     }
-    Text(status)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Button(
-            enabled = prepared,
-            onClick = {
-                val view = videoView ?: return@Button
-                if (!prepared) return@Button
-                if (finished) {
-                    view.seekTo(0)
-                    positionMs = 0
-                    onPosition(0)
-                    finished = false
-                    view.start()
-                    playing = true
-                } else if (playing) {
-                    view.pause()
-                    playing = false
-                    val current = view.currentPosition.coerceAtLeast(0)
-                    positionMs = current
-                    onPosition(current)
-                } else {
-                    view.start()
-                    playing = true
-                }
-            }
-        ) {
-            Text(if (finished) "Replay" else if (playing) "Pause" else "Play")
-        }
-        Text("${DemonstrationPlayback.formatClock(positionMs)} / ${DemonstrationPlayback.formatClock(durationMs)}")
-    }
-    Text("Drag the bar to review a specific part of the demonstration.")
+    Text(
+        "${DemonstrationPlayback.formatClock(positionMs)} / ${DemonstrationPlayback.formatClock(durationMs)}",
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
+    )
     Slider(
         value = if (durationMs > 0) {
             positionMs.coerceIn(0, durationMs).toFloat()
@@ -453,30 +478,91 @@ private fun LocalDemonstrationPlayer(
         enabled = DemonstrationPlayback.canSeek(prepared, durationMs),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .heightIn(min = 48.dp)
+            .semantics { contentDescription = "Seek demonstration" }
     )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FilledIconButton(
+            onClick = {
+                val view = videoView ?: return@FilledIconButton
+                if (!prepared) return@FilledIconButton
+                if (finished || !playing) {
+                    if (finished) {
+                        view.seekTo(0)
+                        positionMs = 0
+                        onPosition(0)
+                        finished = false
+                    }
+                    view.start()
+                    playing = true
+                } else {
+                    view.pause()
+                    playing = false
+                    val current = view.currentPosition.coerceAtLeast(0)
+                    positionMs = current
+                    onPosition(current)
+                }
+            },
+            enabled = prepared,
+            modifier = Modifier.size(56.dp)
+        ) {
+            Icon(
+                imageVector = if (playing && !finished) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (playing && !finished) "Pause" else "Play"
+            )
+        }
+        Spacer(Modifier.size(20.dp))
+        FilledTonalButton(
+            onClick = {
+                val view = videoView ?: return@FilledTonalButton
+                if (!prepared) return@FilledTonalButton
+                view.seekTo(0)
+                positionMs = 0
+                onPosition(0)
+                finished = false
+                view.start()
+                playing = true
+            },
+            enabled = prepared,
+            modifier = Modifier.heightIn(min = 48.dp)
+        ) {
+            Icon(Icons.Filled.Replay, contentDescription = null)
+            Spacer(Modifier.size(8.dp))
+            Text("Replay")
+        }
+    }
 }
 
 @Composable
 private fun DemonstrationMessage(
     message: String,
-    continueEnabled: Boolean,
-    onRetry: () -> Unit,
-    onContinue: () -> Unit,
-    onBack: () -> Unit
+    onRetry: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(message, color = MaterialTheme.colorScheme.error)
-        Button(onClick = onRetry) { Text("Retry") }
-        if (continueEnabled) {
-            Button(onClick = onContinue) { Text("Continue") }
+        Text(
+            message,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center
+        )
+        OutlinedButton(
+            onClick = onRetry,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+        ) {
+            Text("Retry")
         }
-        Button(onClick = onBack) { Text("Back") }
     }
 }
 

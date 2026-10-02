@@ -91,7 +91,25 @@ sealed class DemonstrationPhase {
 fun demonstrationApplies(sessionContext: String): Boolean = sessionContext == "TASK"
 
 object DemonstrationPlayback {
-    const val UNABLE_TO_PLAY = "Unable to play demonstration. Please try again."
+    const val SCREEN_TITLE = "Exercise Demonstration"
+    const val INSTRUCTION = "Watch the demonstration carefully before starting the exercise."
+    const val LOADING = "Loading demonstration..."
+    const val PREPARING = "Preparing video..."
+    const val UNABLE_TO_PLAY = "Unable to play demonstration."
+
+    /**
+     * Scales a video into a view without stretching it. Null when either size is unknown.
+     */
+    fun fitScale(videoWidth: Int, videoHeight: Int, viewWidth: Int, viewHeight: Int): Pair<Float, Float>? {
+        if (videoWidth <= 0 || videoHeight <= 0 || viewWidth <= 0 || viewHeight <= 0) return null
+        val videoRatio = videoWidth.toFloat() / videoHeight.toFloat()
+        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
+        return if (videoRatio > viewRatio) {
+            1f to (viewRatio / videoRatio)
+        } else {
+            (videoRatio / viewRatio) to 1f
+        }
+    }
 
     fun formatClock(positionMs: Int): String {
         if (positionMs <= 0) return "00:00"
