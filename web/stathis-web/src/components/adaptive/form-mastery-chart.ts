@@ -29,6 +29,27 @@ export function formMasteryStateLabel(state: string | null | undefined): string 
   }
 }
 
+export function formMasteryQualifyingAttemptLabel(
+  count: number | null | undefined
+): string {
+  const safe = typeof count === 'number' && Number.isFinite(count) && count > 0
+    ? Math.trunc(count)
+    : 0;
+  return `${safe} qualifying ${safe === 1 ? 'attempt' : 'attempts'}`;
+}
+
+/** Axis label. A missing state is omitted and is never shown as Learning. */
+export function formMasteryExerciseAxisLabel(
+  exerciseType: string | null | undefined,
+  state: string | null | undefined,
+  eligibleAttemptCount: number | null | undefined
+): string {
+  const name = (exerciseType || 'UNKNOWN').replaceAll('_', ' ');
+  const stateLabel = formMasteryStateLabel(state);
+  const attempts = formMasteryQualifyingAttemptLabel(eligibleAttemptCount);
+  return stateLabel ? `${name} · ${stateLabel} · ${attempts}` : `${name} · ${attempts}`;
+}
+
 export function buildFormMasteryByExerciseChartData(
   formMastery: FormMasteryChartItem[] | null | undefined
 ): Array<{ exercise: string; masteryPct: number; attemptCount: number; state: string }> {
@@ -42,9 +63,12 @@ export function buildFormMasteryByExerciseChartData(
     })
     .map((item) => {
       const state = formMasteryStateLabel(item.state);
-      const name = (item.exerciseType || 'UNKNOWN').replaceAll('_', ' ');
       return {
-        exercise: state ? `${name} · ${state}` : name,
+        exercise: formMasteryExerciseAxisLabel(
+          item.exerciseType,
+          item.state,
+          item.eligibleAttemptCount
+        ),
         masteryPct: formMasteryDisplayPercent(item.formMasteryLevel),
         attemptCount: item.eligibleAttemptCount || 0,
         state,

@@ -19,7 +19,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart } from '@/components/dashboard/bar-chart';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { buildFormMasteryByExerciseChartData } from '@/components/adaptive/form-mastery-chart';
-import { buildRecurringErrorsChartData } from '@/components/adaptive/adaptive-insights-charts';
+import {
+  buildRecurringErrorsChartData,
+  MASTERY_CATEGORY_NAMES,
+} from '@/components/adaptive/adaptive-insights-charts';
 import {
   StudentTaskStatsModal,
   ProgressSnapshotItem,
@@ -111,12 +114,15 @@ export function AdaptiveLearningInsights({
               <CardContent className="pt-6">
                 <BarChart
                   title="Form mastery by exercise"
-                  description="Persistent form quality across classroom attempts (Learning, Improving, or Mastered). Not coaching frequency, and not percent of correct reps."
+                  description="Persistent form quality across classroom attempts. Each label shows the state and qualifying-attempt count when a state exists. Not coaching frequency, and not percent of correct reps."
                   data={masteryChart.map((row) => ({
                     exercise: row.exercise,
                     masteryPct: row.masteryPct,
+                    attemptCount: row.attemptCount,
+                    state: row.state,
                   }))}
                   categories={['masteryPct']}
+                  categoryNames={MASTERY_CATEGORY_NAMES}
                   index="exercise"
                   yDomain={[0, 100]}
                   valueSuffix="%"
@@ -143,9 +149,10 @@ export function AdaptiveLearningInsights({
                   {item.recommendedDifficulty ? ` · ${item.recommendedDifficulty}` : ''}
                 </Badge>
               ))}
+              <p className="w-full text-xs font-medium text-foreground">Coaching Diagnostics</p>
               <p className="w-full text-xs text-muted-foreground">
-                Soft difficulty suggestions use coaching-frequency diagnostics and are pending
-                recalibration. They are not Form Mastery.
+                Soft difficulty suggestions use coaching frequency. They are not a student
+                performance percentage, and they are not Form Mastery.
               </p>
             </div>
           ) : null}

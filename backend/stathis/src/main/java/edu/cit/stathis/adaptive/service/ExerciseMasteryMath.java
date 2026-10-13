@@ -92,7 +92,8 @@ public final class ExerciseMasteryMath {
       Map<String, Object> commonErrors) {
     String topError = topErrorCode(commonErrors);
     StringBuilder sb = new StringBuilder();
-    sb.append(String.format("Mastery %.0f%% suggests %s with about %d goal reps.",
+    sb.append(String.format(
+        "Coaching frequency %.0f%% is a coaching diagnostic, not a student performance percentage. It suggests %s with about %d goal reps.",
         masteryLevel * 100.0, recommendedDifficulty, recommendedGoalReps));
     if (topError != null) {
       sb.append(" Most frequent form error: ").append(topError.replace('_', ' ')).append('.');

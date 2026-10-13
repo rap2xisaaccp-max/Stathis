@@ -160,7 +160,7 @@ public class AdaptiveController {
   @PreAuthorize("hasRole('STUDENT')")
   @Operation(
       summary =
-          "List coaching-frequency exercise mastery for current student (not Form Mastery)")
+          "Coaching frequency diagnostics for the current student. Not a student performance percentage and not Form Mastery.")
   public ResponseEntity<List<ExerciseMasteryDTO>> getOwnMastery() {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(adaptiveFeedbackService.getMastery(studentId));
@@ -170,7 +170,7 @@ public class AdaptiveController {
   @PreAuthorize("hasRole('TEACHER')")
   @Operation(
       summary =
-          "List coaching-frequency exercise mastery for a student (not Form Mastery)")
+          "Coaching frequency diagnostics for a student. Not a student performance percentage and not Form Mastery.")
   public ResponseEntity<List<ExerciseMasteryDTO>> getStudentMastery(
       @PathVariable String studentId) {
     String teacherId = physicalIdService.getCurrentUserPhysicalId();
@@ -204,7 +204,7 @@ public class AdaptiveController {
   @PreAuthorize("hasRole('TEACHER')")
   @Operation(
       summary =
-          "Soft goalReps/difficulty suggestions for a student (teacher must approve; never auto-applies)")
+          "Coaching diagnostics: soft goalReps/difficulty suggestions. Not a student performance percentage. Teacher must approve; never auto-applies.")
   public ResponseEntity<List<DifficultyRecommendationDTO>> getDifficultyRecommendations(
       @PathVariable String studentId) {
     String teacherId = physicalIdService.getCurrentUserPhysicalId();
@@ -214,7 +214,7 @@ public class AdaptiveController {
 
   @PostMapping("/mastery/{exerciseType}/session")
   @PreAuthorize("hasRole('STUDENT')")
-  @Operation(summary = "Record an exercise session toward mastery tracking")
+  @Operation(summary = "Record a coaching-frequency session. This does not store a student performance percentage.")
   public ResponseEntity<ExerciseMasteryDTO> recordSession(@PathVariable String exerciseType) {
     String studentId = physicalIdService.getCurrentUserPhysicalId();
     return ResponseEntity.ok(adaptiveFeedbackService.recordSession(studentId, exerciseType));

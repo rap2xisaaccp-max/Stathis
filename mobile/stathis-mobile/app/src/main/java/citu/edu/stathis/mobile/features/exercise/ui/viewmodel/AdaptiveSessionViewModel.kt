@@ -7,6 +7,7 @@ import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveFeedbackEngine
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
 import citu.edu.stathis.mobile.features.exercise.adaptive.DeliveredFeedback
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDto
+import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryLoadGate
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormErrorMapper
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormEvidenceCapture
 import citu.edu.stathis.mobile.features.exercise.adaptive.LatestFrameBuffer
@@ -59,6 +60,8 @@ class AdaptiveSessionViewModel @Inject constructor(
 
     private val _profileError = MutableStateFlow<String?>(null)
     val profileError: StateFlow<String?> = _profileError.asStateFlow()
+
+    private val formMasteryLoadGate = FormMasteryLoadGate()
 
     private var lastValidReps: Int = 0
 
@@ -153,17 +156,24 @@ class AdaptiveSessionViewModel @Inject constructor(
     }
 
     fun loadLearningProfileAndMastery() {
+        val request = formMasteryLoadGate.open()
         viewModelScope.launch {
             _profileLoading.value = true
             _profileError.value = null
             try {
-                _learningProfile.value = adaptiveApi.getOwnProfile()
-                _formMastery.value = adaptiveApi.getOwnFormMastery()
+                val profile = adaptiveApi.getOwnProfile()
+                val mastery = adaptiveApi.getOwnFormMastery()
+                if (!formMasteryLoadGate.isCurrent(request)) return@launch
+                _learningProfile.value = profile
+                _formMastery.value = mastery
             } catch (t: Throwable) {
+                if (!formMasteryLoadGate.isCurrent(request)) return@launch
                 Timber.w(t, "Failed to load coaching profile/mastery")
                 _profileError.value = t.message ?: "Could not load coaching data"
             } finally {
-                _profileLoading.value = false
+                if (formMasteryLoadGate.isCurrent(request)) {
+                    _profileLoading.value = false
+                }
             }
         }
     }

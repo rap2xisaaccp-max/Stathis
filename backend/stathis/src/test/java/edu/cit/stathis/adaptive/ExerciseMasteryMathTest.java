@@ -75,6 +75,9 @@ public class ExerciseMasteryMathTest {
     assertTrue(rationale.contains("30"));
     assertTrue(rationale.contains("KNEES IN") || rationale.contains("KNEES_IN".replace('_', ' ')));
     assertTrue(rationale.toLowerCase().contains("soft recommendation"));
+    assertTrue(rationale.toLowerCase().contains("coaching frequency"));
+    assertTrue(rationale.toLowerCase().contains("not a student performance percentage"));
+    assertFalse(rationale.startsWith("Mastery"));
   }
 
   @Test

@@ -134,7 +134,11 @@ fun StudentMasterySection(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "${FormMasteryDisplay.percentLabel(item.formMasteryLevel)} · ${FormMasteryDisplay.stateLabel(item.state)} · ${item.eligibleAttemptCount} classroom ${if (item.eligibleAttemptCount == 1) "attempt" else "attempts"}",
+                                        text = FormMasteryDisplay.labeledPercent(
+                                            item.formMasteryLevel,
+                                            item.state,
+                                            item.eligibleAttemptCount
+                                        ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

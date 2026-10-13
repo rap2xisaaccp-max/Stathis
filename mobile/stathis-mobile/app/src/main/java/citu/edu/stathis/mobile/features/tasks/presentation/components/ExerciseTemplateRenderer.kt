@@ -164,6 +164,13 @@ fun ExerciseTemplateRenderer(
     val adaptiveSessionSummary by adaptiveSessionViewModel.sessionSummary.collectAsState()
     val formMastery by adaptiveSessionViewModel.formMastery.collectAsState()
     val context = LocalContext.current
+    val classroomAttemptSaved =
+        submitState is citu.edu.stathis.mobile.features.tasks.presentation.TemplateSubmitState.Success
+    LaunchedEffect(classroomAttemptSaved) {
+        if (FormMasteryDisplay.shouldRefreshAfterClassroomSave(classroomAttemptSaved)) {
+            adaptiveSessionViewModel.loadLearningProfileAndMastery()
+        }
+    }
 
     fun endAdaptiveSession() {
         if (adaptiveSessionLive) {
@@ -1587,9 +1594,8 @@ private fun ExerciseResults(
         .distinct()
     val improveText = AttemptResultCopy.improve(template.exerciseType, detectedErrors)
     val masteryText = formMastery?.let { row ->
-        val state = FormMasteryDisplay.stateLabel(row.state)
-        "${FormMasteryDisplay.percentLabel(row.formMasteryLevel)} · $state"
-    } ?: "Not enough classroom attempts yet"
+        FormMasteryDisplay.resultLine(row.formMasteryLevel, row.state, row.eligibleAttemptCount)
+    } ?: FormMasteryDisplay.NO_QUALIFYING_ATTEMPTS
 
     Card(
         modifier = modifier
@@ -1733,7 +1739,7 @@ private fun ExerciseResults(
                     )
 
                     Text(
-                        text = "Exercise mastery: $masteryText",
+                        text = masteryText,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
