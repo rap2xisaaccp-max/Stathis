@@ -38,10 +38,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    androidResources {
-        noCompress += "tflite"
-    }
-
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -153,9 +149,6 @@ dependencies {
     // ML Kit dependencies for pose detection
     implementation(libs.pose.detection)
     implementation(libs.pose.detection.accurate)
-    implementation(libs.face.detection)
-    implementation(libs.tensorflow.lite)
-    implementation(libs.tensorflow.lite.support)
 
     // CameraX dependencies
     implementation(libs.androidx.camera.core)

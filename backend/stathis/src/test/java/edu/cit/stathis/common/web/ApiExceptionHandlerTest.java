@@ -35,8 +35,8 @@ class ApiExceptionHandlerTest {
         .perform(get("/boom"))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.status").value(502))
-        .andExpect(jsonPath("$.error").value("Demonstration storage upload failed: 400"))
-        .andExpect(jsonPath("$.message").value("Demonstration storage upload failed: 400"));
+        .andExpect(jsonPath("$.error").value("Storage upload failed: 400"))
+        .andExpect(jsonPath("$.message").value("Storage upload failed: 400"));
   }
 
   @Test
@@ -52,7 +52,8 @@ class ApiExceptionHandlerTest {
     mockMvc
         .perform(post("/big"))
         .andExpect(status().isPayloadTooLarge())
-        .andExpect(jsonPath("$.status").value(413));
+        .andExpect(jsonPath("$.status").value(413))
+        .andExpect(jsonPath("$.error").value("Uploaded files must be 50 MB or smaller"));
   }
 
   @Test
@@ -64,8 +65,7 @@ class ApiExceptionHandlerTest {
   static class BoomController {
     @GetMapping("/boom")
     void boom() {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_GATEWAY, "Demonstration storage upload failed: 400");
+      throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Storage upload failed: 400");
     }
 
     @GetMapping("/denied")

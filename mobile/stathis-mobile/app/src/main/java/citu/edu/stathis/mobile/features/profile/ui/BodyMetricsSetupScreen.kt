@@ -1,6 +1,5 @@
 package citu.edu.stathis.mobile.features.profile.ui
 
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,20 +45,12 @@ fun BodyMetricsSetupScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(state.success, state.needsFaceRegistration) {
+    LaunchedEffect(state.success) {
         if (!state.success) return@LaunchedEffect
-        if (state.needsFaceRegistration) {
-            val encodedReturn = Uri.encode(returnRoute.orEmpty())
-            navController.navigate("face_registration?returnRoute=$encodedReturn") {
-                popUpTo("body_metrics_setup?returnRoute={returnRoute}") { inclusive = true }
-                launchSingleTop = true
-            }
-        } else {
-            val destination = returnRoute?.takeIf { it.isNotBlank() } ?: "profile"
-            navController.navigate(destination) {
-                popUpTo(navController.graph.startDestinationId) { inclusive = false }
-                launchSingleTop = true
-            }
+        val destination = returnRoute?.takeIf { it.isNotBlank() } ?: "profile"
+        navController.navigate(destination) {
+            popUpTo(navController.graph.startDestinationId) { inclusive = false }
+            launchSingleTop = true
         }
     }
 
@@ -115,7 +106,7 @@ fun BodyMetricsSetupScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Enter your age, height, and weight for BMI tracking. Next, you'll register your face for exercise identity checks.",
+                        text = "Enter your age, height, and weight for BMI tracking.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -185,7 +176,7 @@ fun BodyMetricsSetupScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                         }
                         Text(
-                            text = if (state.faceRegistered) "Save and continue" else "Save and register face",
+                            text = "Save and continue",
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                         )
                     }

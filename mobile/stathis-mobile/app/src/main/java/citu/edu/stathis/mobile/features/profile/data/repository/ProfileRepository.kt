@@ -2,7 +2,6 @@ package citu.edu.stathis.mobile.features.profile.data.repository
 
 import citu.edu.stathis.mobile.core.data.models.ClientResponse
 import citu.edu.stathis.mobile.features.auth.data.models.UserResponseDTO
-import citu.edu.stathis.mobile.features.profile.data.models.FaceEmbeddingResponse
 
 interface ProfileRepository {
 
@@ -23,8 +22,4 @@ interface ProfileRepository {
         course: String?,
         yearLevel: Int?
     ): ClientResponse<UserResponseDTO>
-
-    suspend fun registerFace(embeddingJson: String): ClientResponse<FaceEmbeddingResponse>
-
-    suspend fun getFaceEmbedding(): ClientResponse<FaceEmbeddingResponse>
 }

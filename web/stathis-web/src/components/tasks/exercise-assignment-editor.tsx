@@ -18,14 +18,13 @@ import {
 } from '@/lib/tasks/task-exercises';
 import { ArrowDown, ArrowUp, Loader2, Plus, Trash } from 'lucide-react';
 import { toast } from 'sonner';
-import { ExerciseDemonstrationControls } from './exercise-demonstration-controls';
+
 
 type ExerciseAssignmentEditorProps = {
   templates: ExerciseTemplateResponseDTO[];
   loading?: boolean;
   value: AssignedExercise[];
   locked?: boolean;
-  taskId?: string | null;
   onChange: (next: AssignedExercise[]) => void;
 };
 
@@ -34,7 +33,6 @@ export function ExerciseAssignmentEditor({
   loading,
   value,
   locked,
-  taskId,
   onChange,
 }: ExerciseAssignmentEditorProps) {
   const [pendingId, setPendingId] = useState<string>('');
@@ -155,7 +153,6 @@ export function ExerciseAssignmentEditor({
                   </div>
                 )}
               </div>
-              <ExerciseDemonstrationControls taskId={taskId} exerciseTemplateId={item.physicalId} />
             </div>
           ))
         )}

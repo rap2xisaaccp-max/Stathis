@@ -2,8 +2,6 @@ package edu.cit.stathis.auth.service;
 
 import edu.cit.stathis.auth.dto.AuthResponseDTO;
 import edu.cit.stathis.auth.dto.CreateUserDTO;
-import edu.cit.stathis.auth.dto.FaceEmbeddingDTO;
-import edu.cit.stathis.auth.dto.FaceEmbeddingResponseDTO;
 import edu.cit.stathis.auth.dto.LoginDTO;
 import edu.cit.stathis.auth.dto.UpdateStudentProfileDTO;
 import edu.cit.stathis.auth.dto.UpdateTeacherProfileDTO;
@@ -292,34 +290,6 @@ public class UserService {
   }
 
   @Transactional
-  public FaceEmbeddingResponseDTO saveFaceEmbedding(FaceEmbeddingDTO faceEmbeddingDTO) {
-    UUID userId = physicalIdService.getCurrentUserUUID();
-    User user = findById(userId);
-    UserProfile userProfile = findUserProfileByUserId(userId);
-
-    userProfile.setFaceEmbedding(faceEmbeddingDTO.getEmbedding());
-    userProfile.setFaceRegistered(true);
-    upRepo.save(userProfile);
-
-    webhookService.notifyUserEvent(user, "registered face");
-
-    return FaceEmbeddingResponseDTO.builder()
-        .faceRegistered(true)
-        .embedding(userProfile.getFaceEmbedding())
-        .build();
-  }
-
-  public FaceEmbeddingResponseDTO getFaceEmbedding() {
-    UUID userId = physicalIdService.getCurrentUserUUID();
-    UserProfile userProfile = findUserProfileByUserId(userId);
-    boolean registered = userProfile.hasFaceRegistered();
-    return FaceEmbeddingResponseDTO.builder()
-        .faceRegistered(registered)
-        .embedding(registered ? userProfile.getFaceEmbedding() : null)
-        .build();
-  }
-
-  @Transactional
   public UserResponseDTO updateStudentProfile(UpdateStudentProfileDTO studentDTO) {
     UUID userId = physicalIdService.getCurrentUserUUID();
     UserRoleEnum userRole =
@@ -409,7 +379,6 @@ public class UserService {
         .positionTitle(userProfile.getPositionTitle())
         .heightInMeters(userProfile.getHeightInMeters())
         .weightInKg(userProfile.getWeightInKg())
-        .faceRegistered(userProfile.hasFaceRegistered())
         .build();
   }
 

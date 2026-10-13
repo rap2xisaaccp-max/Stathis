@@ -17,13 +17,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,22 +35,12 @@ public class TaskExerciseService {
 
   private final TaskExerciseRepository taskExerciseRepository;
   private final ExerciseTemplateRepository exerciseTemplateRepository;
-  private final ExerciseDemonstrationRetention demonstrations;
-
-  @Autowired
-  public TaskExerciseService(
-      TaskExerciseRepository taskExerciseRepository,
-      ExerciseTemplateRepository exerciseTemplateRepository,
-      @Autowired(required = false) ExerciseDemonstrationRetention demonstrations) {
-    this.taskExerciseRepository = taskExerciseRepository;
-    this.exerciseTemplateRepository = exerciseTemplateRepository;
-    this.demonstrations = demonstrations;
-  }
 
   public TaskExerciseService(
       TaskExerciseRepository taskExerciseRepository,
       ExerciseTemplateRepository exerciseTemplateRepository) {
-    this(taskExerciseRepository, exerciseTemplateRepository, null);
+    this.taskExerciseRepository = taskExerciseRepository;
+    this.exerciseTemplateRepository = exerciseTemplateRepository;
   }
 
   public record AssignedExercise(String exerciseTemplateId, int sortOrder, ExerciseTemplate template) {}
@@ -103,7 +90,7 @@ public class TaskExerciseService {
       } else {
         assigned = List.of();
       }
-      task.setExercises(toCatalog(assigned, demoTemplates(task.getPhysicalId())));
+      task.setExercises(toCatalog(assigned));
     }
   }
 
@@ -186,9 +173,6 @@ public class TaskExerciseService {
               .build());
     }
     task.setExerciseTemplateId(ids.isEmpty() ? null : ids.get(0));
-    if (demonstrations != null && task.getPhysicalId() != null) {
-      demonstrations.retainOnly(task.getPhysicalId(), new LinkedHashSet<>(ids));
-    }
   }
 
   public boolean belongsToTask(Task task, String exerciseTemplateId) {
@@ -208,7 +192,6 @@ public class TaskExerciseService {
         }
       }
     }
-    Set<String> withVideo = demoTemplates(task.getPhysicalId());
     List<TaskExerciseProgressDTO> rows = new ArrayList<>();
     for (AssignedExercise assigned : assigned(task)) {
       Score score = byTemplate.get(assigned.exerciseTemplateId());
@@ -230,7 +213,6 @@ public class TaskExerciseService {
               .latestValidReps(score != null ? score.getReps() : 0)
               .score(score != null ? score.getScore() : null)
               .completionStatus(ExerciseCompletionPolicy.status(score))
-              .demonstrationAvailable(withVideo.contains(assigned.exerciseTemplateId()))
               .build());
     }
     return rows;
@@ -280,15 +262,7 @@ public class TaskExerciseService {
     return assigned;
   }
 
-  private Set<String> demoTemplates(String taskId) {
-    if (demonstrations == null || taskId == null || taskId.isBlank()) {
-      return Set.of();
-    }
-    return demonstrations.templateIds(taskId);
-  }
-
-  private List<TaskExerciseProgressDTO> toCatalog(
-      List<AssignedExercise> assigned, Set<String> withVideo) {
+  private List<TaskExerciseProgressDTO> toCatalog(List<AssignedExercise> assigned) {
     List<TaskExerciseProgressDTO> rows = new ArrayList<>();
     for (AssignedExercise item : assigned) {
       ExerciseTemplate template = item.template();
@@ -308,7 +282,6 @@ public class TaskExerciseService {
               .attempts(0)
               .latestValidReps(0)
               .completionStatus(ExerciseCompletionPolicy.NOT_STARTED)
-              .demonstrationAvailable(withVideo.contains(item.exerciseTemplateId()))
               .build());
     }
     return rows;

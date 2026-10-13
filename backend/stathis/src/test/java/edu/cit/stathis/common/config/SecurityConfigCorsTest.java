@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import edu.cit.stathis.task.controller.ExerciseDemonstrationController;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
 import java.util.HashMap;
@@ -22,7 +21,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
@@ -45,7 +43,7 @@ class SecurityConfigCorsTest {
 
   @Test
   void productionTeacherWebOriginIsAllowedWithExistingOrigins() {
-    CorsConfiguration cors = configurationFor("/api/tasks/task/exercises/template/demonstration");
+    CorsConfiguration cors = configurationFor("/api/tasks");
 
     assertEquals("http://localhost:3000", cors.checkOrigin("http://localhost:3000"));
     assertEquals(
@@ -63,7 +61,7 @@ class SecurityConfigCorsTest {
 
   @Test
   void unknownOriginsStayRejected() {
-    CorsConfiguration cors = configurationFor("/api/tasks/task/exercises/template/demonstration");
+    CorsConfiguration cors = configurationFor("/api/tasks");
 
     assertNull(cors.checkOrigin("https://evil.example.com"));
     assertNull(cors.checkOrigin("http://stathis.ryne.dev"));
@@ -131,22 +129,6 @@ class SecurityConfigCorsTest {
         IllegalStateException.class,
         () -> new SecurityConfig().corsConfigurationSource("https://stathis.ryne.dev,*"));
     assertThrows(IllegalStateException.class, () -> new SecurityConfig().corsConfigurationSource(" * "));
-  }
-
-  @Test
-  void demonstrationUploadStillRequiresTeacherRole() throws Exception {
-    PreAuthorize upload =
-        ExerciseDemonstrationController.class
-            .getMethod(
-                "upload", String.class, String.class, org.springframework.web.multipart.MultipartFile.class)
-            .getAnnotation(PreAuthorize.class);
-    PreAuthorize metadata =
-        ExerciseDemonstrationController.class
-            .getMethod("metadata", String.class, String.class)
-            .getAnnotation(PreAuthorize.class);
-
-    assertEquals("hasRole('TEACHER')", upload.value());
-    assertEquals("hasAnyRole('TEACHER', 'STUDENT')", metadata.value());
   }
 
   private MockHttpServletResponse preflight(String origin) throws ServletException, IOException {

@@ -47,8 +47,9 @@ public class UserProfile {
   private String profilePictureUrl;
 
   /**
-   * JSON array of floats representing the enrolled face embedding.
-   * Stored in Supabase-hosted Postgres for identity verification during exercises.
+   * Retained columns. Facial recognition is removed. Do not drop these until a
+   * separately approved migration. Hibernate must keep mapping them so startup
+   * validation does not treat the live schema as missing fields.
    */
   @Column(name = "face_embedding", columnDefinition = "TEXT")
   private String faceEmbedding;
@@ -95,12 +96,6 @@ public class UserProfile {
     return dateNow.getYear()
         - birthdate.getYear()
         - (dateNow.getDayOfYear() < birthdate.getDayOfYear() ? 1 : 0);
-  }
-
-  public boolean hasFaceRegistered() {
-    return Boolean.TRUE.equals(faceRegistered)
-        && faceEmbedding != null
-        && !faceEmbedding.isBlank();
   }
 
   @Transient

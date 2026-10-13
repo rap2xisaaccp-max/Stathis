@@ -55,9 +55,9 @@ public class ApiExceptionHandler {
                 "status",
                 413,
                 "error",
-                "Demonstration videos must be 50 MB or smaller",
+                "Uploaded files must be 50 MB or smaller",
                 "message",
-                "Demonstration videos must be 50 MB or smaller"));
+                "Uploaded files must be 50 MB or smaller"));
   }
 
   private static boolean causedBySize(Throwable ex) {

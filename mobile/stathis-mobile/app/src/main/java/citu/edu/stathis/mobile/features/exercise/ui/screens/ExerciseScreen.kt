@@ -67,12 +67,9 @@ import citu.edu.stathis.mobile.features.exercise.data.ExerciseType
 import citu.edu.stathis.mobile.features.exercise.data.OnDeviceFeedback
 import citu.edu.stathis.mobile.features.exercise.data.analysis.OnDeviceExerciseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.adaptive.LiveCoachingUiPolicy
-import citu.edu.stathis.mobile.features.exercise.data.facerecognition.FaceAnalyzer
-import citu.edu.stathis.mobile.features.exercise.data.facerecognition.SkeletonPresenceTracker
 import citu.edu.stathis.mobile.features.exercise.data.posedetection.PoseAnalyzer
 import citu.edu.stathis.mobile.features.exercise.recording.ScreenRecordService
 import citu.edu.stathis.mobile.features.exercise.ui.components.PoseSkeletonOverlayView
-import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.FaceIdentityViewModel
 import citu.edu.stathis.mobile.features.vitals.ui.HealthCompactIndicator
 import com.google.mlkit.vision.pose.Pose
 import citu.edu.stathis.mobile.features.tasks.presentation.DebugSessionLog
@@ -98,13 +95,6 @@ fun ExerciseScreen(
     enableExerciseTracking: Boolean = true,
     /** Increment to force [OnDeviceExerciseAnalyzer] reset (new attempt / Start). */
     detectorResetKey: Int = 0,
-    /** When true, run facial recognition against the enrolled embedding. */
-    verifyFace: Boolean = false,
-    enrolledFaceEmbedding: FloatArray? = null,
-    onFaceVerified: (() -> Unit)? = null,
-    /** Called when the full skeleton leaves the camera after identity was verified. */
-    monitorSkeletonPresence: Boolean = false,
-    onSkeletonLeftFrame: (() -> Unit)? = null,
     onPoseUpdated: ((Pose?) -> Unit)? = null,
     /** Adaptive learning visual highlight of skeleton joints/bones. */
     adaptiveHighlight: Boolean = false,
@@ -120,12 +110,9 @@ fun ExerciseScreen(
     onPoseGeometry: ((citu.edu.stathis.mobile.features.exercise.adaptive.PoseGeometry) -> Unit)? = null
 ) {
     val exerciseViewModel: citu.edu.stathis.mobile.features.exercise.ui.viewmodel.ExerciseViewModel = hiltViewModel()
-    val faceIdentityViewModel: FaceIdentityViewModel = hiltViewModel()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val onDeviceExerciseAnalyzer = remember { OnDeviceExerciseAnalyzer() }
-    val skeletonSession = remember { SkeletonPresenceTracker.Session() }
-    val faceVerifiedLatch = remember { AtomicBoolean(false) }
     // #region agent log
     val trackingEnabledRef = remember { AtomicBoolean(enableExerciseTracking) }
     val resetKeyRef = remember { AtomicInteger(detectorResetKey) }
@@ -187,23 +174,6 @@ fun ExerciseScreen(
         exerciseFeedback = null
     }
 
-    LaunchedEffect(verifyFace) {
-        if (verifyFace) {
-            faceVerifiedLatch.set(false)
-            skeletonSession.reset()
-            faceIdentityViewModel.resetVerification()
-        }
-    }
-
-    LaunchedEffect(monitorSkeletonPresence) {
-        if (monitorSkeletonPresence) {
-            skeletonSession.reset()
-        }
-    }
-
-    val faceService = remember { faceIdentityViewModel.faceService() }
-    val faceIdentityState by faceIdentityViewModel.state.collectAsState()
-
     val mediaProjectionManager = remember { context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager }
     var mediaProjection by remember { mutableStateOf<MediaProjection?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
@@ -251,7 +221,7 @@ fun ExerciseScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        key(verifyFace, useFrontCamera) {
+        key(useFrontCamera) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -279,26 +249,6 @@ fun ExerciseScreen(
                     .setTargetRotation(previewView.display?.rotation ?: android.view.Surface.ROTATION_0)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build().also { analysis ->
-                        if (verifyFace) {
-                            analysis.setAnalyzer(
-                                analysisExecutor,
-                                FaceAnalyzer(
-                                    executor = analysisExecutor,
-                                    faceRecognitionService = faceService,
-                                    onResult = { result ->
-                                        if (!faceVerifiedLatch.get()) {
-                                            val verified = faceIdentityViewModel.onVerificationProbe(
-                                                embedding = result.embedding,
-                                                qualityMessage = result.qualityMessage
-                                            )
-                                            if (verified && faceVerifiedLatch.compareAndSet(false, true)) {
-                                                onFaceVerified?.invoke()
-                                            }
-                                        }
-                                    }
-                                )
-                            )
-                        } else {
                             analysis.setAnalyzer(
                                 analysisExecutor,
                                 PoseAnalyzer(
@@ -318,16 +268,6 @@ fun ExerciseScreen(
                                             )
                                         )
                                         onPoseUpdated?.invoke(pose)
-
-                                        if (monitorSkeletonPresence) {
-                                            val status = skeletonSession.onPose(pose)
-                                            if (status == SkeletonPresenceTracker.SkeletonStatus.LEFT_FRAME) {
-                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                                    onSkeletonLeftFrame?.invoke()
-                                                }
-                                                skeletonSession.reset()
-                                            }
-                                        }
 
                                         // #region agent log
                                         val trackingCapture = enableExerciseTracking
@@ -448,7 +388,6 @@ fun ExerciseScreen(
                                     onCopiedPreview = { bitmap -> onCopiedPreviewFrame?.invoke(bitmap) }
                                 )
                             )
-                        }
                     }
 
                 try {

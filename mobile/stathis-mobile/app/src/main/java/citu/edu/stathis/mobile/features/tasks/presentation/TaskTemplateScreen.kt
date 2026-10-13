@@ -43,7 +43,6 @@ fun TaskTemplateScreen(
     }
 
     val saveInFlight = GradedSubmitPolicy.isSaveInFlight(submitState)
-    var showingDemonstration by remember(taskId, templateId) { mutableStateOf(false) }
     BackHandler(enabled = saveInFlight) { }
 
     Scaffold(
@@ -54,11 +53,7 @@ fun TaskTemplateScreen(
                         text = when (templateType) {
                             "LESSON" -> "Lesson"
                             "QUIZ" -> "Quiz"
-                            "EXERCISE" -> if (showingDemonstration) {
-                                DemonstrationPlayback.SCREEN_TITLE
-                            } else {
-                                "Exercise"
-                            }
+                            "EXERCISE" -> "Exercise"
                             else -> "Task"
                         }
                     )
@@ -198,11 +193,6 @@ fun TaskTemplateScreen(
                                 val classroomIdEncoded = currentTaskDetail?.let {
                                     "${it.classroomPhysicalId}|${it.physicalId}"
                                 } ?: "|$taskId"
-                                ExerciseWithDemonstration(
-                                    taskId = taskId,
-                                    exerciseTemplateId = templateId ?: exerciseTemplate.physicalId,
-                                    onShowingDemonstration = { showingDemonstration = it }
-                                ) {
                                 ExerciseTemplateRenderer(
                                     template = exerciseTemplate,
                                     classroomId = classroomIdEncoded,
@@ -227,7 +217,6 @@ fun TaskTemplateScreen(
                                     onRetrySave = { viewModel.retryExerciseSubmit(taskId) },
                                     modifier = Modifier.fillMaxSize()
                                 )
-                                }
                             } else {
                                 ErrorMessage("Invalid exercise template")
                             }

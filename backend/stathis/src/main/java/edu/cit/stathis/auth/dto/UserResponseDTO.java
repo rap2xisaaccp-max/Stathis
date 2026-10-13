@@ -26,5 +26,4 @@ public class UserResponseDTO {
   private String positionTitle;
   private Double heightInMeters;
   private Double weightInKg;
-  private Boolean faceRegistered;
 }

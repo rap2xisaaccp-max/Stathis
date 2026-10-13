@@ -10,7 +10,7 @@ import org.junit.Test
  * Phase 5 — automated stand-ins for the E2E regression checklist.
  *
  * Manual device checks still recommended:
- * 1) Face verify → move before overlay Start → reps stay 0; Start → 0 then count
+ * 1) Move before overlay Start → reps stay 0; Start → 0 then count
  * 2) Cancel/Retry attempt 2 starts at 0; Score.reps = latest attempt after complete
  * 3) LLR gibberish vs one valid cycle
  * 4) Unstarted task hidden; after teacher Start visible; direct detail blocked
@@ -22,8 +22,7 @@ class ExerciseWorkflowRegressionChecklistTest {
     fun preStartGating_trackingOffMeansUiDoesNotApplyReps() {
         val countingEnabled = false
         val isTimerRunning = false
-        val verified = true
-        val shouldApplyLiveReps = countingEnabled && isTimerRunning && verified
+        val shouldApplyLiveReps = countingEnabled && isTimerRunning
         assertFalse(shouldApplyLiveReps)
     }
 

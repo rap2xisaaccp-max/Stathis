@@ -59,6 +59,12 @@ class StudentDataFreshnessTest {
     fun exerciseCompletionRefetchesProgressWithoutRelaunch() {
         TaskCompletionCache.clear()
         val before = TaskCompletionCache.completionUpdates.value
+        // clear() and markCompleted() both publish currentTimeMillis(). Those two
+        // writes often share one millisecond and then look like no completion.
+        val deadline = System.nanoTime() + 1_000_000_000L
+        while (System.currentTimeMillis() == before && System.nanoTime() < deadline) {
+            Thread.sleep(1)
+        }
         TaskCompletionCache.markCompleted("TASK-1")
         val after = TaskCompletionCache.completionUpdates.value
         assertTrue(after != before)

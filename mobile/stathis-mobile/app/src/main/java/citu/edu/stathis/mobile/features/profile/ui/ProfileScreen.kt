@@ -398,48 +398,6 @@ fun ProfileScreen(navController: NavHostController, viewModel: ProfileViewModel 
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Facial recognition",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (profile.faceRegistered) {
-                                    "Registered for exercise identity checks"
-                                } else {
-                                    "Required before starting exercises"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                navController.navigate("face_registration?returnRoute=profile")
-                            },
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(
-                                text = if (profile.faceRegistered) "Update" else "Register",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                            )
-                        }
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

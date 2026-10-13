@@ -19,7 +19,4 @@ public class TaskExerciseProgressDTO {
   private Integer score;
   /** NOT_STARTED, IN_PROGRESS, or COMPLETED. */
   private String completionStatus;
-
-  /** True when this assigned exercise has a demonstration video. */
-  @Builder.Default private boolean demonstrationAvailable = false;
 }

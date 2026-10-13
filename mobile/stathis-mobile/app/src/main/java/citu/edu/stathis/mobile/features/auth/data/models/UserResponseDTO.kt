@@ -20,7 +20,6 @@ data class UserResponseDTO(
     val positionTitle: String? = null,
     val heightInMeters: Double? = null,
     val weightInKg: Double? = null,
-    val faceRegistered: Boolean = false,
     val emailVerified: Boolean = true
 ) {
     fun hasCompleteBodyMetrics(): Boolean {
@@ -31,6 +30,4 @@ data class UserResponseDTO(
             && weightInKg != null
             && weightInKg > 0.0
     }
-
-    fun hasFaceRegistered(): Boolean = faceRegistered
 }

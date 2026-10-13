@@ -27,8 +27,7 @@ class EditProfileViewModel @Inject constructor(
         val weightKg: String = "",
         val school: String = "",
         val course: String = "",
-        val yearLevel: String = "",
-        val faceRegistered: Boolean = false
+        val yearLevel: String = ""
     )
 
     private val _state = MutableStateFlow(UiState(isLoading = true))
@@ -61,8 +60,7 @@ class EditProfileViewModel @Inject constructor(
                     weightKg = weightKg,
                     school = profile.school.orEmpty(),
                     course = profile.course.orEmpty(),
-                    yearLevel = profile.yearLevel?.toString().orEmpty(),
-                    faceRegistered = profile.faceRegistered
+                    yearLevel = profile.yearLevel?.toString().orEmpty()
                 )
             } else {
                 _state.value = UiState(

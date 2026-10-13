@@ -4,8 +4,6 @@ import citu.edu.stathis.mobile.core.data.AuthTokenManager
 import citu.edu.stathis.mobile.core.data.models.ClientResponse
 import citu.edu.stathis.mobile.features.auth.data.enums.UserRoles
 import citu.edu.stathis.mobile.features.auth.data.models.UserResponseDTO
-import citu.edu.stathis.mobile.features.profile.data.models.FaceEmbeddingRequest
-import citu.edu.stathis.mobile.features.profile.data.models.FaceEmbeddingResponse
 import citu.edu.stathis.mobile.features.profile.data.models.UpdateStudentProfileRequest
 import citu.edu.stathis.mobile.features.profile.data.models.UpdateUserProfileRequest
 import citu.edu.stathis.mobile.features.profile.domain.ProfileApiService
@@ -41,7 +39,6 @@ class ProfileRepositoryImpl @Inject constructor(
                     positionTitle = null,
                     heightInMeters = null,
                     weightInKg = null,
-                    faceRegistered = false,
                     emailVerified = true
                 )
                 authTokenManager.updateUserIdentity(
@@ -119,32 +116,6 @@ class ProfileRepositoryImpl @Inject constructor(
             ClientResponse(success = false, message = e.message() ?: "Failed to update student profile.")
         } catch (e: IOException) {
             ClientResponse(success = false, message = "Network error. Could not update student profile.")
-        } catch (e: Exception) {
-            ClientResponse(success = false, message = e.message ?: "An unknown error occurred.")
-        }
-    }
-
-    override suspend fun registerFace(embeddingJson: String): ClientResponse<FaceEmbeddingResponse> {
-        return try {
-            val response = profileApiService.registerFace(FaceEmbeddingRequest(embedding = embeddingJson))
-            ClientResponse(success = true, data = response, message = "Face registered successfully.")
-        } catch (e: HttpException) {
-            ClientResponse(success = false, message = e.message() ?: "Failed to register face.")
-        } catch (e: IOException) {
-            ClientResponse(success = false, message = "Network error. Could not register face.")
-        } catch (e: Exception) {
-            ClientResponse(success = false, message = e.message ?: "An unknown error occurred.")
-        }
-    }
-
-    override suspend fun getFaceEmbedding(): ClientResponse<FaceEmbeddingResponse> {
-        return try {
-            val response = profileApiService.getFaceEmbedding()
-            ClientResponse(success = true, data = response, message = "Face embedding fetched.")
-        } catch (e: HttpException) {
-            ClientResponse(success = false, message = e.message() ?: "Failed to fetch face embedding.")
-        } catch (e: IOException) {
-            ClientResponse(success = false, message = "Network error. Could not fetch face embedding.")
         } catch (e: Exception) {
             ClientResponse(success = false, message = e.message ?: "An unknown error occurred.")
         }

@@ -19,14 +19,12 @@ class BodyMetricsSetupViewModel @Inject constructor(
         val isSaving: Boolean = false,
         val errorMessage: String? = null,
         val success: Boolean = false,
-        val needsFaceRegistration: Boolean = false,
         val firstName: String = "",
         val lastName: String = "",
         val profilePictureUrl: String? = null,
         val age: String = "",
         val heightCm: String = "",
-        val weightKg: String = "",
-        val faceRegistered: Boolean = false
+        val weightKg: String = ""
     )
 
     private val _state = MutableStateFlow(UiState(isLoading = true))
@@ -57,8 +55,7 @@ class BodyMetricsSetupViewModel @Inject constructor(
                     profilePictureUrl = profile.profilePictureUrl,
                     age = profile.age?.toString().orEmpty(),
                     heightCm = heightCm,
-                    weightKg = weightKg,
-                    faceRegistered = profile.faceRegistered
+                    weightKg = weightKg
                 )
             } else {
                 _state.value = UiState(
@@ -111,12 +108,9 @@ class BodyMetricsSetupViewModel @Inject constructor(
                 return@launch
             }
 
-            val faceRegistered = resp.data?.faceRegistered == true || _state.value.faceRegistered
             _state.value = _state.value.copy(
                 isSaving = false,
-                success = true,
-                faceRegistered = faceRegistered,
-                needsFaceRegistration = !faceRegistered
+                success = true
             )
         }
     }

@@ -123,7 +123,7 @@ export function InteractiveDemos({ className = '' }: DemoTabsProps) {
           </div>
           
           <div className="mt-4 text-sm text-muted-foreground">
-            <p>Stathis uses TensorFlow Lite and OpenCV to analyze joint angles and movement patterns in real-time, providing immediate feedback on exercise form.</p>
+            <p>Stathis uses ML Kit Pose Detection to analyze joint angles and movement patterns in real-time, providing immediate feedback on exercise form.</p>
           </div>
         </motion.div>
         

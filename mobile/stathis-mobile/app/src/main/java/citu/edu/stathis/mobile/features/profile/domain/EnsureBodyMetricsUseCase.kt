@@ -9,8 +9,6 @@ class EnsureBodyMetricsUseCase @Inject constructor(
     suspend operator fun invoke(): Boolean {
         val response = profileRepository.getUserProfile()
         val profile = response.data ?: return false
-        return response.success
-            && profile.hasCompleteBodyMetrics()
-            && profile.hasFaceRegistered()
+        return response.success && profile.hasCompleteBodyMetrics()
     }
 }
