@@ -11,10 +11,15 @@ import edu.cit.stathis.adaptive.enums.FormErrorCode;
 import edu.cit.stathis.adaptive.enums.PolicySource;
 import edu.cit.stathis.adaptive.repository.FormCorrectionEvidenceRepository;
 import edu.cit.stathis.classroom.repository.ClassroomRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +34,10 @@ import org.springframework.web.server.ResponseStatusException;
 public class FormCorrectionEvidenceService {
 
   public static final int MAX_BYTES = 800_000;
+
+  /** Same five exercises and physical codes as the mobile FormErrorClassifier allow-list. */
+  private static final Set<String> SUPPORTED_EXERCISES =
+      Set.of("PUSH_UP", "SQUATS", "STATIC_LUNGES", "GLUTE_BRIDGE", "LYING_LEG_RAISES");
 
   @Autowired private FormCorrectionEvidenceRepository evidenceRepository;
   @Autowired private AdaptiveFeedbackService adaptiveFeedbackService;
@@ -60,27 +69,21 @@ public class FormCorrectionEvidenceService {
     if (exerciseType == null || exerciseType.isBlank()) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "exerciseType is required");
     }
-    FormErrorCode errorCode = parseErrorCode(errorCodeRaw);
-    if (errorCode.isTechnical() || errorCode == FormErrorCode.UNKNOWN) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST, "Technical or unclassified signals cannot create evidence");
-    }
-    byte[] jpeg = readJpeg(file);
 
+    // Same intervention id returns the original row and does not replace the image.
     FormCorrectionEvidenceDTO existingDto = existingOwned(studentId, interventionId);
     if (existingDto != null) {
       return existingDto;
     }
 
-    String description =
-        (errorDescription == null || errorDescription.isBlank())
-            ? FormErrorCopy.explanation(errorCode, exerciseType)
-            : errorDescription.trim();
-    String correction =
-        (correctionText == null || correctionText.isBlank())
-            ? CoachingInstructionCatalog.messageText(
-                exerciseType, errorCode, InstructionIntensity.REMINDER)
-            : correctionText.trim();
+    FormErrorCode errorCode = parseErrorCode(errorCodeRaw);
+    String exercise = CoachingInstructionCatalog.normalizeExercise(exerciseType);
+    assertAllowedEvidence(exercise, errorCode);
+    String description = approvedDescription(exercise, errorCode, errorDescription);
+    String correction = approvedCorrection(exercise, errorCode, correctionText);
+    byte[] jpeg = readJpeg(file);
+    String digest = sha256Hex(jpeg);
+    assertStudentEnrolled(studentId, classroomId);
 
     FeedbackInterventionRequestDTO fi =
         FeedbackInterventionRequestDTO.builder()
@@ -88,7 +91,7 @@ public class FormCorrectionEvidenceService {
             .sessionId(sessionId)
             .taskId(taskId)
             .classroomId(classroomId)
-            .exerciseType(exerciseType)
+            .exerciseType(exercise)
             .errorCode(errorCode)
             .modality(FeedbackModality.VERBAL_TTS)
             .messageText(correction)
@@ -101,6 +104,12 @@ public class FormCorrectionEvidenceService {
     FormCorrectionStorage.StoredObject stored = null;
     try {
       stored = storage.put(studentId, interventionId, jpeg);
+      if (!sha256Matches(stored.sha256(), jpeg) || stored.byteSize() != jpeg.length) {
+        storage.delete(stored.storageKey());
+        stored = null;
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT, "Stored evidence image does not match the uploaded bytes");
+      }
       FormCorrectionEvidence entity =
           FormCorrectionEvidence.builder()
               .physicalId("FCE-" + UUID.randomUUID().toString().toUpperCase(Locale.ROOT))
@@ -108,9 +117,9 @@ public class FormCorrectionEvidenceService {
               .studentId(studentId)
               .sessionId(sessionId)
               .taskId(taskId)
-              .classroomId(classroomId)
+              .classroomId(blankToNull(classroomId))
               .attemptNumber(attemptNumber)
-              .exerciseType(CoachingInstructionCatalog.normalizeExercise(exerciseType))
+              .exerciseType(exercise)
               .errorCode(errorCode)
               .errorDescription(description)
               .correctionText(correction)
@@ -118,7 +127,7 @@ public class FormCorrectionEvidenceService {
               .storageKey(stored.storageKey())
               .contentType("image/jpeg")
               .byteSize(stored.byteSize())
-              .sha256(stored.sha256())
+              .sha256(digest)
               .build();
       return toDto(evidenceRepository.save(entity));
     } catch (DataIntegrityViolationException ex) {
@@ -138,19 +147,15 @@ public class FormCorrectionEvidenceService {
     }
   }
 
-  public List<FormCorrectionEvidenceDTO> listForStudent(String teacherId, String studentId) {
-    return listForStudent(teacherId, studentId, null);
-  }
-
   public List<FormCorrectionEvidenceDTO> listForStudent(
       String teacherId, String studentId, String classroomId) {
-    adaptiveFeedbackService.assertTeacherCanViewStudent(teacherId, studentId);
-    if (classroomId != null && !classroomId.isBlank()) {
-      assertTeacherOwnsClassroomForStudent(teacherId, studentId, classroomId);
+    if (classroomId == null || classroomId.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "classroomId is required");
     }
+    assertTeacherOwnsClassroomForStudent(teacherId, studentId, classroomId);
     return evidenceRepository.findByStudentIdOrderByCapturedAtDesc(studentId).stream()
-        .filter(row -> row.getErrorCode() != null && !row.getErrorCode().isTechnical())
-        .filter(row -> matchesClassroomScope(row, classroomId))
+        .filter(row -> classroomId.equals(row.getClassroomId()))
+        .filter(row -> reviewedPair(row.getExerciseType(), row.getErrorCode()))
         .map(this::toDto)
         .collect(Collectors.toList());
   }
@@ -160,13 +165,24 @@ public class FormCorrectionEvidenceService {
         evidenceRepository
             .findByPhysicalId(evidencePhysicalId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Evidence not found"));
-    adaptiveFeedbackService.assertTeacherCanViewStudent(teacherId, row.getStudentId());
-    if (row.getClassroomId() != null && !row.getClassroomId().isBlank()) {
-      assertTeacherOwnsClassroomForStudent(teacherId, row.getStudentId(), row.getClassroomId());
+    if (row.getClassroomId() == null || row.getClassroomId().isBlank()) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN, "Evidence is not scoped to a classroom");
     }
-    return storage
-        .get(row.getStorageKey())
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Image not found"));
+    assertTeacherOwnsClassroomForStudent(teacherId, row.getStudentId(), row.getClassroomId());
+    if (!reviewedPair(row.getExerciseType(), row.getErrorCode())) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN, "This exercise does not allow that form error");
+    }
+    byte[] bytes =
+        storage
+            .get(row.getStorageKey())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Image not found"));
+    if (!sha256Matches(row.getSha256(), bytes)) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Evidence image failed integrity check");
+    }
+    return bytes;
   }
 
   public FormCorrectionEvidence getEntity(String physicalId) {
@@ -212,12 +228,103 @@ public class FormCorrectionEvidenceService {
     return toDto(row);
   }
 
-  private boolean matchesClassroomScope(FormCorrectionEvidence row, String classroomId) {
-    if (classroomId == null || classroomId.isBlank()) {
-      return true;
+  private void assertAllowedEvidence(String exercise, FormErrorCode errorCode) {
+    if (errorCode == null || errorCode.isTechnical() || errorCode == FormErrorCode.UNKNOWN) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "Technical or unclassified signals cannot create evidence");
     }
-    String rowClassroom = row.getClassroomId();
-    return rowClassroom == null || rowClassroom.isBlank() || classroomId.equals(rowClassroom);
+    if (!reviewedPair(exercise, errorCode)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "This exercise does not allow that form error");
+    }
+  }
+
+  /**
+   * Upload allow-list. Listing and image reads use it to hide historical rows. Those rows are
+   * left unchanged.
+   */
+  private boolean reviewedPair(String exercise, FormErrorCode errorCode) {
+    if (errorCode == null || errorCode.isTechnical() || errorCode == FormErrorCode.UNKNOWN) {
+      return false;
+    }
+    String normalized = CoachingInstructionCatalog.normalizeExercise(exercise);
+    return SUPPORTED_EXERCISES.contains(normalized)
+        && CoachingInstructionCatalog.hasReviewedInstruction(normalized, errorCode);
+  }
+
+  /**
+   * Blank classroom uploads stay untagged practice. A nonblank classroom must already enroll this
+   * student. This check does not create or change an enrollment.
+   */
+  private void assertStudentEnrolled(String studentId, String classroomId) {
+    String scopedClassroom = blankToNull(classroomId);
+    if (scopedClassroom == null) {
+      return;
+    }
+    boolean enrolled =
+        classroomRepository
+            .findByClassroomStudents_Student_User_PhysicalId(studentId)
+            .stream()
+            .anyMatch(classroom -> scopedClassroom.equals(classroom.getPhysicalId()));
+    if (!enrolled) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "Student is not enrolled in this classroom");
+    }
+  }
+
+  /**
+   * Blank text is replaced by the reviewed copy. A client value is kept only when it equals the
+   * reviewed explanation or label, or one of the three reviewed coaching intensities.
+   */
+  private String approvedDescription(String exercise, FormErrorCode errorCode, String supplied) {
+    String explanation = FormErrorCopy.explanation(errorCode, exercise);
+    String label = FormErrorCopy.label(errorCode, exercise);
+    if (supplied == null || supplied.isBlank()) {
+      return explanation;
+    }
+    String trimmed = supplied.trim();
+    if (trimmed.equals(explanation) || trimmed.equals(label)) {
+      return trimmed;
+    }
+    throw new ResponseStatusException(
+        HttpStatus.BAD_REQUEST, "errorDescription does not match the reviewed explanation");
+  }
+
+  private String approvedCorrection(String exercise, FormErrorCode errorCode, String supplied) {
+    String reminder =
+        CoachingInstructionCatalog.messageText(exercise, errorCode, InstructionIntensity.REMINDER);
+    if (supplied == null || supplied.isBlank()) {
+      return reminder;
+    }
+    String trimmed = supplied.trim();
+    for (InstructionIntensity intensity : InstructionIntensity.values()) {
+      if (trimmed.equals(CoachingInstructionCatalog.messageText(exercise, errorCode, intensity))) {
+        return trimmed;
+      }
+    }
+    throw new ResponseStatusException(
+        HttpStatus.BAD_REQUEST, "correctionText does not match the reviewed instruction");
+  }
+
+  private static String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  public static String sha256Hex(byte[] bytes) {
+    try {
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException("SHA-256 unavailable", ex);
+    }
+  }
+
+  static boolean sha256Matches(String stored, byte[] bytes) {
+    if (stored == null || stored.isBlank() || bytes == null) {
+      return false;
+    }
+    byte[] expected = stored.trim().toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8);
+    byte[] actual = sha256Hex(bytes).getBytes(StandardCharsets.UTF_8);
+    return MessageDigest.isEqual(expected, actual);
   }
 
   private void assertTeacherOwnsClassroomForStudent(

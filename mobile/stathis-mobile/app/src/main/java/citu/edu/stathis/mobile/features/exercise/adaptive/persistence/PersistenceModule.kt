@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.gson.Gson
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveFeedbackDelivery
 import citu.edu.stathis.mobile.features.exercise.adaptive.CoachingDelivery
+import citu.edu.stathis.mobile.features.exercise.adaptive.CorrectionCycleStore
 import citu.edu.stathis.mobile.features.exercise.adaptive.EvidenceQueue
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormEvidenceCapture
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormEvidenceCaptureImpl
@@ -44,6 +45,14 @@ object PersistenceModule {
         db: AdaptiveQueueDatabase,
         gson: Gson
     ): EvidenceQueue = PersistentEvidenceQueue(context, db, gson)
+
+    @Provides
+    @Singleton
+    fun provideCorrectionCycleStore(
+        @ApplicationContext context: Context,
+        db: AdaptiveQueueDatabase,
+        gson: Gson
+    ): CorrectionCycleStore = RoomCorrectionCycleStore(db, gson, context)
 }
 
 @Module

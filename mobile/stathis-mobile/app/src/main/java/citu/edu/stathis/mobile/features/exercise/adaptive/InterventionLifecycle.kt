@@ -23,6 +23,19 @@ enum class InterventionPhase {
     COOLDOWN
 }
 
+data class InterventionLifecycleSnapshot(
+    val phase: InterventionPhase,
+    val pendingCode: FormErrorCode?,
+    val pendingTicks: Int,
+    val clearTicks: Int,
+    val openError: FormErrorCode?,
+    val deliveredAt: Long,
+    val lastInterventionAt: Long,
+    val cycleSeq: Int,
+    val recentInterventionAt: List<Long>,
+    val escalationCounts: Map<FormErrorCode, Int>
+)
+
 class InterventionLifecycle(
     private val confirmTicks: Int = 3,
     @Suppress("unused")
@@ -203,6 +216,35 @@ class InterventionLifecycle(
     fun confirmedTicks(): Int = pendingTicks
 
     fun currentCycleSeq(): Int = cycleSeq
+
+    fun snapshot(): InterventionLifecycleSnapshot =
+        InterventionLifecycleSnapshot(
+            phase = phase,
+            pendingCode = pendingCode,
+            pendingTicks = pendingTicks,
+            clearTicks = clearTicks,
+            openError = openError,
+            deliveredAt = deliveredAt,
+            lastInterventionAt = lastInterventionAt,
+            cycleSeq = cycleSeq,
+            recentInterventionAt = recentInterventionAt.toList(),
+            escalationCounts = escalationCounts.toMap()
+        )
+
+    fun restore(snapshot: InterventionLifecycleSnapshot) {
+        phase = snapshot.phase
+        pendingCode = snapshot.pendingCode
+        pendingTicks = snapshot.pendingTicks
+        clearTicks = snapshot.clearTicks
+        openError = snapshot.openError
+        deliveredAt = snapshot.deliveredAt
+        lastInterventionAt = snapshot.lastInterventionAt
+        cycleSeq = snapshot.cycleSeq
+        recentInterventionAt.clear()
+        recentInterventionAt.addAll(snapshot.recentInterventionAt)
+        escalationCounts.clear()
+        escalationCounts.putAll(snapshot.escalationCounts)
+    }
 
     private fun effectiveCooldownMs(severity: Double, cooldownMs: Long): Long {
         // Floor 4000ms even for high severity — never allow ~100ms re-entry.

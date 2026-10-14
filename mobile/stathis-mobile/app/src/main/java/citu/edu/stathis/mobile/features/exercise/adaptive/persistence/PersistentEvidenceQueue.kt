@@ -23,18 +23,57 @@ class PersistentEvidenceQueue(
         if (event.interventionId.isBlank() || !JpegCompressor.isAcceptableSize(jpeg)) return
         runBlocking {
             withContext(Dispatchers.IO) {
-                val dir = File(context.filesDir, "form-evidence").apply { mkdirs() }
-                val file = File(dir, "${event.interventionId}.jpg")
-                if (!file.exists()) {
-                    file.writeBytes(jpeg)
-                }
-                dao.enqueueEvidenceIfAbsent(
-                    QueuedEvidenceEntity(
-                        interventionPhysicalId = event.interventionId,
-                        payloadJson = gson.toJson(event),
-                        filePath = file.absolutePath
+                // File promotion finishes before the Room transaction. A temp or
+                // zero-length file is not enqueued and is not a captured marker.
+                val file =
+                    EvidenceJpegFiles.promote(context, event.interventionId, jpeg)
+                        ?: throw java.io.IOException(
+                            "Incomplete evidence JPEG for ${event.interventionId}"
+                        )
+                val recorded =
+                    dao.recordEvidenceAndCapture(
+                        QueuedEvidenceEntity(
+                            interventionPhysicalId = event.interventionId,
+                            payloadJson = gson.toJson(event),
+                            filePath = file.absolutePath
+                        ),
+                        CapturedInterventionEntity(
+                            interventionId = event.interventionId,
+                            sessionId = event.sessionId,
+                            exerciseType = event.exerciseType,
+                            errorCode = event.errorCode.name,
+                            cycleSeq = event.cycleSeq
+                        )
                     )
-                )
+                if (!recorded) {
+                    throw java.io.IOException(
+                        "Evidence row was not stored for ${event.interventionId}"
+                    )
+                }
+            }
+        }
+    }
+
+    override fun discardMissing(): List<String> {
+        return runBlocking {
+            withContext(Dispatchers.IO) {
+                val discarded = mutableListOf<String>()
+                dao.allEvidence().forEach { entity ->
+                    val file = File(entity.filePath)
+                    val readable =
+                        runCatching {
+                            if (!file.isFile || file.length() <= 0L) null else file.readBytes()
+                        }.getOrNull()
+                    if (readable == null) {
+                        // Remove the unreadable file too. enqueue writes only when the
+                        // path is absent, so leaving a zero-length file would block a
+                        // later JPEG for this intervention id. This is not an upload.
+                        runCatching { file.delete() }
+                        dao.deleteEvidenceById(listOf(entity.id))
+                        discarded += entity.interventionPhysicalId
+                    }
+                }
+                discarded
             }
         }
     }
@@ -45,7 +84,7 @@ class PersistentEvidenceQueue(
                 dao.allEvidence().mapNotNull { entity ->
                     val event = gson.fromJson(entity.payloadJson, FormEvidenceEvent::class.java)
                     val bytes = runCatching { File(entity.filePath).readBytes() }.getOrNull()
-                    if (bytes == null) {
+                    if (bytes == null || bytes.isEmpty()) {
                         null
                     } else {
                         QueuedEvidence(event, bytes)

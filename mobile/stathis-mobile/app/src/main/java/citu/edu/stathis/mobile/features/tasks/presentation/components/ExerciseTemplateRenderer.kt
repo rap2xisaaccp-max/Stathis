@@ -57,15 +57,21 @@ import citu.edu.stathis.mobile.features.exercise.domain.SessionAccuracyTracker
 import citu.edu.stathis.mobile.features.profile.ui.BodyMetricsGateViewModel
 import citu.edu.stathis.mobile.features.exercise.ui.viewmodel.AdaptiveSessionViewModel
 import citu.edu.stathis.mobile.features.exercise.adaptive.AdaptiveSessionSummary
+import citu.edu.stathis.mobile.features.exercise.adaptive.AttemptRestoreGate
 import citu.edu.stathis.mobile.features.exercise.adaptive.AttemptResultCopy
 import citu.edu.stathis.mobile.features.exercise.adaptive.CoachingInstructionCatalog
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDisplay
 import citu.edu.stathis.mobile.features.exercise.adaptive.FormMasteryDto
 import citu.edu.stathis.mobile.features.exercise.adaptive.LiveCoachingUiPolicy
+import citu.edu.stathis.mobile.features.exercise.adaptive.applyRestoredAttemptFlags
+import citu.edu.stathis.mobile.features.exercise.adaptive.overlayTimerStartsNewAttempt
+import citu.edu.stathis.mobile.features.exercise.adaptive.shouldApplyRestoredAttempt
 import citu.edu.stathis.mobile.features.exercise.ui.components.AdaptiveSessionSummaryCard
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
@@ -154,6 +160,8 @@ fun ExerciseTemplateRenderer(
     var sessionCountingActive by remember { mutableStateOf(false) }
     var detectorResetKey by remember { mutableIntStateOf(0) }
     var adaptiveSessionLive by remember { mutableStateOf(false) }
+    val restoreGate = remember { AttemptRestoreGate() }
+    var restoreNonce by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val ensureBodyMetrics = hiltViewModel<BodyMetricsGateViewModel>()
     val adaptiveSessionViewModel: AdaptiveSessionViewModel = hiltViewModel()
@@ -180,6 +188,7 @@ fun ExerciseTemplateRenderer(
     }
 
     fun beginCountingAttempt() {
+        restoreGate.blockForNewAttempt()
         detectorResetKey += 1
         sessionRepAccumulator.reset()
         sessionReps = 0
@@ -227,6 +236,37 @@ fun ExerciseTemplateRenderer(
         if (attemptsUsed > displayedAttempts) {
             displayedAttempts = attemptsUsed
         }
+    }
+
+    // Resume a matching interrupted attempt. This must not call startSession().
+    // Disposal above only flushes uploads; it does not abandon the durable cycle.
+    LaunchedEffect(template.exerciseType, classroomId, attemptsUsed, restoreNonce) {
+        if (!restoreGate.mayApplyRestore() || isExerciseCompleted) return@LaunchedEffect
+        val generationAtStart = adaptiveSessionViewModel.currentAttemptGeneration()
+        val (classroomPhysicalId, taskPhysicalId) = parseClassroomAndTaskId(classroomId)
+        val restored =
+            withContext(Dispatchers.IO) {
+                adaptiveSessionViewModel.restoreMatchingAttempt(
+                    exerciseType = template.exerciseType,
+                    taskId = taskPhysicalId,
+                    classroomId = classroomPhysicalId,
+                    attemptNumber = attemptsUsed + 1
+                )
+            }
+        val flags =
+            applyRestoredAttemptFlags(
+                apply = shouldApplyRestoredAttempt(
+                    blocked = restoreGate.isBlocked(),
+                    generationAtStart = generationAtStart,
+                    generationNow = adaptiveSessionViewModel.currentAttemptGeneration(),
+                    restored = restored
+                ),
+                exerciseCompleted = isExerciseCompleted
+            ) ?: return@LaunchedEffect
+        isExerciseStarted = flags.isExerciseStarted
+        adaptiveSessionLive = flags.adaptiveSessionLive
+        sessionInProgress = flags.sessionInProgress
+        sessionCountingActive = flags.sessionCountingActive
     }
 
     Box(
@@ -291,6 +331,7 @@ fun ExerciseTemplateRenderer(
                         isCheckingBodyMetrics = isCheckingBodyMetrics,
                         bodyMetricsError = bodyMetricsError,
                         onStart = {
+                            restoreGate.blockForNewAttempt()
                             scope.launch {
                                 isCheckingBodyMetrics = true
                                 bodyMetricsError = null
@@ -300,6 +341,8 @@ fun ExerciseTemplateRenderer(
                                     onExerciseAttemptReady()
                                     isExerciseStarted = true
                                 } else {
+                                    restoreGate.cancelNewAttemptBlock()
+                                    restoreNonce += 1
                                     val destination = if (!returnRouteAfterMetrics.isNullOrBlank()) {
                                         "body_metrics_setup?returnRoute=${Uri.encode(returnRouteAfterMetrics)}"
                                     } else {
@@ -372,7 +415,7 @@ fun ExerciseTemplateRenderer(
                 isTimerRunning = sessionCountingActive,
                 onTimerRunningChange = { running ->
                     if (running) {
-                        if (!sessionInProgress) {
+                        if (overlayTimerStartsNewAttempt(running, sessionInProgress)) {
                             beginCountingAttempt()
                             sessionInProgress = true
                         }
@@ -421,6 +464,8 @@ fun ExerciseTemplateRenderer(
                             return@ExerciseResults
                         }
                         onExerciseAttemptReady()
+                        restoreGate.blockForNewAttempt()
+                        adaptiveSessionViewModel.abandonOpenCycle()
                         sessionRepAccumulator.reset()
                         sessionReps = 0
                         sessionInProgress = false

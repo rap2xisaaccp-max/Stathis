@@ -1,10 +1,13 @@
 package citu.edu.stathis.mobile.features.exercise.adaptive
 
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseDetector
+import citu.edu.stathis.mobile.features.exercise.data.ExerciseResult
 import citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi
 import kotlinx.coroutines.runBlocking
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -543,6 +546,331 @@ class AdaptiveFeedbackEngineHeldErrorTest {
 
         assertEquals(listOf("FI-FAIL"), queue.pending().map { it.event.interventionId })
         assertEquals(2, uploads)
+
+        engine.flush()
+        assertTrue(queue.pending().isEmpty())
+        assertEquals(3, uploads)
+    }
+
+    @Test
+    fun twoDistinctCyclesReachTheQueueAndTechnicalSignalsDoNot() = runBlocking {
+        val queue = InMemoryEvidenceQueue()
+        val capture = EnqueueingEvidenceCapture(queue)
+        val delivery = RecordingCoachingDelivery()
+        var uploads = 0
+        val api =
+            object : AdaptiveApi by FakeAdaptiveApi() {
+                override suspend fun uploadEvidence(
+                    interventionId: RequestBody,
+                    sessionId: RequestBody,
+                    taskId: RequestBody?,
+                    classroomId: RequestBody?,
+                    attemptNumber: RequestBody?,
+                    exerciseType: RequestBody,
+                    errorCode: RequestBody,
+                    errorDescription: RequestBody,
+                    correctionText: RequestBody,
+                    capturedAt: RequestBody,
+                    file: MultipartBody.Part
+                ): Map<String, Any?> {
+                    uploads += 1
+                    return mapOf("physicalId" to "FCE-$uploads")
+                }
+            }
+        val engine =
+            AdaptiveFeedbackEngine(
+                api,
+                delivery,
+                AdaptiveOfflineQueue(),
+                queue,
+                capture
+            )
+        engine.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+
+        var now = 1_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Push knees outward over toes."),
+                flags = listOf("KNEES_IN"),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, capture.events.size)
+        assertEquals(1, queue.pending().size)
+        assertTrue(delivery.spokeCount >= 1)
+        assertEquals(true, engine.activeFeedback()?.highlightJoints)
+        assertEquals(true, engine.activeFeedback()?.speak)
+
+        repeat(3) {
+            engine.onFormSignal(emptyList(), emptyList(), 0.0, 0, now = now)
+            now += 100L
+        }
+        now += 8_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Keep your torso upright as you squat."),
+                flags = listOf("CHEST_UP"),
+                severity = 0.7,
+                currentReps = 1,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(2, capture.events.size)
+        assertEquals(2, queue.pending().size)
+        assertTrue(capture.events[0].interventionId != capture.events[1].interventionId)
+
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Low detection confidence"),
+                severity = 0.9,
+                currentReps = 1,
+                now = now
+            )
+            now += 100L
+        }
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = emptyList(),
+                flags = listOf("PIKE"),
+                severity = 0.7,
+                currentReps = 1,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(2, capture.events.size)
+
+        engine.flush()
+        assertTrue(queue.isEmpty())
+        assertEquals(2, uploads)
+    }
+
+    @Test
+    fun sameSessionAndCycleReuseOneInterventionIdAfterEngineRestart() {
+        val first =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                RecordingCoachingDelivery(),
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                RecordingEvidenceCapture()
+            )
+        val second =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                RecordingCoachingDelivery(),
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                RecordingEvidenceCapture()
+            )
+        val original =
+            first.stableInterventionId("SES-SAME", "SQUATS", FormErrorCode.KNEES_IN, 1)
+        val replayed =
+            second.stableInterventionId("SES-SAME", "SQUATS", FormErrorCode.KNEES_IN, 1)
+        val nextCycle =
+            second.stableInterventionId("SES-SAME", "SQUATS", FormErrorCode.KNEES_IN, 2)
+        assertEquals(original, replayed)
+        assertTrue(original != nextCycle)
+
+        second.startSession("SQUATS", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        assertTrue(second.currentSessionId() != "SES-SAME")
+    }
+
+    @Test
+    fun fullDepthPushUpAndLungeReturnsDoNotCoachOrCapture() = runBlocking {
+        val pushQueue = InMemoryEvidenceQueue()
+        val pushCapture = EnqueueingEvidenceCapture(pushQueue)
+        val pushEngine = engineWith(pushCapture, pushQueue)
+        pushEngine.startSession("PUSH_UP", taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        val pushDetector = ExerciseDetector()
+        var clock = 1_000L
+        val pushFrames = mutableListOf<ExerciseResult>()
+        repeat(3) { pushFrames += pushDetector.analyzePushupMetrics(170f, 0.9f, emptyList(), clock) }
+        repeat(3) { pushFrames += pushDetector.analyzePushupMetrics(80f, 0.9f, emptyList(), clock) }
+        repeat(4) { pushFrames += pushDetector.analyzePushupMetrics(120f, 0.9f, emptyList(), clock) }
+        clock += 900L
+        repeat(3) { pushFrames += pushDetector.analyzePushupMetrics(170f, 0.9f, emptyList(), clock) }
+        var now = 1_000L
+        for (frame in pushFrames) {
+            assertFalse(frame.feedback.any { it.contains("Lower your chest", ignoreCase = true) })
+            assertTrue(FormErrorMapper.resolve(emptyList(), frame.feedback, "PUSH_UP") != FormErrorCode.LOW_ROM)
+            pushEngine.onFormSignal(frame.feedback, emptyList(), 0.7, frame.repCount, now = now)
+            now += 100L
+        }
+        pushEngine.onFormSignal(listOf("Low detection confidence"), emptyList(), 0.9, 1, now = now)
+        now += 100L
+        pushEngine.onFormSignal(listOf("not a reviewed cue"), emptyList(), 0.7, 1, now = now)
+        now += 100L
+        pushEngine.onFormSignal(emptyList(), listOf("KNEES_IN"), 0.7, 1, now = now)
+        assertTrue(pushCapture.events.isEmpty())
+        assertTrue(pushQueue.pending().isEmpty())
+        assertEquals(1, pushFrames.last().repCount)
+        assertEquals(1, pushFrames.last().attemptedRepCount)
+        assertFalse(pushFrames.last().repRejected)
+
+        repeat(3) {
+            pushEngine.onFormSignal(
+                emptyList(),
+                listOf("LOW_ROM"),
+                0.7,
+                1,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, pushCapture.events.size)
+        assertEquals(FormErrorCode.LOW_ROM, pushCapture.events.single().errorCode)
+        assertEquals(1, pushQueue.pending().size)
+
+        val lungeQueue = InMemoryEvidenceQueue()
+        val lungeCapture = EnqueueingEvidenceCapture(lungeQueue)
+        val lungeEngine = engineWith(lungeCapture, lungeQueue)
+        lungeEngine.startSession(
+            "STATIC_LUNGES",
+            taskId = "TASK-1",
+            classroomId = "ROOM-1",
+            attemptNumber = 1
+        )
+        val lungeDetector = ExerciseDetector()
+        val lungeFrames = mutableListOf<ExerciseResult>()
+        lungeFrames += lungeDetector.analyzeStaticLungeMetrics(100f, 160f, 400f, 300f, 0.9f)
+        repeat(4) {
+            lungeFrames += lungeDetector.analyzeStaticLungeMetrics(130f, 160f, 400f, 300f, 0.9f)
+        }
+        lungeFrames += lungeDetector.analyzeStaticLungeMetrics(160f, 160f, 300f, 300f, 0.9f)
+        now = 20_000L
+        for (frame in lungeFrames) {
+            assertFalse(frame.feedback.any { it.contains("deeper", ignoreCase = true) })
+            assertTrue(
+                FormErrorMapper.resolve(emptyList(), frame.feedback, "STATIC_LUNGES") !=
+                    FormErrorCode.DEPTH_LOW
+            )
+            lungeEngine.onFormSignal(frame.feedback, emptyList(), 0.7, frame.repCount, now = now)
+            now += 100L
+        }
+        lungeEngine.onFormSignal(listOf("Low detection confidence"), emptyList(), 0.9, 1, now = now)
+        now += 100L
+        lungeEngine.onFormSignal(listOf("not a reviewed cue"), emptyList(), 0.7, 1, now = now)
+        now += 100L
+        lungeEngine.onFormSignal(emptyList(), listOf("PIKE"), 0.7, 1, now = now)
+        assertTrue(lungeCapture.events.isEmpty())
+        assertTrue(lungeQueue.pending().isEmpty())
+        assertEquals(1, lungeFrames.last().repCount)
+        assertEquals(1, lungeFrames.last().attemptedRepCount)
+        assertFalse(lungeFrames.last().repRejected)
+
+        repeat(6) {
+            lungeEngine.onFormSignal(
+                listOf("Bend the front knee deeper into the lunge."),
+                listOf("DEPTH_LOW"),
+                0.7,
+                1,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, lungeCapture.events.size)
+        assertEquals(FormErrorCode.DEPTH_LOW, lungeCapture.events.single().errorCode)
+        assertEquals(1, lungeQueue.pending().size)
+    }
+
+    @Test
+    fun pushUpLowRomAndLungeDepthEachStayOneEventWhileTheErrorHolds() {
+        oneCoachingEventPerHold(
+            exercise = "PUSH_UP",
+            sentence = "Lower your chest closer to the ground.",
+            flag = "LOW_ROM",
+            crossExerciseFlag = "KNEES_IN"
+        )
+        oneCoachingEventPerHold(
+            exercise = "STATIC_LUNGES",
+            sentence = "Bend the front knee deeper into the lunge.",
+            flag = "DEPTH_LOW",
+            crossExerciseFlag = "PIKE"
+        )
+    }
+
+    private fun engineWith(capture: FormEvidenceCapture, queue: InMemoryEvidenceQueue) =
+        AdaptiveFeedbackEngine(
+            FakeAdaptiveApi(),
+            RecordingCoachingDelivery(),
+            AdaptiveOfflineQueue(),
+            queue,
+            capture
+        )
+
+    private fun oneCoachingEventPerHold(
+        exercise: String,
+        sentence: String,
+        flag: String,
+        crossExerciseFlag: String
+    ) = runBlocking {
+        val capture = RecordingEvidenceCapture()
+        val engine =
+            AdaptiveFeedbackEngine(
+                FakeAdaptiveApi(),
+                RecordingCoachingDelivery(),
+                AdaptiveOfflineQueue(),
+                InMemoryEvidenceQueue(),
+                capture
+            )
+        engine.startSession(exercise, taskId = "TASK-1", classroomId = "ROOM-1", attemptNumber = 1)
+        var now = 1_000L
+        repeat(6) {
+            engine.onFormSignal(
+                formIssues = listOf(sentence),
+                flags = listOf(flag),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, capture.events.size)
+        assertEquals(FormErrorCode.valueOf(flag), capture.events.single().errorCode)
+
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf("Low detection confidence"),
+                severity = 0.9,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = emptyList(),
+                flags = listOf(crossExerciseFlag),
+                severity = 0.7,
+                currentReps = 0,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(1, capture.events.size)
+
+        repeat(3) {
+            engine.onFormSignal(emptyList(), emptyList(), 0.0, 0, now = now)
+            now += 100L
+        }
+        now += 8_000L
+        repeat(3) {
+            engine.onFormSignal(
+                formIssues = listOf(sentence),
+                flags = listOf(flag),
+                severity = 0.7,
+                currentReps = 1,
+                now = now
+            )
+            now += 100L
+        }
+        assertEquals(2, capture.events.size)
+        assertTrue(capture.events[0].interventionId != capture.events[1].interventionId)
     }
 }
 
@@ -559,6 +887,17 @@ private fun queuedEvidence(interventionId: String) =
         correctionText = "Keep hips level",
         capturedAtIso = "2026-08-21T00:00:00Z"
     )
+
+private class EnqueueingEvidenceCapture(
+    private val queue: EvidenceQueue
+) : FormEvidenceCapture {
+    val events = mutableListOf<FormEvidenceEvent>()
+
+    override fun onConfirmedCoaching(event: FormEvidenceEvent) {
+        events += event
+        queue.enqueue(event, ByteArray(16) { 4 })
+    }
+}
 
 internal class RecordingEvidenceCapture : FormEvidenceCapture {
     val events = mutableListOf<FormEvidenceEvent>()

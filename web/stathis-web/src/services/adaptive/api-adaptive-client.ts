@@ -157,9 +157,11 @@ export async function fetchFormCorrectionEvidence(
   studentId: string,
   classroomId?: string | null
 ): Promise<FormCorrectionEvidenceDTO[]> {
-  const params = classroomId
-    ? `?classroomId=${encodeURIComponent(classroomId)}`
-    : '';
+  const scopedClassroom = classroomId?.trim();
+  if (!scopedClassroom) {
+    throw new Error('classroomId is required');
+  }
+  const params = `?classroomId=${encodeURIComponent(scopedClassroom)}`;
   const { data, error, status } = await serverApiClient.get<FormCorrectionEvidenceDTO[]>(
     `/adaptive/evidence/students/${encodeURIComponent(studentId)}${params}`
   );

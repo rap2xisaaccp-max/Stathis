@@ -69,4 +69,70 @@ interface AdaptiveQueueDao {
         val row = insertEvidence(entity)
         return row != -1L
     }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertOpenCycle(entity: OpenCorrectionCycleEntity)
+
+    @Query("SELECT * FROM open_correction_cycle WHERE id = 1")
+    fun loadOpenCycle(): OpenCorrectionCycleEntity?
+
+    @Query("DELETE FROM open_correction_cycle WHERE id = 1")
+    fun deleteOpenCycle()
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertCaptured(entity: CapturedInterventionEntity): Long
+
+    @Query("SELECT * FROM captured_intervention WHERE intervention_id = :interventionId LIMIT 1")
+    fun findCaptured(interventionId: String): CapturedInterventionEntity?
+
+    @Query("SELECT intervention_id FROM captured_intervention WHERE session_id = :sessionId")
+    fun capturedIdsForSession(sessionId: String): List<String>
+
+    @Query("DELETE FROM captured_intervention WHERE session_id = :sessionId")
+    fun deleteCapturedForSession(sessionId: String)
+
+    @Query("SELECT COUNT(*) FROM captured_intervention")
+    fun capturedCount(): Int
+
+    /**
+     * Evidence row first, captured marker second. A failed or missing evidence insert
+     * returns false and does not write [CapturedInterventionEntity].
+     * Both writes share one Room transaction and do not include file IO.
+     */
+    @Transaction
+    fun recordEvidenceAndCapture(
+        evidence: QueuedEvidenceEntity,
+        captured: CapturedInterventionEntity
+    ): Boolean {
+        if (evidence.interventionPhysicalId.isBlank() || captured.interventionId.isBlank()) {
+            return false
+        }
+        if (evidence.interventionPhysicalId != captured.interventionId) return false
+        if (evidenceExists(evidence.interventionPhysicalId) == 0) {
+            val row = insertEvidence(evidence)
+            if (row == -1L && evidenceExists(evidence.interventionPhysicalId) == 0) return false
+        }
+        if (evidenceExists(evidence.interventionPhysicalId) == 0) return false
+        if (findCaptured(captured.interventionId) == null) {
+            insertCaptured(captured)
+        }
+        return findCaptured(captured.interventionId) != null
+    }
+
+    /** Captured marker only when the evidence row is already durable. */
+    @Transaction
+    fun insertCapturedIfEvidencePresent(captured: CapturedInterventionEntity): Boolean {
+        if (captured.interventionId.isBlank()) return false
+        if (evidenceExists(captured.interventionId) == 0) return false
+        if (findCaptured(captured.interventionId) == null) {
+            insertCaptured(captured)
+        }
+        return findCaptured(captured.interventionId) != null
+    }
+
+    @Transaction
+    fun abandonCycle(sessionIds: List<String>) {
+        deleteOpenCycle()
+        sessionIds.filter { it.isNotBlank() }.distinct().forEach { deleteCapturedForSession(it) }
+    }
 }

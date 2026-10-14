@@ -64,4 +64,82 @@ class PersistentEvidenceQueueTest {
         assertTrue(queue.isEmpty())
         assertFalse(jpegFile.exists())
     }
+
+    @Test
+    fun missingJpegIsDiscardedWithoutBeingAcknowledgedAsUploaded() {
+        val event =
+            FormEvidenceEvent(
+                interventionId = "FI-MISSING",
+                sessionId = "SES-1",
+                exerciseType = "PUSH_UP",
+                errorCode = FormErrorCode.PIKE,
+                errorDescription = "Hips too high",
+                correctionText = "Lower your hips slightly so they stay in one line with your shoulders.",
+                capturedAtIso = "2026-08-21T00:00:00Z"
+            )
+        queue.enqueue(event, ByteArray(24) { 3 })
+        val jpegFile = File(context.filesDir, "form-evidence/FI-MISSING.jpg")
+        assertTrue(jpegFile.delete())
+
+        assertTrue(queue.pending().isEmpty())
+        assertFalse(queue.isEmpty())
+
+        val discarded = queue.discardMissing()
+        assertEquals(listOf("FI-MISSING"), discarded)
+        assertTrue(queue.isEmpty())
+        assertTrue(queue.pending().isEmpty())
+        assertTrue(queue.discardMissing().isEmpty())
+    }
+
+    @Test
+    fun failedUploadKeepsItsJpegAndAcknowledgeRemovesOnlyThatIntervention() {
+        queue.enqueue(event("FI-FAIL", FormErrorCode.SAG), byteArrayOf(1, 2, 3))
+        queue.enqueue(event("FI-OK", FormErrorCode.KNEES_IN), byteArrayOf(4, 5, 6))
+
+        val beforeAck = queue.pending().associateBy { it.event.interventionId }
+        assertEquals(2, beforeAck.size)
+        assertTrue(beforeAck.getValue("FI-FAIL").jpeg.contentEquals(byteArrayOf(1, 2, 3)))
+        assertTrue(File(context.filesDir, "form-evidence/FI-FAIL.jpg").exists())
+
+        queue.acknowledge("FI-OK")
+
+        val remaining = queue.pending()
+        assertEquals(listOf("FI-FAIL"), remaining.map { it.event.interventionId })
+        assertTrue(remaining.single().jpeg.contentEquals(byteArrayOf(1, 2, 3)))
+        assertTrue(File(context.filesDir, "form-evidence/FI-FAIL.jpg").exists())
+        assertFalse(File(context.filesDir, "form-evidence/FI-OK.jpg").exists())
+        assertFalse(queue.isEmpty())
+    }
+
+    @Test
+    fun emptyJpegIsDiscardedAndDoesNotBlockALaterImageForTheSameIntervention() {
+        queue.enqueue(event("FI-EMPTY", FormErrorCode.LOW_ROM), byteArrayOf(9, 9))
+        val jpegFile = File(context.filesDir, "form-evidence/FI-EMPTY.jpg")
+        jpegFile.writeBytes(ByteArray(0))
+
+        assertTrue(queue.pending().isEmpty())
+        assertFalse(queue.isEmpty())
+
+        assertEquals(listOf("FI-EMPTY"), queue.discardMissing())
+        assertFalse(jpegFile.exists())
+        assertTrue(queue.isEmpty())
+
+        val replacement = byteArrayOf(8, 7, 6)
+        queue.enqueue(event("FI-EMPTY", FormErrorCode.LOW_ROM), replacement)
+        val queued = queue.pending().single()
+        assertEquals("FI-EMPTY", queued.event.interventionId)
+        assertTrue(queued.jpeg.contentEquals(replacement))
+        assertTrue(jpegFile.exists())
+    }
+
+    private fun event(interventionId: String, error: FormErrorCode) =
+        FormEvidenceEvent(
+            interventionId = interventionId,
+            sessionId = "SES-1",
+            exerciseType = "PUSH_UP",
+            errorCode = error,
+            errorDescription = "description",
+            correctionText = "correction",
+            capturedAtIso = "2026-08-21T00:00:00Z"
+        )
 }

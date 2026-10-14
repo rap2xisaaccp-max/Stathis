@@ -111,9 +111,6 @@ class ExerciseDetector {
 
     fun analyzeSquat(pose: Pose): ExerciseResult {
         val feedback = mutableListOf<String>()
-        var repCompletedThisFrame = false
-        var repRejectedThisFrame = false
-        var rejectedError: FormErrorCode? = null
 
         val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
         val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
@@ -141,13 +138,39 @@ class ExerciseDetector {
         val avgKneeY = (leftKnee.position.y + rightKnee.position.y) / 2f
         val avgShoulderY = (leftShoulder.position.y + rightShoulder.position.y) / 2f
         val avgAnkleY = (leftAnkle.position.y + rightAnkle.position.y) / 2f
-        val bodyHeightEstimate = abs(avgShoulderY - avgAnkleY)
         val hipAngle = averageAngle(leftShoulder, leftHip, leftKnee, rightShoulder, rightHip, rightKnee)
         val avgKneeAngle = (angle(leftHip, leftKnee, leftAnkle) + angle(rightHip, rightKnee, rightAnkle)) / 2f
-        val squatDownThreshold = bodyHeightEstimate * squatHipKneeVerticalThresholdFactor
-        val squatStandThreshold = bodyHeightEstimate * squatMovementThreshold
 
         val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 4f
+        val flags = if (confidence < defaultConfidenceThreshold) emptyList() else takePendingFlags()
+        return analyzeSquatMetrics(
+            avgHipY = avgHipY,
+            avgKneeY = avgKneeY,
+            avgShoulderY = avgShoulderY,
+            avgAnkleY = avgAnkleY,
+            hipAngle = hipAngle,
+            avgKneeAngle = avgKneeAngle,
+            confidence = confidence,
+            flags = flags,
+            nowMs = System.currentTimeMillis()
+        )
+    }
+
+    internal fun analyzeSquatMetrics(
+        avgHipY: Float,
+        avgKneeY: Float,
+        avgShoulderY: Float,
+        avgAnkleY: Float,
+        hipAngle: Float,
+        avgKneeAngle: Float,
+        confidence: Float,
+        flags: List<String> = emptyList(),
+        nowMs: Long = System.currentTimeMillis()
+    ): ExerciseResult {
+        val feedback = mutableListOf<String>()
+        var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
             return ExerciseResult(
@@ -161,7 +184,10 @@ class ExerciseDetector {
             )
         }
 
-        val frameFlags = takePendingFlags()
+        val frameFlags = flags
+        val bodyHeightEstimate = abs(avgShoulderY - avgAnkleY)
+        val squatDownThreshold = bodyHeightEstimate * squatHipKneeVerticalThresholdFactor
+        val squatStandThreshold = bodyHeightEstimate * squatMovementThreshold
         // Sample depth only while still at the bottom. The stand-up frames that
         // complete the rep must not look like a shallow squat, and must not clear
         // a depth error that was already latched.
@@ -201,7 +227,7 @@ class ExerciseDetector {
                     squatStableFrames++
                     if (squatStableFrames >= requiredStableFrames) {
                         squatState = ExerciseState.UP
-                        val now = System.currentTimeMillis()
+                        val now = nowMs
                         if (squatInDownPosition) {
                             val intervalOk = now - squatLastRepTimeMs >= squatMinRepIntervalMs
                             val outcome = squatVerdict.consume(intervalOk)
@@ -279,9 +305,6 @@ class ExerciseDetector {
 
     fun analyzePushup(pose: Pose): ExerciseResult {
         val feedback = mutableListOf<String>()
-        var repCompletedThisFrame = false
-        var repRejectedThisFrame = false
-        var rejectedError: FormErrorCode? = null
 
         val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
         val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
@@ -304,6 +327,20 @@ class ExerciseDetector {
 
         val avgElbowAngle = (angle(leftShoulder, leftElbow, leftWrist) + angle(rightShoulder, rightElbow, rightWrist)) / 2f
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftElbow.inFrameLikelihood + rightElbow.inFrameLikelihood + leftWrist.inFrameLikelihood + rightWrist.inFrameLikelihood) / 6f
+        val flags = if (confidence < defaultConfidenceThreshold) emptyList() else takePendingFlags()
+        return analyzePushupMetrics(avgElbowAngle, confidence, flags, System.currentTimeMillis())
+    }
+
+    internal fun analyzePushupMetrics(
+        avgElbowAngle: Float,
+        confidence: Float,
+        flags: List<String> = emptyList(),
+        nowMs: Long = System.currentTimeMillis()
+    ): ExerciseResult {
+        val feedback = mutableListOf<String>()
+        var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
             return ExerciseResult(
@@ -317,7 +354,7 @@ class ExerciseDetector {
             )
         }
 
-        val frameFlags = takePendingFlags()
+        val frameFlags = flags
         // Plank frames can latch pike/sag. The press back up is not a new low-ROM error
         // and must not clear an error latched at the bottom.
         val pushupAtBottom = avgElbowAngle <= 95f
@@ -346,7 +383,7 @@ class ExerciseDetector {
                     pushupStableFrames++
                     if (pushupStableFrames >= requiredStableFrames) {
                         pushupState = ExerciseState.UP
-                        val now = System.currentTimeMillis()
+                        val now = nowMs
                         if (pushupInDownPosition) {
                             val intervalOk = now - pushupLastRepTimeMs >= pushupMinRepIntervalMs
                             val outcome = pushupVerdict.consume(intervalOk)
@@ -375,9 +412,7 @@ class ExerciseDetector {
         }
 
         when (pushupState) {
-            ExerciseState.DOWN -> {
-                if (avgElbowAngle > 110f) feedback.add("Lower your chest closer to the ground.")
-            }
+            ExerciseState.DOWN -> Unit
             ExerciseState.UP -> {
                 if (avgElbowAngle < 150f) feedback.add("Fully extend your arms at the top.")
             }
@@ -408,11 +443,13 @@ class ExerciseDetector {
     }
 
     private fun pushupWorkingIssues(state: ExerciseState, avgElbowAngle: Float): List<String> {
-        val issues = mutableListOf<String>()
+        // Down entry already required an elbow angle at or below 95 degrees.
+        // An elbow above 110 degrees after that is the press back up, not a new
+        // low-range error. Pike, sag, and an explicit LOW_ROM flag still latch.
         if (state == ExerciseState.DOWN && avgElbowAngle > 110f) {
-            issues.add("Lower your chest closer to the ground.")
+            return emptyList()
         }
-        return issues
+        return emptyList()
     }
 
     fun analyzeSitup(pose: Pose): ExerciseResult {
@@ -528,9 +565,32 @@ class ExerciseDetector {
         val avgHipY = (leftHip.position.y + rightHip.position.y) / 2f
         val avgKneeY = (leftKnee.position.y + rightKnee.position.y) / 2f
         val hipAngle = averageAngle(leftShoulder, leftHip, leftKnee, rightShoulder, rightHip, rightKnee)
-        val bodySpan = abs(avgKneeY - avgShoulderY).coerceAtLeast(1f)
-        val raisedThreshold = bodySpan * 0.08f
         val confidence = (leftShoulder.inFrameLikelihood + rightShoulder.inFrameLikelihood + leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood) / 6f
+        val flags = if (confidence < defaultConfidenceThreshold) emptyList() else takePendingFlags()
+        return analyzeGluteBridgeMetrics(
+            avgShoulderY = avgShoulderY,
+            avgHipY = avgHipY,
+            avgKneeY = avgKneeY,
+            hipAngle = hipAngle,
+            confidence = confidence,
+            flags = flags,
+            nowMs = System.currentTimeMillis()
+        )
+    }
+
+    internal fun analyzeGluteBridgeMetrics(
+        avgShoulderY: Float,
+        avgHipY: Float,
+        avgKneeY: Float,
+        hipAngle: Float,
+        confidence: Float,
+        flags: List<String> = emptyList(),
+        nowMs: Long = System.currentTimeMillis()
+    ): ExerciseResult {
+        val feedback = mutableListOf<String>()
+        var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
             return ExerciseResult(
@@ -544,7 +604,9 @@ class ExerciseDetector {
             )
         }
 
-        val frameFlags = takePendingFlags()
+        val bodySpan = abs(avgKneeY - avgShoulderY).coerceAtLeast(1f)
+        val raisedThreshold = bodySpan * 0.08f
+        val frameFlags = flags
         val gluteLowering =
             hipAngle <= 135f || avgHipY >= max(avgShoulderY, avgKneeY) - raisedThreshold * 0.3f
         // The descent that finishes the rep is not a low-ROM error.
@@ -571,7 +633,7 @@ class ExerciseDetector {
                     gluteBridgeStableFrames++
                     if (gluteBridgeStableFrames >= requiredStableFrames) {
                         gluteBridgeState = ExerciseState.UP
-                        val now = System.currentTimeMillis()
+                        val now = nowMs
                         if (gluteBridgeInRaisedPosition) {
                             val intervalOk = now - gluteBridgeLastRepTimeMs >= gluteBridgeMinRepIntervalMs
                             val outcome = gluteBridgeVerdict.consume(intervalOk)
@@ -666,17 +728,37 @@ class ExerciseDetector {
 
         val leftKneeAngle = angle(leftHip, leftKnee, leftAnkle)
         val rightKneeAngle = angle(rightHip, rightKnee, rightAnkle)
-        val leftHipY = leftHip.position.y
-        val rightHipY = rightHip.position.y
         val avgShoulderY = (leftShoulder.position.y + rightShoulder.position.y) / 2f
-        val avgHipY = (leftHipY + rightHipY) / 2f
+        val avgHipY = (leftHip.position.y + rightHip.position.y) / 2f
+        val confidence =
+            (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood +
+                leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood +
+                leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
+        return analyzeStaticLungeMetrics(
+            bentLegAngle = min(leftKneeAngle, rightKneeAngle),
+            straightLegAngle = max(leftKneeAngle, rightKneeAngle),
+            avgHipY = avgHipY,
+            avgShoulderY = avgShoulderY,
+            confidence = confidence,
+            flags = takePendingFlags(),
+        )
+    }
+
+    internal fun analyzeStaticLungeMetrics(
+        bentLegAngle: Float,
+        straightLegAngle: Float,
+        avgHipY: Float,
+        avgShoulderY: Float,
+        confidence: Float,
+        flags: List<String> = emptyList()
+    ): ExerciseResult {
+        val feedback = mutableListOf<String>()
+        var repCompletedThisFrame = false
+        var repRejectedThisFrame = false
+        var rejectedError: FormErrorCode? = null
         val bodySpan = abs(avgShoulderY - avgHipY).coerceAtLeast(1f)
         val downThreshold = bodySpan * 0.12f
-
-        val bentLegAngle = min(leftKneeAngle, rightKneeAngle)
-        val straightLegAngle = max(leftKneeAngle, rightKneeAngle)
-
-        val frameFlags = takePendingFlags()
+        val frameFlags = flags
         // Depth is only meaningful while the front knee is still in the lunge.
         // Standing back up must not latch DEPTH_LOW or clear an error from the bottom.
         if (staticLungeState == ExerciseState.DOWN && bentLegAngle <= 120f) {
@@ -712,7 +794,6 @@ class ExerciseDetector {
             ExerciseState.INVALID -> staticLungeState = ExerciseState.WAITING
         }
 
-        val confidence = (leftHip.inFrameLikelihood + rightHip.inFrameLikelihood + leftKnee.inFrameLikelihood + rightKnee.inFrameLikelihood + leftAnkle.inFrameLikelihood + rightAnkle.inFrameLikelihood) / 6f
         if (confidence < defaultConfidenceThreshold) {
             feedback.add("Low detection confidence")
             return ExerciseResult(
@@ -730,7 +811,8 @@ class ExerciseDetector {
 
         when (staticLungeState) {
             ExerciseState.DOWN -> {
-                if (bentLegAngle > 120f) feedback.add("Bend the front knee deeper into the lunge.")
+                // Down entry already required a front knee at or below 115 degrees.
+                // Opening past 120 degrees is the return, not a new depth error.
                 if (straightLegAngle < 140f) feedback.add("Keep the back leg more extended.")
             }
             ExerciseState.UP -> {

@@ -19,13 +19,14 @@ class FormEvidenceCaptureImpl @Inject constructor(
     private val evidenceQueue: EvidenceQueue
 ) : FormEvidenceCapture {
 
-    /** Correction cycles that already claimed their single evidence snapshot. */
+    /** Correction cycles whose snapshot has been enqueued. Not reserved before success. */
     private val capturedInterventionIds = ConcurrentHashMap.newKeySet<String>()
 
     /** Claimed events still waiting for a usable copied frame + pose. */
     private val awaitingFrame = ConcurrentHashMap<String, FormEvidenceEvent>()
 
     private val lastRecordedId = AtomicReference<String?>(null)
+    private val captureLock = Any()
 
     override fun onConfirmedCoaching(event: FormEvidenceEvent) {
         if (event.interventionId.isBlank()) return
@@ -38,27 +39,64 @@ class FormEvidenceCaptureImpl @Inject constructor(
             )
             return
         }
-        // One snapshot per confirmed cycle. A repeated id (held error or upload retry) is ignored.
-        // A new intervention id is a later cycle and may snapshot during the same attempt.
-        if (!capturedInterventionIds.add(event.interventionId)) {
-            return
-        }
-        if (!enqueueSnapshot(event)) {
-            awaitingFrame[event.interventionId] = event
-            Timber.w(
-                "No camera frame+pose buffered for evidence cycle %s; retrying on the next preview",
-                event.interventionId
-            )
+        synchronized(captureLock) {
+            // One snapshot per confirmed cycle. A repeated id (held error or upload retry) is ignored.
+            // A new intervention id is a later cycle and may snapshot during the same attempt.
+            if (capturedInterventionIds.contains(event.interventionId)) return
+            if (awaitingFrame.containsKey(event.interventionId)) return
+            if (enqueueSnapshot(event)) {
+                capturedInterventionIds.add(event.interventionId)
+            } else {
+                awaitingFrame[event.interventionId] = event
+                Timber.w(
+                    "No camera frame+pose buffered for evidence cycle %s; retrying on the next preview",
+                    event.interventionId
+                )
+            }
         }
     }
 
     override fun onPreviewFrameAvailable() {
-        if (awaitingFrame.isEmpty()) return
-        val iterator = awaitingFrame.entries.iterator()
-        while (iterator.hasNext()) {
-            if (enqueueSnapshot(iterator.next().value)) {
-                iterator.remove()
+        synchronized(captureLock) {
+            if (awaitingFrame.isEmpty()) return
+            val iterator = awaitingFrame.entries.iterator()
+            while (iterator.hasNext()) {
+                val event = iterator.next().value
+                if (capturedInterventionIds.contains(event.interventionId)) {
+                    iterator.remove()
+                    continue
+                }
+                if (enqueueSnapshot(event)) {
+                    capturedInterventionIds.add(event.interventionId)
+                    iterator.remove()
+                }
             }
+        }
+    }
+
+    override fun adoptCapturedIds(ids: Collection<String>) {
+        synchronized(captureLock) {
+            ids.forEach { id ->
+                if (id.isNotBlank()) {
+                    capturedInterventionIds.add(id)
+                    awaitingFrame.remove(id)
+                }
+            }
+        }
+    }
+
+    override fun schedulePendingCapture(event: FormEvidenceEvent) {
+        if (event.interventionId.isBlank()) return
+        synchronized(captureLock) {
+            if (capturedInterventionIds.contains(event.interventionId)) return
+            awaitingFrame.putIfAbsent(event.interventionId, event)
+        }
+    }
+
+    override fun clearCapturedIds() {
+        synchronized(captureLock) {
+            capturedInterventionIds.clear()
+            awaitingFrame.clear()
         }
     }
 
@@ -86,7 +124,8 @@ class FormEvidenceCaptureImpl @Inject constructor(
         if (jpeg == null || !JpegCompressor.isAcceptableSize(jpeg)) {
             return false
         }
-        evidenceQueue.enqueue(event, jpeg)
+        val queued = runCatching { evidenceQueue.enqueue(event, jpeg) }.isSuccess
+        if (!queued) return false
         lastRecordedId.set(event.interventionId)
         Timber.d(
             "Evidence snapshot queued for attempt session=%s intervention=%s",

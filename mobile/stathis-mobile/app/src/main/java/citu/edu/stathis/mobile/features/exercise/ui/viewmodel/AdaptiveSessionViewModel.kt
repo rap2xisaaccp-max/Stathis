@@ -78,6 +78,23 @@ class AdaptiveSessionViewModel @Inject constructor(
         loadLearningProfileAndMastery()
     }
 
+    /**
+     * Restores a process-death attempt when the screen identity matches.
+     * Does not start a new session.
+     */
+    fun restoreMatchingAttempt(
+        exerciseType: String,
+        taskId: String?,
+        classroomId: String?,
+        attemptNumber: Int?
+    ): Boolean = engine.restoreMatchingAttempt(exerciseType, taskId, classroomId, attemptNumber)
+
+    fun abandonOpenCycle() {
+        engine.abandonOpenCycle()
+    }
+
+    fun currentAttemptGeneration(): Int = engine.currentAttemptGeneration()
+
     fun onCopiedPreviewFrame(bitmap: Bitmap) {
         frameBuffer.updateFromBitmap(bitmap)
         // Fulfils any confirmed correction event whose snapshot had no frame to copy yet.

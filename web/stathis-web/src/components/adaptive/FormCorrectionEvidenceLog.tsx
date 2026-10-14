@@ -564,7 +564,7 @@ export function FormCorrectionEvidenceLog({
   const query = useQuery({
     queryKey: formCorrectionEvidenceQueryKey(studentId, classroomId),
     queryFn: () => fetchFormCorrectionEvidence(studentId, classroomId),
-    enabled: !!studentId,
+    enabled: !!studentId && !!classroomId?.trim(),
     retry: 1,
     ...teacherStudentViewQueryOptions,
   });
@@ -625,6 +625,14 @@ export function FormCorrectionEvidenceLog({
   const lightboxGroup = lightbox
     ? groups.find((group) => group.taskKey === lightbox.taskKey) ?? null
     : null;
+
+  if (!classroomId?.trim()) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border/70 py-12 text-center text-muted-foreground">
+        A classroom is required before evidence can be reviewed.
+      </div>
+    );
+  }
 
   if (query.isLoading) {
     return (

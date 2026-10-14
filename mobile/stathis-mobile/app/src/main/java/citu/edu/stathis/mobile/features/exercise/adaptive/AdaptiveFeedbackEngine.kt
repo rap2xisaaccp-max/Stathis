@@ -4,6 +4,7 @@ import citu.edu.stathis.mobile.features.exercise.data.remote.api.AdaptiveApi
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +28,8 @@ class AdaptiveFeedbackEngine @Inject constructor(
     private val delivery: CoachingDelivery,
     private val offlineQueue: OfflineQueue,
     private val evidenceQueue: EvidenceQueue,
-    private val evidenceCapture: FormEvidenceCapture
+    private val evidenceCapture: FormEvidenceCapture,
+    private val cycleStore: CorrectionCycleStore = NoOpCorrectionCycleStore
 ) {
     private val pendingResponses = ConcurrentLinkedQueue<PendingIntervention>()
     private val signalMutex = Mutex()
@@ -44,6 +46,10 @@ class AdaptiveFeedbackEngine @Inject constructor(
     private val sessionErrorCodes = linkedSetOf<String>()
     @Volatile private var sessionInterventionCount: Int = 0
     @Volatile private var sessionRecorded: Boolean = false
+    private val sessionGate = Any()
+    private val attemptGeneration = AtomicInteger(0)
+    private var cycleTracking: Boolean = false
+    private var claimedEvidence: FormEvidenceEvent? = null
 
     fun offlineQueueForTests(): AdaptiveOfflineQueue =
         if (offlineQueue is AdaptiveOfflineQueue) offlineQueue else throw IllegalStateException("offlineQueue is not AdaptiveOfflineQueue")
@@ -56,25 +62,112 @@ class AdaptiveFeedbackEngine @Inject constructor(
         classroomId: String? = null,
         attemptNumber: Int? = null
     ) {
-        this.sessionId = "SES-${UUID.randomUUID().toString().uppercase()}"
-        this.exerciseType = exerciseType
-        this.taskId = taskId
-        this.classroomId = classroomId
-        this.attemptNumber = attemptNumber
-        this.activeDelivery = null
-        this.cooldownMs = 8000L
-        this.sessionInterventionCount = 0
-        this.sessionRecorded = false
-        sessionErrorCodes.clear()
-        interventionLifecycle.reset()
-        encouragement.reset()
-        pendingResponses.clear()
-        delivery.resetSessionSpeech()
-        delivery.ensureInitialized()
-        Timber.d("Coaching session started exercise=%s attempt=%s", exerciseType, attemptNumber)
+        synchronized(sessionGate) {
+            attemptGeneration.incrementAndGet()
+            cycleStore.abandon(sessionId.takeIf { it.isNotBlank() })
+            evidenceCapture.clearCapturedIds()
+            this.sessionId = "SES-${UUID.randomUUID().toString().uppercase()}"
+            this.exerciseType = exerciseType
+            this.taskId = normalizeOptional(taskId)
+            this.classroomId = normalizeOptional(classroomId)
+            this.attemptNumber = attemptNumber
+            this.activeDelivery = null
+            this.cooldownMs = 8000L
+            this.sessionInterventionCount = 0
+            this.sessionRecorded = false
+            sessionErrorCodes.clear()
+            interventionLifecycle.reset()
+            encouragement.reset()
+            pendingResponses.clear()
+            delivery.resetSessionSpeech()
+            delivery.ensureInitialized()
+            claimedEvidence = null
+            cycleTracking = true
+            persistOpenCycleLocked()
+            Timber.d("Coaching session started exercise=%s attempt=%s", exerciseType, attemptNumber)
+        }
     }
 
+    /**
+     * Drops the durable cycle and this session's captured-id markers.
+     * Queued evidence, interventions, responses, and final JPEGs stay queued.
+     * The in-memory session id is kept so an in-flight flush token still matches.
+     */
+    fun abandonOpenCycle() {
+        synchronized(sessionGate) {
+            attemptGeneration.incrementAndGet()
+            cycleStore.abandon(sessionId.takeIf { it.isNotBlank() })
+            evidenceCapture.clearCapturedIds()
+            interventionLifecycle.reset()
+            claimedEvidence = null
+            activeDelivery = null
+            cycleTracking = false
+        }
+    }
+
+    /**
+     * Reinstates a stored attempt only when exercise, task, classroom, and attempt
+     * all match. A mismatch leaves the stored row in place. Does not call [startSession].
+     */
+    fun restoreMatchingAttempt(
+        exerciseType: String,
+        taskId: String?,
+        classroomId: String?,
+        attemptNumber: Int?
+    ): Boolean =
+        synchronized(sessionGate) {
+            val saved = cycleStore.load() ?: return@synchronized false
+            if (!sameAttemptIdentity(saved, exerciseType, taskId, classroomId, attemptNumber)) {
+                return@synchronized false
+            }
+            if (cycleTracking && sessionId.isNotBlank() && sessionId != saved.sessionId) {
+                return@synchronized false
+            }
+            sessionId = saved.sessionId
+            this.exerciseType = saved.exerciseType
+            this.taskId = saved.taskId
+            this.classroomId = saved.classroomId
+            this.attemptNumber = saved.attemptNumber
+            cooldownMs = 8000L
+            sessionInterventionCount = saved.sessionInterventionCount
+            sessionRecorded = saved.sessionRecorded
+            sessionErrorCodes.clear()
+            sessionErrorCodes.addAll(saved.sessionErrorCodes)
+            interventionLifecycle.restore(
+                InterventionLifecycleSnapshot(
+                    phase = saved.phase,
+                    pendingCode = saved.pendingCode,
+                    pendingTicks = saved.pendingTicks,
+                    clearTicks = saved.clearTicks,
+                    openError = saved.openError,
+                    deliveredAt = saved.deliveredAt,
+                    lastInterventionAt = saved.lastInterventionAt,
+                    cycleSeq = saved.cycleSeq,
+                    recentInterventionAt = saved.recentInterventionAt,
+                    escalationCounts = saved.escalationCounts
+                )
+            )
+            claimedEvidence = saved.claimedEvidence
+            activeDelivery = null
+            cycleTracking = true
+            val claimed = saved.claimedEvidence
+            if (claimed != null && claimed.interventionId.isNotBlank() && saved.cycleSeq > 0) {
+                when (cycleStore.recoverCapture(claimed)) {
+                    CaptureRecovery.NeedsCompose -> evidenceCapture.schedulePendingCapture(claimed)
+                    CaptureRecovery.AlreadyCaptured,
+                    CaptureRecovery.RecordedFromExistingJpeg,
+                    CaptureRecovery.NotEligible -> Unit
+                }
+            }
+            evidenceCapture.adoptCapturedIds(cycleStore.capturedIdsForSession(saved.sessionId))
+            true
+        }
+
     fun currentSessionId(): String = sessionId
+
+    fun currentCycleSeq(): Int = interventionLifecycle.currentCycleSeq()
+
+    fun currentAttemptGeneration(): Int = attemptGeneration.get()
 
     /**
      * Snapshot of the live session for a flush that may outlive the screen.
@@ -82,13 +175,15 @@ class AdaptiveFeedbackEngine @Inject constructor(
      * session from recording twice. A later [startSession] owns a new id, so this token
      * must not clear or end that newer session.
      */
-    fun captureFlushToken(): AdaptiveFlushToken {
-        val record = !sessionRecorded && exerciseType.isNotBlank()
-        if (record) {
-            sessionRecorded = true
+    fun captureFlushToken(): AdaptiveFlushToken =
+        synchronized(sessionGate) {
+            val record = !sessionRecorded && exerciseType.isNotBlank() && sessionId.isNotBlank()
+            if (record) {
+                sessionRecorded = true
+                persistOpenCycleLocked()
+            }
+            AdaptiveFlushToken(sessionId, exerciseType, record)
         }
-        return AdaptiveFlushToken(sessionId, exerciseType, record)
-    }
 
     fun sessionSummary(): AdaptiveSessionSummary =
         AdaptiveSessionSummary(
@@ -157,6 +252,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
         now: Long = System.currentTimeMillis()
     ): DeliveredFeedback? =
         signalMutex.withLock {
+            synchronized(sessionGate) {
             clearActiveFeedbackIfExpired(now)
             closeExpiredWindows(now, severity)
 
@@ -219,6 +315,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     cooldownMs,
                     currentReps
                 )
+                persistOpenCycleLocked()
                 return@withLock activeDelivery
             }
 
@@ -235,6 +332,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     currentReps
                 )
             if (cycle == null) {
+                persistOpenCycleLocked()
                 return@withLock activeDelivery
             }
 
@@ -250,11 +348,31 @@ class AdaptiveFeedbackEngine @Inject constructor(
 
             val catalogText = CoachingInstructionCatalog.messageText(exerciseType, resolvedCode, intensity)
             val catalogCode = CoachingInstructionCatalog.messageCode(exerciseType, resolvedCode, intensity)
+            val resolvedSessionId = sessionId.ifBlank { "SES-LOCAL" }
+            val evidenceEvent =
+                FormEvidenceEvent(
+                    interventionId = interventionId,
+                    sessionId = resolvedSessionId,
+                    taskId = taskId,
+                    classroomId = classroomId,
+                    attemptNumber = attemptNumber,
+                    exerciseType = exerciseType,
+                    errorCode = resolvedCode,
+                    errorDescription = FormErrorCopy.explanation(resolvedCode, exerciseType).ifBlank {
+                        FormErrorCopy.label(resolvedCode, exerciseType)
+                    },
+                    correctionText = catalogText,
+                    capturedAtIso = Instant.ofEpochMilli(now).toString(),
+                    cycleSeq = cycle
+                )
+            claimedEvidence = evidenceEvent
+            // Durable claim before JPEG work so a crash retries this same intervention id.
+            persistOpenCycleLocked()
 
             val pending =
                 PendingIntervention(
                     physicalId = interventionId,
-                    sessionId = sessionId.ifBlank { "SES-LOCAL" },
+                    sessionId = resolvedSessionId,
                     taskId = taskId,
                     classroomId = classroomId,
                     exerciseType = exerciseType,
@@ -274,6 +392,7 @@ class AdaptiveFeedbackEngine @Inject constructor(
             interventionLifecycle.markDelivered(resolvedCode, now, currentReps)
             sessionInterventionCount += 1
             sessionErrorCodes.add(resolvedCode.name)
+            persistOpenCycleLocked()
 
             val delivered =
                 delivery.deliver(
@@ -289,24 +408,56 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     now = now
                 )
             activeDelivery = delivered
-            evidenceCapture.onConfirmedCoaching(
-                FormEvidenceEvent(
-                    interventionId = interventionId,
-                    sessionId = pending.sessionId,
-                    taskId = taskId,
-                    classroomId = classroomId,
-                    attemptNumber = attemptNumber,
-                    exerciseType = exerciseType,
-                    errorCode = resolvedCode,
-                    errorDescription = FormErrorCopy.explanation(resolvedCode, exerciseType).ifBlank {
-                        FormErrorCopy.label(resolvedCode, exerciseType)
-                    },
-                    correctionText = catalogText,
-                    capturedAtIso = Instant.ofEpochMilli(now).toString()
-                )
-            )
+            evidenceCapture.onConfirmedCoaching(evidenceEvent)
             delivered
+            }
         }
+
+    private fun persistOpenCycleLocked() {
+        if (!cycleTracking || sessionId.isBlank()) return
+        val life = interventionLifecycle.snapshot()
+        cycleStore.save(
+            PersistedOpenCycle(
+                sessionId = sessionId,
+                exerciseType = exerciseType,
+                taskId = normalizeOptional(taskId),
+                classroomId = normalizeOptional(classroomId),
+                attemptNumber = attemptNumber,
+                phase = life.phase,
+                pendingCode = life.pendingCode,
+                pendingTicks = life.pendingTicks,
+                clearTicks = life.clearTicks,
+                openError = life.openError,
+                deliveredAt = life.deliveredAt,
+                lastInterventionAt = life.lastInterventionAt,
+                cycleSeq = life.cycleSeq,
+                recentInterventionAt = life.recentInterventionAt,
+                escalationCounts = life.escalationCounts,
+                sessionInterventionCount = sessionInterventionCount,
+                sessionErrorCodes = sessionErrorCodes.toList(),
+                sessionRecorded = sessionRecorded,
+                claimedEvidence = claimedEvidence
+            )
+        )
+    }
+
+    private fun sameAttemptIdentity(
+        saved: PersistedOpenCycle,
+        exerciseType: String,
+        taskId: String?,
+        classroomId: String?,
+        attemptNumber: Int?
+    ): Boolean {
+        if (saved.exerciseType != exerciseType) return false
+        if (!sameOptional(saved.taskId, taskId)) return false
+        if (!sameOptional(saved.classroomId, classroomId)) return false
+        return saved.attemptNumber == attemptNumber
+    }
+
+    private fun sameOptional(stored: String?, incoming: String?): Boolean =
+        normalizeOptional(stored) == normalizeOptional(incoming)
+
+    private fun normalizeOptional(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 
     /** Deterministic FI id for a coaching cycle — retries reuse the same key. */
     internal fun stableInterventionId(
@@ -390,8 +541,11 @@ class AdaptiveFeedbackEngine @Inject constructor(
                     adaptiveApi.recordSession(owned.exerciseType)
                 }
             }.onFailure { t ->
-                if (sessionId == owned.sessionId) {
-                    sessionRecorded = false
+                synchronized(sessionGate) {
+                    if (sessionId == owned.sessionId) {
+                        sessionRecorded = false
+                        persistOpenCycleLocked()
+                    }
                 }
                 Timber.w(t, "Failed to record coaching session for %s", owned.exerciseType)
             }
@@ -399,6 +553,13 @@ class AdaptiveFeedbackEngine @Inject constructor(
     }
 
     private suspend fun flushEvidence() {
+        val missing = evidenceQueue.discardMissing()
+        if (missing.isNotEmpty()) {
+            Timber.w(
+                "Evidence JPEG missing for %s; removed from the pending queue without uploading",
+                missing.joinToString()
+            )
+        }
         val queued = evidenceQueue.pending()
         if (queued.isEmpty()) return
         queued.forEach { item ->
