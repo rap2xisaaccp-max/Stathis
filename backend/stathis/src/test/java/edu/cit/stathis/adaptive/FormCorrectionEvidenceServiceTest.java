@@ -3,9 +3,11 @@ package edu.cit.stathis.adaptive;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import edu.cit.stathis.adaptive.dto.FeedbackInterventionRequestDTO;
@@ -978,6 +980,149 @@ class FormCorrectionEvidenceServiceTest {
     when(room.getPhysicalId()).thenReturn(classroomId);
     when(classroomRepository.findByClassroomStudents_Student_User_PhysicalId("STUDENT-1"))
         .thenReturn(List.of(room));
+  }
+
+  @Test
+  void teacherDeleteRemovesOnlyTheSelectedEvidenceAndSnapshot() {
+    FormCorrectionEvidence target = evidenceRow("FCE-1", "FI-1", "ROOM-1");
+    target.setStorageKey("STUDENT-1/FI-1.jpg");
+    FormCorrectionEvidence sibling = evidenceRow("FCE-2", "FI-2", "ROOM-1");
+    sibling.setStorageKey("STUDENT-1/FI-2.jpg");
+    when(evidenceRepository.findByPhysicalId("FCE-1")).thenReturn(Optional.of(target));
+    stubTeacherOwns("TEACHER-1", "ROOM-1");
+    when(storage.get("STUDENT-1/FI-1.jpg")).thenReturn(Optional.of(new byte[] {1, 2, 3}));
+
+    service.deleteForTeacher("TEACHER-1", "FCE-1");
+
+    verify(storage).deleteStrict("STUDENT-1/FI-1.jpg");
+    verify(storage, never()).deleteStrict("STUDENT-1/FI-2.jpg");
+    verify(storage, never()).delete(any());
+    verify(storage, never()).putAtKey(any(), any());
+    verify(evidenceRepository, times(1)).delete(target);
+    verify(evidenceRepository, never()).delete(sibling);
+    verify(evidenceRepository, never()).save(any());
+    verifyNoInteractions(adaptiveFeedbackService);
+  }
+
+  @Test
+  void teacherDeleteRejectsUnownedClassroomWithoutChangingRecords() {
+    when(evidenceRepository.findByPhysicalId("FCE-1"))
+        .thenReturn(Optional.of(evidenceRow("FCE-1", "FI-1", "ROOM-B")));
+    Classroom other = org.mockito.Mockito.mock(Classroom.class);
+    when(other.getPhysicalId()).thenReturn("ROOM-A");
+    when(classroomRepository.findByClassroomStudents_Student_User_PhysicalId("STUDENT-1"))
+        .thenReturn(List.of(other));
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class, () -> service.deleteForTeacher("TEACHER-1", "FCE-1"));
+
+    assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+    verify(storage, never()).get(any());
+    verify(storage, never()).deleteStrict(any());
+    verify(storage, never()).delete(any());
+    verify(evidenceRepository, never()).delete(any());
+    verify(evidenceRepository, never()).save(any());
+    verifyNoInteractions(adaptiveFeedbackService);
+  }
+
+  @Test
+  void teacherDeleteRejectsUnscopedEvidenceWithoutChangingRecords() {
+    when(evidenceRepository.findByPhysicalId("FCE-BLANK"))
+        .thenReturn(Optional.of(evidenceRow("FCE-BLANK", "FI-BLANK", null)));
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () -> service.deleteForTeacher("TEACHER-1", "FCE-BLANK"));
+
+    assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+    verify(storage, never()).deleteStrict(any());
+    verify(evidenceRepository, never()).delete(any());
+    verifyNoInteractions(adaptiveFeedbackService);
+  }
+
+  @Test
+  void teacherDeleteKeepsTheRowWhenTheSnapshotCannotBeRemoved() {
+    FormCorrectionEvidence target = evidenceRow("FCE-1", "FI-1", "ROOM-1");
+    target.setStorageKey("STUDENT-1/FI-1.jpg");
+    byte[] jpeg = new byte[] {9, 8, 7};
+    when(evidenceRepository.findByPhysicalId("FCE-1")).thenReturn(Optional.of(target));
+    stubTeacherOwns("TEACHER-1", "ROOM-1");
+    when(storage.get("STUDENT-1/FI-1.jpg")).thenReturn(Optional.of(jpeg));
+    doThrow(new IllegalStateException("still present"))
+        .when(storage)
+        .deleteStrict("STUDENT-1/FI-1.jpg");
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class, () -> service.deleteForTeacher("TEACHER-1", "FCE-1"));
+
+    assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertTrue(ex.getReason().contains("were kept"));
+    verify(storage).putAtKey("STUDENT-1/FI-1.jpg", jpeg);
+    verify(evidenceRepository, never()).delete(any());
+    verify(evidenceRepository, never()).save(any());
+    verifyNoInteractions(adaptiveFeedbackService);
+  }
+
+  @Test
+  void teacherDeleteRestoresTheSnapshotWhenTheRecordCannotBeDeleted() {
+    FormCorrectionEvidence target = evidenceRow("FCE-1", "FI-1", "ROOM-1");
+    target.setStorageKey("STUDENT-1/FI-1.jpg");
+    byte[] jpeg = new byte[] {4, 5, 6};
+    when(evidenceRepository.findByPhysicalId("FCE-1")).thenReturn(Optional.of(target));
+    stubTeacherOwns("TEACHER-1", "ROOM-1");
+    when(storage.get("STUDENT-1/FI-1.jpg")).thenReturn(Optional.of(jpeg));
+    doThrow(new RuntimeException("db")).when(evidenceRepository).delete(target);
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class, () -> service.deleteForTeacher("TEACHER-1", "FCE-1"));
+
+    assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertTrue(ex.getReason().contains("snapshot was restored"));
+    verify(storage).deleteStrict("STUDENT-1/FI-1.jpg");
+    verify(storage).putAtKey("STUDENT-1/FI-1.jpg", jpeg);
+    verify(evidenceRepository, never()).save(any());
+    verifyNoInteractions(adaptiveFeedbackService);
+  }
+
+  @Test
+  void teacherDeleteReportsWhenTheSnapshotCannotBeRestored() {
+    FormCorrectionEvidence target = evidenceRow("FCE-1", "FI-1", "ROOM-1");
+    target.setStorageKey("STUDENT-1/FI-1.jpg");
+    byte[] jpeg = new byte[] {4, 5, 6};
+    when(evidenceRepository.findByPhysicalId("FCE-1")).thenReturn(Optional.of(target));
+    stubTeacherOwns("TEACHER-1", "ROOM-1");
+    when(storage.get("STUDENT-1/FI-1.jpg")).thenReturn(Optional.of(jpeg));
+    doThrow(new RuntimeException("db")).when(evidenceRepository).delete(target);
+    doThrow(new IllegalStateException("restore"))
+        .when(storage)
+        .putAtKey("STUDENT-1/FI-1.jpg", jpeg);
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class, () -> service.deleteForTeacher("TEACHER-1", "FCE-1"));
+
+    assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+    assertTrue(ex.getReason().contains("could not be restored"));
+    verifyNoInteractions(adaptiveFeedbackService);
+  }
+
+  @Test
+  void missingEvidenceDeleteDoesNotTouchStorageOrScores() {
+    when(evidenceRepository.findByPhysicalId("FCE-MISSING")).thenReturn(Optional.empty());
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () -> service.deleteForTeacher("TEACHER-1", "FCE-MISSING"));
+
+    assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    verify(storage, never()).deleteStrict(any());
+    verify(evidenceRepository, never()).delete(any());
+    verifyNoInteractions(adaptiveFeedbackService);
   }
 
   private void stubTeacherOwns(String teacherId, String classroomId) {

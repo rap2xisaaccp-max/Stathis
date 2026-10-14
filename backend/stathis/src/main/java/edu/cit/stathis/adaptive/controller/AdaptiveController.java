@@ -126,6 +126,15 @@ public class AdaptiveController {
     return ResponseEntity.ok(evidenceService.listForStudent(teacherId, studentId, classroomId));
   }
 
+  @DeleteMapping("/evidence/{evidenceId}")
+  @PreAuthorize("hasRole('TEACHER')")
+  @Operation(summary = "Delete one evidence log and its snapshot. Does not change scores or mastery.")
+  public ResponseEntity<Void> deleteEvidence(@PathVariable String evidenceId) {
+    String teacherId = physicalIdService.getCurrentUserPhysicalId();
+    evidenceService.deleteForTeacher(teacherId, evidenceId);
+    return ResponseEntity.noContent().build();
+  }
+
   @GetMapping(value = "/evidence/{evidenceId}/image", produces = MediaType.IMAGE_JPEG_VALUE)
   @PreAuthorize("hasRole('TEACHER')")
   @Operation(summary = "Authenticated JPEG stream for one evidence snapshot")

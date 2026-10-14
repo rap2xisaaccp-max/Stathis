@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -77,6 +78,7 @@ class AdaptiveControllerContractTest {
     assertPreAuthorize(method("getInsights"), "hasRole('TEACHER')");
     assertPreAuthorize(method("listStudentEvidence"), "hasRole('TEACHER')");
     assertPreAuthorize(method("getEvidenceImage"), "hasRole('TEACHER')");
+    assertPreAuthorize(method("deleteEvidence"), "hasRole('TEACHER')");
   }
 
   @Test
@@ -315,6 +317,17 @@ class AdaptiveControllerContractTest {
         .andExpect(status().isOk());
 
     verify(adaptiveFeedbackService).getFormMasteryForTeacher("TEACHER-1", "STUDENT-9");
+  }
+
+  @Test
+  void deleteEvidenceRequiresTeacherAndDeletesOnlyThroughTheService() throws Exception {
+    assertPreAuthorize(method("deleteEvidence"), "hasRole('TEACHER')");
+    when(physicalIdService.getCurrentUserPhysicalId()).thenReturn("TEACHER-1");
+
+    mockMvc.perform(delete("/api/adaptive/evidence/FCE-1")).andExpect(status().isNoContent());
+
+    verify(evidenceService).deleteForTeacher("TEACHER-1", "FCE-1");
+    verify(adaptiveFeedbackService, org.mockito.Mockito.never()).saveIntervention(any(), any());
   }
 
   @Test

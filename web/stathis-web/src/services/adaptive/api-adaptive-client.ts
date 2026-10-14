@@ -170,3 +170,16 @@ export async function fetchFormCorrectionEvidence(
   }
   return data ?? [];
 }
+
+export async function deleteFormCorrectionEvidence(evidenceId: string): Promise<void> {
+  const id = evidenceId.trim();
+  if (!id) {
+    throw new Error('evidenceId is required');
+  }
+  const { error, status } = await serverApiClient.delete(
+    `/adaptive/evidence/${encodeURIComponent(id)}`
+  );
+  if (error || status >= 400) {
+    throw new Error(error || `Could not delete evidence (${status})`);
+  }
+}

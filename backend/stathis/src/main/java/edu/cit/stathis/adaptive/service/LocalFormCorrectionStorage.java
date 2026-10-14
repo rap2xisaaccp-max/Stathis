@@ -64,6 +64,36 @@ public class LocalFormCorrectionStorage implements FormCorrectionStorage {
     }
   }
 
+  @Override
+  public void deleteStrict(String storageKey) {
+    Path file = resolveSafe(storageKey);
+    try {
+      Files.deleteIfExists(file);
+      if (Files.exists(file)) {
+        throw new IllegalStateException("Evidence image is still present");
+      }
+    } catch (IOException ex) {
+      throw new IllegalStateException("Failed to delete evidence image", ex);
+    }
+  }
+
+  @Override
+  public void putAtKey(String storageKey, byte[] jpeg) {
+    if (jpeg == null) {
+      throw new IllegalArgumentException("jpeg is required");
+    }
+    try {
+      Path file = resolveSafe(storageKey);
+      Path parent = file.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+      Files.write(file, jpeg);
+    } catch (IOException ex) {
+      throw new IllegalStateException("Failed to restore evidence image", ex);
+    }
+  }
+
   private Path resolveSafe(String storageKey) {
     Path resolved = root.resolve(storageKey).normalize();
     if (!resolved.startsWith(root)) {

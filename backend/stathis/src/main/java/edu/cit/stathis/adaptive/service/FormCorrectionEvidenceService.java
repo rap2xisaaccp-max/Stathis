@@ -22,6 +22,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +34,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class FormCorrectionEvidenceService {
+
+  private static final Logger log = LoggerFactory.getLogger(FormCorrectionEvidenceService.class);
 
   public static final int MAX_BYTES = 800_000;
 
@@ -183,6 +187,74 @@ public class FormCorrectionEvidenceService {
           HttpStatus.CONFLICT, "Evidence image failed integrity check");
     }
     return bytes;
+  }
+
+  /**
+   * Deletes one evidence row and its JPEG. This does not delete or recompute feedback
+   * interventions, exercise mastery, learning profiles, score attempts, repetition counts, or
+   * task completion. Those records have no foreign key to this table.
+   */
+  public void deleteForTeacher(String teacherId, String evidencePhysicalId) {
+    if (evidencePhysicalId == null || evidencePhysicalId.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "evidenceId is required");
+    }
+    FormCorrectionEvidence row =
+        evidenceRepository
+            .findByPhysicalId(evidencePhysicalId.trim())
+            .orElseThrow(
+                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Evidence not found"));
+    if (row.getClassroomId() == null || row.getClassroomId().isBlank()) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN, "Evidence is not scoped to a classroom");
+    }
+    assertTeacherOwnsClassroomForStudent(teacherId, row.getStudentId(), row.getClassroomId());
+    String storageKey = row.getStorageKey();
+    if (storageKey == null || storageKey.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Evidence has no snapshot to delete");
+    }
+
+    byte[] snapshot = storage.get(storageKey).orElse(null);
+    try {
+      storage.deleteStrict(storageKey);
+    } catch (RuntimeException ex) {
+      boolean restored = restoreSnapshot(storageKey, snapshot);
+      throw new ResponseStatusException(
+          HttpStatus.BAD_GATEWAY,
+          restored
+              ? "Snapshot could not be deleted. The evidence log and snapshot were kept."
+              : "Snapshot could not be deleted. The evidence log was kept.",
+          ex);
+    }
+
+    try {
+      evidenceRepository.delete(row);
+    } catch (RuntimeException ex) {
+      if (snapshot != null && restoreSnapshot(storageKey, snapshot)) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_GATEWAY,
+            "The evidence log could not be deleted. The snapshot was restored.",
+            ex);
+      }
+      throw new ResponseStatusException(
+          HttpStatus.BAD_GATEWAY,
+          snapshot == null
+              ? "The evidence log could not be deleted. No snapshot bytes were available to restore."
+              : "The evidence log could not be deleted and the snapshot could not be restored.",
+          ex);
+    }
+  }
+
+  private boolean restoreSnapshot(String storageKey, byte[] snapshot) {
+    if (snapshot == null) {
+      return false;
+    }
+    try {
+      storage.putAtKey(storageKey, snapshot);
+      return true;
+    } catch (RuntimeException ex) {
+      log.warn("Could not restore evidence snapshot {}", storageKey, ex);
+      return false;
+    }
   }
 
   public FormCorrectionEvidence getEntity(String physicalId) {

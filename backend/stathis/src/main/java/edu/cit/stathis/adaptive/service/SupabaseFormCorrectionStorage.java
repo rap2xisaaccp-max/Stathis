@@ -110,6 +110,71 @@ public class SupabaseFormCorrectionStorage implements FormCorrectionStorage {
     }
   }
 
+  @Override
+  public void deleteStrict(String storageKey) {
+    String key = requireSafeKey(storageKey);
+    int deleted = sendStatus("DELETE", key, null);
+    if (deleted != 404 && (deleted < 200 || deleted >= 300)) {
+      throw new IllegalStateException("Evidence image delete failed: " + deleted);
+    }
+    int read = sendStatus("GET", key, null);
+    if (read == 404) {
+      return;
+    }
+    if (read >= 200 && read < 300) {
+      throw new IllegalStateException("Evidence image is still present");
+    }
+    throw new IllegalStateException("Evidence image delete could not be confirmed: " + read);
+  }
+
+  @Override
+  public void putAtKey(String storageKey, byte[] jpeg) {
+    if (jpeg == null) {
+      throw new IllegalArgumentException("jpeg is required");
+    }
+    String key = requireSafeKey(storageKey);
+    int status = sendStatus("PUT", key, jpeg);
+    if (status < 200 || status >= 300) {
+      throw new IllegalStateException("Evidence image restore failed: " + status);
+    }
+  }
+
+  private int sendStatus(String method, String storageKey, byte[] body) {
+    HttpRequest.Builder builder =
+        HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/storage/v1/object/" + bucket + "/" + storageKey))
+            .timeout(Duration.ofSeconds(20))
+            .header("Authorization", "Bearer " + serviceKey)
+            .header("apikey", serviceKey);
+    if ("PUT".equals(method)) {
+      builder.header("Content-Type", "image/jpeg").header("x-upsert", "true");
+      builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body));
+    } else if ("DELETE".equals(method)) {
+      builder.DELETE();
+    } else {
+      builder.GET();
+    }
+    try {
+      HttpResponse<Void> response =
+          http.send(builder.build(), HttpResponse.BodyHandlers.discarding());
+      return response.statusCode();
+    } catch (Exception ex) {
+      throw new IllegalStateException("Evidence storage request failed", ex);
+    }
+  }
+
+  private static String requireSafeKey(String storageKey) {
+    if (storageKey == null
+        || storageKey.isBlank()
+        || storageKey.contains("..")
+        || storageKey.contains("\\")
+        || storageKey.startsWith("/")
+        || storageKey.contains("?")) {
+      throw new IllegalArgumentException("Invalid storage key");
+    }
+    return storageKey;
+  }
+
   private static String safe(String raw) {
     return raw == null ? "unknown" : raw.replaceAll("[^A-Za-z0-9._-]", "_");
   }

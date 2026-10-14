@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
+  deleteFormCorrectionEvidence,
   fetchFormCorrectionEvidence,
   FormCorrectionEvidenceDTO,
 } from '@/services/adaptive/api-adaptive-client';
@@ -18,18 +20,47 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   AlertCircle,
   Camera,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Trash2,
   X,
 } from 'lucide-react';
 import { formErrorLabel } from '@/components/adaptive/form-error-labels';
+import {
+  attemptRowLabel,
+  deleteRequestAllowed,
+  evidenceTimestamp,
+  formatDate,
+  formatExercise,
+  formatTime,
+  groupAttempts,
+  groupEvidenceByTask,
+  nextDeletePhase,
+  removeEvidenceItem,
+  shortId,
+  snapshotCountLabel,
+  taskRowLabel,
+  toggleKey,
+  type EvidenceDeletePhase,
+} from '@/components/adaptive/evidence-review-model';
 import { cn } from '@/lib/utils';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import {
   formCorrectionEvidenceQueryKey,
   teacherStudentViewQueryOptions,
@@ -40,108 +71,22 @@ export type EvidenceTaskMeta = {
   taskName: string;
 };
 
-type TaskEvidenceGroup = {
-  taskKey: string;
-  taskId: string | null;
-  taskName: string;
-  taskIndex: number;
-  classroomId: string | null;
-  items: FormCorrectionEvidenceDTO[];
+type DeleteSelection = {
+  item: FormCorrectionEvidenceDTO;
+  phase: Exclude<EvidenceDeletePhase, 'idle'>;
 };
 
-function parseCapturedDate(iso: string | null | undefined): Date | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d;
+function evidenceError(item: FormCorrectionEvidenceDTO): string {
+  return (item.errorLabel || formErrorLabel(item.errorCode) || 'Form error').trim();
 }
 
-function formatDate(iso: string | null | undefined): string {
-  const d = parseCapturedDate(iso);
-  if (!d) return '—';
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-function formatTime(iso: string | null | undefined): string {
-  const d = parseCapturedDate(iso);
-  if (!d) return '—';
-  return d.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function formatExercise(value: string | null | undefined): string {
-  if (!value) return 'Exercise';
-  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function shortId(value: string): string {
-  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
-}
-
-function evidenceTime(item: FormCorrectionEvidenceDTO): number {
-  return parseCapturedDate(item.capturedAt || item.createdAt)?.getTime() ?? 0;
-}
-
-function attemptLabel(item: FormCorrectionEvidenceDTO, fallbackIndex: number): string {
-  const exercise = formatExercise(item.exerciseType);
+function evidenceCaption(item: FormCorrectionEvidenceDTO, index: number): string {
   const attempt =
-    item.attemptNumber != null ? `Attempt ${item.attemptNumber}` : `Attempt ${fallbackIndex}`;
-  const error = (item.errorLabel || formErrorLabel(item.errorCode) || '').trim();
+    item.attemptNumber != null ? `Attempt ${item.attemptNumber}` : `Snapshot ${index + 1}`;
   const time = formatTime(item.capturedAt || item.createdAt);
-  const when = time && time !== '—' ? time : '';
-  return [exercise, attempt, error, when].filter(Boolean).join(' · ');
-}
-
-function groupEvidenceByTask(
-  items: FormCorrectionEvidenceDTO[],
-  taskMetaById: Map<string, string>
-): TaskEvidenceGroup[] {
-  const buckets = new Map<string, FormCorrectionEvidenceDTO[]>();
-
-  for (const item of items) {
-    const key = item.taskId?.trim() ? item.taskId.trim() : '__practice__';
-    const list = buckets.get(key) ?? [];
-    list.push(item);
-    buckets.set(key, list);
-  }
-
-  const groups: TaskEvidenceGroup[] = [];
-  for (const [taskKey, groupItems] of buckets) {
-    const sorted = [...groupItems].sort((a, b) => {
-      const exerciseA = (a.exerciseType || '').localeCompare(b.exerciseType || '');
-      if (exerciseA !== 0) return exerciseA;
-      const attemptA = a.attemptNumber ?? Number.MAX_SAFE_INTEGER;
-      const attemptB = b.attemptNumber ?? Number.MAX_SAFE_INTEGER;
-      if (attemptA !== attemptB) return attemptA - attemptB;
-      return evidenceTime(a) - evidenceTime(b);
-    });
-    const taskId = taskKey === '__practice__' ? null : taskKey;
-    const named = taskId ? taskMetaById.get(taskId) : null;
-    const classroomId =
-      sorted.find((row) => row.classroomId)?.classroomId?.trim() || null;
-
-    groups.push({
-      taskKey,
-      taskId,
-      taskName: taskId ? named || `Task ${shortId(taskId)}` : 'Practice session',
-      taskIndex: 0,
-      classroomId,
-      items: sorted,
-    });
-  }
-
-  return groups
-    .sort((a, b) => {
-      const latestA = Math.max(...a.items.map(evidenceTime), 0);
-      const latestB = Math.max(...b.items.map(evidenceTime), 0);
-      return latestB - latestA;
-    })
-    .map((group, index) => ({ ...group, taskIndex: index + 1 }));
+  return [formatExercise(item.exerciseType), attempt, evidenceError(item), time]
+    .filter((part) => part && part !== '—')
+    .join(' · ');
 }
 
 function useEvidenceImage(evidence: FormCorrectionEvidenceDTO | null) {
@@ -261,117 +206,26 @@ function EvidenceImage({
   );
 }
 
-function TaskEvidenceCard({
-  group,
-  onOpenLightbox,
-}: {
-  group: TaskEvidenceGroup;
-  onOpenLightbox: (index: number) => void;
-}) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const total = group.items.length;
-  const safeIndex = Math.min(selectedIndex, Math.max(total - 1, 0));
-  const current = group.items[safeIndex];
-  const capturedAt = current?.capturedAt || current?.createdAt;
-
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [group.taskKey]);
-
-  if (!current) return null;
-
-  return (
-    <Card className="flex h-full flex-col overflow-hidden border-border/60 shadow-sm">
-      <CardHeader className="space-y-1 border-b border-border/40 bg-muted/20 px-3 py-3">
-        <CardTitle className="line-clamp-2 text-sm font-semibold leading-snug">
-          Task {group.taskIndex} – {group.taskName}
-        </CardTitle>
-        <CardDescription className="text-xs">
-          {total} snapshot{total === 1 ? '' : 's'}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="flex flex-1 flex-col gap-3 p-3">
-        <div className="flex flex-wrap gap-1.5">
-          {group.items.map((item, index) => {
-            const active = index === safeIndex;
-            const previous = index > 0 ? group.items[index - 1] : null;
-            const showExercise = !previous || previous.exerciseType !== item.exerciseType;
-            return (
-              <React.Fragment key={item.physicalId}>
-                {showExercise ? (
-                  <span className="w-full pt-1 text-[11px] font-semibold text-foreground">
-                    {formatExercise(item.exerciseType)}
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => setSelectedIndex(index)}
-                  className={cn(
-                    'rounded-md border px-2 py-1 text-[11px] font-medium transition',
-                    active
-                      ? 'border-primary/40 bg-primary/10 text-primary'
-                      : 'border-border/60 bg-background text-muted-foreground hover:bg-muted/50'
-                  )}
-                >
-                  {attemptLabel(item, index + 1)}
-                </button>
-              </React.Fragment>
-            );
-          })}
-        </div>
-
-        <EvidenceImage
-          evidence={current}
-          frameClassName="aspect-[3/4] max-h-56"
-          onClick={() => onOpenLightbox(safeIndex)}
-          priority={group.taskIndex <= 3}
-        />
-
-        <div className="mt-auto space-y-1.5 text-xs">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{formatExercise(current.exerciseType)}</span>
-            <Badge variant="secondary" className="text-[10px]">
-              {current.errorLabel || formErrorLabel(current.errorCode)}
-            </Badge>
-          </div>
-          <p className="line-clamp-2 text-muted-foreground">
-            {current.correctionText ||
-              current.errorDescription ||
-              'Form correction recorded for this attempt.'}
-          </p>
-          <div className="rounded-lg border border-border/50 bg-muted/25 px-2.5 py-2">
-            <p>
-              <span className="font-medium">Date:</span> {formatDate(capturedAt)}
-            </p>
-            <p>
-              <span className="font-medium">Time:</span> {formatTime(capturedAt)}
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function EvidenceLightbox({
   open,
-  group,
+  items,
   index,
+  title,
   classroomName,
   onClose,
   onIndexChange,
 }: {
   open: boolean;
-  group: TaskEvidenceGroup | null;
+  items: FormCorrectionEvidenceDTO[];
   index: number;
+  title: string;
   classroomName: string;
   onClose: () => void;
   onIndexChange: (index: number) => void;
 }) {
   const [mounted, setMounted] = useState(false);
-  const total = group?.items.length ?? 0;
-  const evidence = group?.items[index] ?? null;
+  const total = items.length;
+  const evidence = items[index] ?? null;
   const { src, failed, loading } = useEvidenceImage(evidence);
   const capturedAt = evidence?.capturedAt || evidence?.createdAt;
 
@@ -387,7 +241,7 @@ function EvidenceLightbox({
         onClose();
         return;
       }
-      if (!group || total <= 1) return;
+      if (total <= 1) return;
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         onIndexChange((index - 1 + total) % total);
@@ -412,9 +266,9 @@ function EvidenceLightbox({
       document.body.style.overflow = previousOverflow;
       document.body.style.paddingRight = previousPaddingRight;
     };
-  }, [open, group, index, total, onClose, onIndexChange]);
+  }, [open, index, total, onClose, onIndexChange]);
 
-  if (!mounted || !open || !group || !evidence) return null;
+  if (!mounted || !open || !evidence) return null;
 
   return createPortal(
     <div
@@ -436,11 +290,9 @@ function EvidenceLightbox({
             <p className="text-xs text-white/70">
               <span className="font-medium text-white/90">Classroom:</span> {classroomName}
             </p>
-            <h3 className="truncate text-lg font-semibold">
-              Task {group.taskIndex} – {group.taskName}
-            </h3>
+            <h3 className="truncate text-lg font-semibold">{title}</h3>
             <p className="text-sm text-white/75">
-              {attemptLabel(evidence, index + 1)} of {total}
+              {evidenceCaption(evidence, index)} of {total}
             </p>
           </div>
           <Button
@@ -455,29 +307,6 @@ function EvidenceLightbox({
           </Button>
         </div>
 
-        {total > 1 ? (
-          <div className="relative z-10 mb-3 flex flex-wrap gap-1.5">
-            {group.items.map((item, itemIndex) => {
-              const active = itemIndex === index;
-              return (
-                <button
-                  key={item.physicalId}
-                  type="button"
-                  onClick={() => onIndexChange(itemIndex)}
-                  className={cn(
-                    'rounded-md border px-2.5 py-1 text-xs font-medium transition',
-                    active
-                      ? 'border-white/50 bg-white/20 text-white'
-                      : 'border-white/20 bg-black/30 text-white/75 hover:bg-white/10'
-                  )}
-                >
-                  {attemptLabel(item, itemIndex + 1)}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
         <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center gap-2">
           {total > 1 ? (
             <Button
@@ -486,7 +315,7 @@ function EvidenceLightbox({
               size="icon"
               className="h-10 w-10 shrink-0 rounded-full bg-black/45 text-white hover:bg-black/60"
               onClick={() => onIndexChange((index - 1 + total) % total)}
-              aria-label="Previous attempt"
+              aria-label="Previous snapshot"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
@@ -516,7 +345,7 @@ function EvidenceLightbox({
               size="icon"
               className="h-10 w-10 shrink-0 rounded-full bg-black/45 text-white hover:bg-black/60"
               onClick={() => onIndexChange((index + 1) % total)}
-              aria-label="Next attempt"
+              aria-label="Next snapshot"
             >
               <ChevronRight className="h-5 w-5" />
             </Button>
@@ -527,7 +356,7 @@ function EvidenceLightbox({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{formatExercise(evidence.exerciseType)}</span>
             <Badge variant="secondary" className="bg-white/15 text-white hover:bg-white/20">
-              {evidence.errorLabel || formErrorLabel(evidence.errorCode)}
+              {evidenceError(evidence)}
             </Badge>
           </div>
           <p className="mt-2 text-sm text-white/80">
@@ -552,6 +381,60 @@ function EvidenceLightbox({
   );
 }
 
+function ExpandableRow({
+  label,
+  open,
+  controlsId,
+  onToggle,
+  children,
+  nested = false,
+}: {
+  label: string;
+  open: boolean;
+  controlsId: string;
+  onToggle: () => void;
+  children: React.ReactNode;
+  nested?: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <div className={cn(nested && 'border-t border-border/50')}>
+      <button
+        type="button"
+        className={cn(
+          'flex h-12 w-full items-center gap-3 px-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+          nested && 'h-11 bg-muted/15 pl-6 text-[13px] font-medium'
+        )}
+        aria-expanded={open}
+        aria-controls={controlsId}
+        onClick={onToggle}
+      >
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground',
+            !reduceMotion && 'transition-transform duration-200',
+            open && 'rotate-180'
+          )}
+          aria-hidden
+        />
+      </button>
+      <div
+        id={controlsId}
+        className={cn(
+          'grid',
+          reduceMotion ? '' : 'transition-[grid-template-rows] duration-200 ease-out',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        )}
+      >
+        <div className="overflow-hidden" inert={open ? undefined : true}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FormCorrectionEvidenceLog({
   studentId,
   classroomId,
@@ -561,6 +444,7 @@ export function FormCorrectionEvidenceLog({
   classroomId?: string;
   progressItems?: EvidenceTaskMeta[];
 }) {
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: formCorrectionEvidenceQueryKey(studentId, classroomId),
     queryFn: () => fetchFormCorrectionEvidence(studentId, classroomId),
@@ -617,57 +501,113 @@ export function FormCorrectionEvidenceLog({
     classroomQuery.data ||
     (classroomId ? `Classroom ${shortId(classroomId)}` : 'Classroom');
 
+  const [openTasks, setOpenTasks] = useState<string[]>([]);
+  const [openAttempts, setOpenAttempts] = useState<string[]>([]);
   const [lightbox, setLightbox] = useState<{
     taskKey: string;
+    attemptKey: string;
     index: number;
   } | null>(null);
+  const [deleteSelection, setDeleteSelection] = useState<DeleteSelection | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const deleteSelectionRef = useRef<DeleteSelection | null>(null);
+  const deleteInFlight = useRef(false);
+  const advancingDelete = useRef(false);
+  deleteSelectionRef.current = deleteSelection;
+
+  useEffect(() => {
+    if (deleteSelection?.phase === 'irreversible' || deleteSelection?.phase === 'deleting') {
+      advancingDelete.current = false;
+    }
+  }, [deleteSelection?.phase]);
 
   const lightboxGroup = lightbox
     ? groups.find((group) => group.taskKey === lightbox.taskKey) ?? null
     : null;
+  const lightboxAttempt = lightboxGroup
+    ? groupAttempts(lightboxGroup.items).find((attempt) => attempt.attemptKey === lightbox?.attemptKey) ??
+      null
+    : null;
+
+  function openDelete(item: FormCorrectionEvidenceDTO) {
+    if (deleteInFlight.current || deleteSelectionRef.current?.phase === 'deleting') return;
+    if (deleteSelectionRef.current) return;
+    setDeleteSelection({ item, phase: 'identify' });
+  }
+
+  function cancelDelete() {
+    const current = deleteSelectionRef.current;
+    if (!current || current.phase === 'deleting') return;
+    const phase = nextDeletePhase(current.phase, 'cancel');
+    setDeleteSelection(phase === 'idle' ? null : { ...current, phase });
+  }
+
+  function continueDelete() {
+    const current = deleteSelectionRef.current;
+    if (!current) return;
+    advancingDelete.current = true;
+    const phase = nextDeletePhase(current.phase, 'continue');
+    const next = phase === 'idle' ? null : { ...current, phase };
+    deleteSelectionRef.current = next;
+    setDeleteSelection(next);
+  }
+
+  async function confirmDelete() {
+    const current = deleteSelectionRef.current;
+    if (!current || deleteInFlight.current) return;
+    if (!deleteRequestAllowed(current.phase, 'confirm')) return;
+    deleteInFlight.current = true;
+    const phase = nextDeletePhase(current.phase, 'confirm');
+    const next = phase === 'idle' ? null : { ...current, phase };
+    deleteSelectionRef.current = next;
+    setDeleteSelection(next);
+    const selected = current.item;
+    try {
+      await deleteFormCorrectionEvidence(selected.physicalId);
+      queryClient.setQueryData<FormCorrectionEvidenceDTO[]>(
+        formCorrectionEvidenceQueryKey(studentId, classroomId),
+        (existing) => (existing ? removeEvidenceItem(existing, selected.physicalId) : existing)
+      );
+      void queryClient
+        .invalidateQueries({
+          queryKey: formCorrectionEvidenceQueryKey(studentId, classroomId),
+        })
+        .catch(() => undefined);
+      setLightbox((open) => {
+        if (!open || !lightboxAttempt) return open;
+        const viewed = lightboxAttempt.items[open.index];
+        return viewed?.physicalId === selected.physicalId ? null : open;
+      });
+      deleteSelectionRef.current = null;
+      setDeleteSelection(null);
+      const message = 'Evidence log and snapshot deleted.';
+      setNotice({ kind: 'success', text: message });
+      toast.success(message);
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Could not delete the evidence log.';
+      const failed = nextDeletePhase('deleting', 'failure');
+      const failedSelection = failed === 'idle' ? null : { ...current, phase: failed };
+      deleteSelectionRef.current = failedSelection;
+      setDeleteSelection(failedSelection);
+      setNotice({ kind: 'error', text: message });
+      toast.error(message);
+    } finally {
+      deleteInFlight.current = false;
+    }
+  }
+
+  const selected = deleteSelection?.item ?? null;
+  const selectedExercise = selected ? formatExercise(selected.exerciseType) : '';
+  const selectedError = selected ? evidenceError(selected) : '';
+  const selectedWhen = selected ? evidenceTimestamp(selected) : '';
 
   if (!classroomId?.trim()) {
     return (
       <div className="rounded-2xl border border-dashed border-border/70 py-12 text-center text-muted-foreground">
         A classroom is required before evidence can be reviewed.
-      </div>
-    );
-  }
-
-  if (query.isLoading) {
-    return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-80 w-full rounded-2xl" />
-        ))}
-      </div>
-    );
-  }
-
-  if (query.isError) {
-    return (
-      <Card className="border-destructive/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertCircle className="h-4 w-4" />
-            Could not load form-correction evidence
-          </CardTitle>
-          <CardDescription>This is an API failure, not an empty log.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button type="button" size="sm" variant="outline" onClick={() => query.refetch()}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" />
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border/70 py-12 text-center text-muted-foreground">
-        No form-correction evidence yet
       </div>
     );
   }
@@ -678,24 +618,240 @@ export function FormCorrectionEvidenceLog({
         <p className="text-xs text-muted-foreground">Classroom</p>
         <p className="text-sm font-semibold">{classroomName}</p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
-          Classroom → Task → Attempt → Snapshot. Up to 3 tasks per row.
+          Classroom → Task → Attempt → Snapshot. Tasks stay collapsed until you expand them.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {groups.map((group) => (
-          <TaskEvidenceCard
-            key={group.taskKey}
-            group={group}
-            onOpenLightbox={(index) => setLightbox({ taskKey: group.taskKey, index })}
-          />
-        ))}
-      </div>
+      {notice ? (
+        <p
+          role="status"
+          className={cn(
+            'mb-3 rounded-xl border px-3 py-2 text-sm',
+            notice.kind === 'error'
+              ? 'border-destructive/40 bg-destructive/5 text-destructive'
+              : 'border-border/60 bg-muted/20 text-foreground'
+          )}
+        >
+          {notice.text}
+        </p>
+      ) : null}
+
+      {query.isLoading ? (
+        <div className="overflow-hidden rounded-xl border border-border/60">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-12 w-full rounded-none" />
+          ))}
+        </div>
+      ) : query.isError ? (
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="h-4 w-4" />
+              Could not load form-correction evidence
+            </CardTitle>
+            <CardDescription>This is an API failure, not an empty log.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button type="button" size="sm" variant="outline" onClick={() => query.refetch()}>
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : groups.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border/70 py-12 text-center text-muted-foreground">
+          No form-correction evidence yet
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+          {groups.map((group, groupIndex) => {
+            const taskOpen = openTasks.includes(group.taskKey);
+            const attempts = groupAttempts(group.items);
+            return (
+              <div
+                key={group.taskKey}
+                className={cn(groupIndex > 0 && 'border-t border-border/60')}
+              >
+                <ExpandableRow
+                  label={taskRowLabel(group)}
+                  open={taskOpen}
+                  controlsId={`evidence-task-${group.taskIndex}`}
+                  onToggle={() => setOpenTasks((current) => toggleKey(current, group.taskKey))}
+                >
+                  {attempts.map((attempt) => {
+                    const attemptId = `${group.taskKey}::${attempt.attemptKey}`;
+                    const attemptOpen = openAttempts.includes(attemptId);
+                    return (
+                      <ExpandableRow
+                        key={attemptId}
+                        nested
+                        label={attemptRowLabel(attempt)}
+                        open={attemptOpen}
+                        controlsId={`evidence-attempt-${group.taskIndex}-${attempt.attemptKey}`}
+                        onToggle={() =>
+                          setOpenAttempts((current) => toggleKey(current, attemptId))
+                        }
+                      >
+                        <ul className="space-y-2 border-t border-border/50 bg-muted/10 px-3 py-3 sm:px-4">
+                          {attempt.items.map((item, itemIndex) => {
+                            const capturedAt = item.capturedAt || item.createdAt;
+                            const deletingThis =
+                              deleteSelection?.phase === 'deleting' &&
+                              deleteSelection.item.physicalId === item.physicalId;
+                            return (
+                              <li
+                                key={item.physicalId}
+                                className="rounded-xl border border-border/60 bg-background p-3"
+                              >
+                                <div className="flex flex-col gap-3 sm:flex-row">
+                                  <div className="w-full sm:w-28 sm:shrink-0">
+                                    {attemptOpen ? (
+                                      <EvidenceImage
+                                        evidence={item}
+                                        frameClassName="aspect-[3/4] max-h-40 sm:max-h-32"
+                                        onClick={() =>
+                                          setLightbox({
+                                            taskKey: group.taskKey,
+                                            attemptKey: attempt.attemptKey,
+                                            index: itemIndex,
+                                          })
+                                        }
+                                        priority={group.taskIndex === 1 && itemIndex === 0}
+                                      />
+                                    ) : null}
+                                  </div>
+                                  <div className="min-w-0 flex-1 space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-sm font-medium">
+                                        {formatExercise(item.exerciseType)}
+                                      </span>
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        {evidenceError(item)}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      <span className="font-medium text-foreground">Detected: </span>
+                                      {item.errorDescription ||
+                                        'Incorrect form was confirmed during the attempt.'}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      <span className="font-medium text-foreground">
+                                        Correction:{' '}
+                                      </span>
+                                      {item.correctionText || '—'}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatDate(capturedAt)} · {formatTime(capturedAt)}
+                                    </p>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                      disabled={deleteSelection?.phase === 'deleting'}
+                                      aria-label={`Delete evidence for ${formatExercise(item.exerciseType)}, ${evidenceError(item)}, ${evidenceTimestamp(item)}`}
+                                      onClick={() => openDelete(item)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      {deletingThis ? 'Deleting…' : 'Delete'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </ExpandableRow>
+                    );
+                  })}
+                  {attempts.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">
+                      No attempts in this task.
+                    </p>
+                  ) : null}
+                </ExpandableRow>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <AlertDialog
+        open={deleteSelection?.phase === 'identify'}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (advancingDelete.current) {
+            advancingDelete.current = false;
+            return;
+          }
+          cancelDelete();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this evidence log?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedExercise}. Error: {selectedError}. Recorded {selectedWhen}. Continue only if
+              this is the snapshot you mean to review for deletion.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <button
+              type="button"
+              className={cn(buttonVariants())}
+              onClick={continueDelete}
+            >
+              Continue
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={
+          deleteSelection?.phase === 'irreversible' || deleteSelection?.phase === 'deleting'
+        }
+        onOpenChange={(open) => {
+          if (open) return;
+          cancelDelete();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This cannot be recovered</AlertDialogTitle>
+            <AlertDialogDescription>
+              The evidence log and its associated snapshot will be deleted and cannot be recovered
+              through the UI. {selectedExercise}. Error: {selectedError}. Recorded {selectedWhen}.
+              Scores, form mastery, repetition counts, and task completion stay on their original
+              records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSelection?.phase === 'deleting'}>
+              Cancel
+            </AlertDialogCancel>
+            <button
+              type="button"
+              className={cn(buttonVariants({ variant: 'destructive' }))}
+              disabled={deleteSelection?.phase === 'deleting'}
+              onClick={() => void confirmDelete()}
+            >
+              {deleteSelection?.phase === 'deleting' ? 'Deleting…' : 'Delete evidence'}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <EvidenceLightbox
-        open={!!lightboxGroup}
-        group={lightboxGroup}
+        open={!!lightboxAttempt && !!lightbox}
+        items={lightboxAttempt?.items ?? []}
         index={lightbox?.index ?? 0}
+        title={
+          lightboxGroup
+            ? `${taskRowLabel(lightboxGroup)} · ${lightboxAttempt ? attemptRowLabel(lightboxAttempt) : snapshotCountLabel(0)}`
+            : classroomName
+        }
         classroomName={classroomName}
         onClose={() => setLightbox(null)}
         onIndexChange={(index) =>
