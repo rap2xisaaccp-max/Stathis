@@ -1,0 +1,206 @@
+'use client';
+
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  fetchAdaptiveInsights,
+  fetchDifficultyRecommendations,
+} from '@/services/adaptive/api-adaptive-client';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { BarChart } from '@/components/dashboard/bar-chart';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { buildFormMasteryByExerciseChartData } from '@/components/adaptive/form-mastery-chart';
+import {
+  buildRecurringErrorsChartData,
+  MASTERY_CATEGORY_NAMES,
+} from '@/components/adaptive/adaptive-insights-charts';
+import {
+  StudentTaskStatsModal,
+  ProgressSnapshotItem,
+} from '@/components/adaptive/StudentTaskStatsModal';
+import { FormCorrectionEvidenceLog } from '@/components/adaptive/FormCorrectionEvidenceLog';
+import {
+  ADAPTIVE_DIFFICULTY_KEY,
+  adaptiveInsightsQueryKey,
+  teacherStudentViewQueryOptions,
+} from '@/lib/query/teacher-student-freshness';
+
+export function AdaptiveLearningInsights({
+  studentId,
+  classroomId,
+  progressItems,
+}: {
+  studentId: string;
+  classroomId?: string;
+  progressItems?: ProgressSnapshotItem[];
+}) {
+  const insightsQuery = useQuery({
+    queryKey: adaptiveInsightsQueryKey(studentId),
+    queryFn: () => fetchAdaptiveInsights(studentId),
+    enabled: !!studentId,
+    retry: 1,
+    ...teacherStudentViewQueryOptions,
+  });
+  const difficultyQuery = useQuery({
+    queryKey: [ADAPTIVE_DIFFICULTY_KEY, studentId],
+    queryFn: () => fetchDifficultyRecommendations(studentId),
+    enabled: !!studentId,
+    retry: 1,
+    ...teacherStudentViewQueryOptions,
+  });
+
+  const insights = insightsQuery.data;
+  const recurring = buildRecurringErrorsChartData(insights?.topRecurringErrors);
+  const masteryChart = buildFormMasteryByExerciseChartData(insights?.formMastery);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold">Form Correction Evidence Log</h3>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Classroom → Task → Attempt → Snapshot. Expand a task, then an attempt, to review evidence.
+        </p>
+        <FormCorrectionEvidenceLog
+          studentId={studentId}
+          classroomId={classroomId}
+          progressItems={progressItems}
+        />
+      </div>
+
+      {progressItems && progressItems.length > 0 ? (
+        <StudentProgressSnapshotCard studentId={studentId} progressItems={progressItems} />
+      ) : null}
+
+      {insightsQuery.isLoading ? (
+        <Skeleton className="h-40 w-full rounded-2xl" />
+      ) : insightsQuery.isError ? (
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="h-4 w-4" />
+              Could not load coaching summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button type="button" size="sm" variant="outline" onClick={() => insightsQuery.refetch()}>
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {recurring.length > 0 ? (
+            <BarChart
+              title="Recurring physical form errors"
+              description="Coachable errors only. Camera and model issues are excluded."
+              data={recurring.map((row) => ({ error: row.error, count: row.count }))}
+              categories={['count']}
+              index="error"
+            />
+          ) : null}
+
+          {masteryChart.length > 0 ? (
+            <Card className="rounded-2xl border-border/50">
+              <CardContent className="pt-6">
+                <BarChart
+                  title="Form mastery by exercise"
+                  description="Persistent form quality across classroom attempts. Each label shows the state and qualifying-attempt count when a state exists. Not coaching frequency, and not percent of correct reps."
+                  data={masteryChart.map((row) => ({
+                    exercise: row.exercise,
+                    masteryPct: row.masteryPct,
+                    attemptCount: row.attemptCount,
+                    state: row.state,
+                  }))}
+                  categories={['masteryPct']}
+                  categoryNames={MASTERY_CATEGORY_NAMES}
+                  index="exercise"
+                  yDomain={[0, 100]}
+                  valueSuffix="%"
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="rounded-2xl border-border/50">
+              <CardHeader>
+                <CardTitle className="text-base">Form mastery by exercise</CardTitle>
+                <CardDescription>
+                  Not enough data. Form Mastery is measured from completed classroom exercise
+                  attempts. Practice sessions, cancelled attempts, and attempts with no completed
+                  reps are excluded.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+          {(difficultyQuery.data || []).length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {(difficultyQuery.data || []).map((item) => (
+                <Badge key={item.exerciseType} variant="outline">
+                  {item.exerciseType.replaceAll('_', ' ')}
+                  {item.recommendedDifficulty ? ` · ${item.recommendedDifficulty}` : ''}
+                </Badge>
+              ))}
+              <p className="w-full text-xs font-medium text-foreground">Coaching Diagnostics</p>
+              <p className="w-full text-xs text-muted-foreground">
+                Soft difficulty suggestions use coaching frequency. They are not a student
+                performance percentage, and they are not Form Mastery.
+              </p>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StudentProgressSnapshotCard({
+  studentId,
+  progressItems,
+}: {
+  studentId: string;
+  progressItems: ProgressSnapshotItem[];
+}) {
+  const [openTaskId, setOpenTaskId] = React.useState<string | null>(null);
+  const selected = progressItems.find((item) => item.taskId === openTaskId) ?? null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Classroom task snapshot</CardTitle>
+        <CardDescription>Task scores remain on the Scores tab. This is context only.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {progressItems.slice(0, 6).map((item) => (
+          <button
+            key={item.taskId}
+            type="button"
+            className="flex w-full items-center justify-between rounded-lg border border-border/50 px-3 py-2 text-left text-sm hover:bg-muted/40"
+            onClick={() => setOpenTaskId(item.taskId)}
+          >
+            <span>{item.taskName}</span>
+            <span className="text-muted-foreground">
+              {item.score != null ? `${item.score}${item.maxScore != null ? `/${item.maxScore}` : ''}` : '—'}
+            </span>
+          </button>
+        ))}
+        <StudentTaskStatsModal
+          open={!!selected}
+          onOpenChange={(open) => {
+            if (!open) setOpenTaskId(null);
+          }}
+          studentId={studentId}
+          task={selected}
+        />
+      </CardContent>
+    </Card>
+  );
+}

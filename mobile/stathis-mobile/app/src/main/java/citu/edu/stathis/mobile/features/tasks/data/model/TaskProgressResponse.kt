@@ -1,0 +1,48 @@
+package citu.edu.stathis.mobile.features.tasks.data.model
+
+import com.google.gson.annotations.SerializedName
+
+data class TaskProgressResponse(
+    val taskId: String? = null,
+    val studentId: String? = null,
+    val progress: Float? = null,
+    val completedLessons: List<String>? = null,
+    val completedExercises: List<String>? = null,
+    val quizScores: Map<String, Int>? = null,
+    @SerializedName(value = "completed", alternate = ["isCompleted"])
+    val isCompleted: Boolean = false,
+    val submittedForReview: Boolean = false,
+    val lessonCompleted: Boolean? = null,
+    val exerciseCompleted: Boolean? = null,
+    val quizCompleted: Boolean? = null,
+    val quizScore: Int? = null,
+    val maxQuizScore: Int? = null,
+    val quizAttempts: Int? = null,
+    val exerciseAttempts: Int? = null,
+    val exerciseScore: Int? = null,
+    val maxExerciseScore: Int? = null,
+    val exerciseReps: Int? = null,
+    val exerciseGoalReps: Int? = null,
+    val exercises: List<TaskExerciseProgress>? = null,
+    val exercisesCompleted: Int? = null,
+    val exercisesRequired: Int? = null,
+    val totalTimeTaken: Long? = null,
+    val startedAt: String? = null,
+    val completedAt: String? = null,
+    val submittedAt: String? = null
+)
+
+data class TaskExerciseProgress(
+    val exerciseTemplateId: String? = null,
+    val sortOrder: Int = 0,
+    val title: String? = null,
+    val exerciseType: String? = null,
+    val goalReps: Int? = null,
+    val goalAccuracy: Int? = null,
+    val goalTime: Int? = null,
+    val completed: Boolean = false,
+    val attempts: Int = 0,
+    val latestValidReps: Int? = null,
+    val score: Int? = null,
+    val completionStatus: String? = null
+)
