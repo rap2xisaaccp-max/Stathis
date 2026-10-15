@@ -106,7 +106,7 @@ We follow the Gitflow workflow:
 1. Clone the repository:
 
    ```sh
-   git clone https://github.com/nicoryne/stathis.git
+   git clone https://github.com/rap2xisaaccp-max/Stathis.git
    cd stathis
    ```
 
